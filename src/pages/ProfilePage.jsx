@@ -42,7 +42,7 @@ export default function ProfilePage({ session }) {
   if (loading) return <Loader fullScreen />;
 
   return (
-    <div className="min-h-screen bg-[#000] text-[#ededed] font-sans">
+    <div className="min-h-screen bg-background text-main font-sans">
       <div className="max-w-[1400px] mx-auto px-6 py-8 flex flex-col lg:flex-row gap-8 relative items-start justify-center z-10">
         <div className="hidden lg:block w-full max-w-[300px] shrink-0">
           <Sidebar profile={currentUserProfile} stats={{followers:0,following:0}} />
@@ -54,16 +54,16 @@ export default function ProfilePage({ session }) {
           ) : (
             <>
               {/* Profile Header */}
-              <div className="bg-[#0a0a0a] border border-[#222] rounded-2xl overflow-hidden mb-6 relative">
+              <div className="glass-panel rounded-2xl overflow-hidden mb-6 relative">
                 <div className="h-32 bg-gradient-to-r from-primary/20 to-purple-500/20"></div>
                 
                 <div className="px-6 pb-6 relative">
                   <div className="flex justify-between items-end -mt-12 mb-4">
-                    <div className="h-24 w-24 rounded-2xl bg-[#111] border-4 border-[#0a0a0a] flex items-center justify-center text-4xl font-bold text-white overflow-hidden shadow-xl">
+                    <div className="h-24 w-24 rounded-2xl bg-surface border-4 border-background flex items-center justify-center text-4xl font-bold text-main overflow-hidden shadow-xl">
                       {profile.avatar_url ? <img src={profile.avatar_url} alt={profile.username} className="w-full h-full object-cover" /> : profile.username[0].toUpperCase()}
                     </div>
                     {session.user.id === profile.id ? (
-                      <button className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm font-semibold flex items-center gap-2 transition-colors border border-white/10">
+                      <button className="px-4 py-2 bg-surface-hover hover:bg-white/20 text-main rounded-lg text-sm font-semibold flex items-center gap-2 transition-colors border border-white/10">
                         <Settings size={16} /> Edit Profile
                       </button>
                     ) : (
@@ -74,23 +74,23 @@ export default function ProfilePage({ session }) {
                   </div>
                   
                   <div>
-                    <h1 className="text-2xl font-bold text-white">{profile.username}</h1>
-                    <p className="text-[#888] mt-1 text-[15px]">{profile.bio || 'No bio provided.'}</p>
+                    <h1 className="text-2xl font-bold text-main">{profile.username}</h1>
+                    <p className="text-muted mt-1 text-[15px]">{profile.bio || 'No bio provided.'}</p>
                   </div>
                   
-                  <div className="flex flex-wrap gap-4 mt-4 text-sm text-[#888]">
+                  <div className="flex flex-wrap gap-4 mt-4 text-sm text-muted">
                     {profile.website_url && (
-                      <a href={profile.website_url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 hover:text-white transition-colors">
+                      <a href={profile.website_url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 hover:text-main transition-colors">
                         <LinkIcon size={16} /> Portfolio
                       </a>
                     )}
                     {profile.github_url && (
-                      <a href={profile.github_url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 hover:text-white transition-colors">
+                      <a href={profile.github_url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 hover:text-main transition-colors">
                         <Code2 size={16} /> GitHub
                       </a>
                     )}
                     {profile.linkedin_url && (
-                      <a href={profile.linkedin_url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 hover:text-white transition-colors">
+                      <a href={profile.linkedin_url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 hover:text-main transition-colors">
                         <Briefcase size={16} /> LinkedIn
                       </a>
                     )}
@@ -101,7 +101,7 @@ export default function ProfilePage({ session }) {
                       <h4 className="text-xs font-bold text-[#666] uppercase tracking-wider mb-2">Tech Stack</h4>
                       <div className="flex gap-2 flex-wrap">
                         {profile.tech_stack.split(',').map((tech, i) => (
-                          <span key={i} className="px-3 py-1 bg-white/5 border border-white/10 rounded-full text-xs text-white">
+                          <span key={i} className="px-3 py-1 glass-panel rounded-full text-xs text-main">
                             {tech.trim()}
                           </span>
                         ))}
@@ -112,7 +112,7 @@ export default function ProfilePage({ session }) {
               </div>
               
               {/* User's Posts Feed */}
-              <div className="mb-4 text-lg font-bold text-white border-b border-[#222] pb-2 mt-8">Recent Activity</div>
+              <div className="mb-4 text-lg font-bold text-main border-b border-white/10 pb-2 mt-8">Recent Activity</div>
               <Feed session={session} userIdFilter={profile.id} />
             </>
           )}

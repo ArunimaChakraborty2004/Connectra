@@ -37,7 +37,7 @@ export default function Auth() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-4 relative overflow-hidden font-sans">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4 relative overflow-hidden font-sans">
       
       {/* Subtle Ambient Light */}
       <motion.div 
@@ -51,30 +51,30 @@ export default function Auth() {
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-md relative z-10"
       >
-        <div className="bg-[#0a0a0a] border border-[#222] rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+        <div className="glass-panel rounded-3xl p-8 shadow-2xl relative overflow-hidden">
           
           {/* Header */}
           <div className="flex flex-col items-center mb-8">
-            <div className="h-14 w-14 bg-[#111] border border-[#333] rounded-2xl flex items-center justify-center text-white mb-4">
-              <Hexagon size={28} className="text-white" />
+            <div className="h-14 w-14 glass-panel rounded-2xl flex items-center justify-center text-main mb-4">
+              <Hexagon size={28} className="text-main" />
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-white mb-1.5">
+            <h1 className="text-2xl font-bold tracking-tight text-main mb-1.5">
               DevConnect
             </h1>
-            <p className="text-[#888] text-sm font-medium">The network for developers.</p>
+            <p className="text-muted text-sm font-medium">The network for developers.</p>
           </div>
 
           {/* Auth Tabs */}
-          <div className="flex bg-[#111] rounded-xl p-1 mb-8 relative border border-[#222]">
+          <div className="flex bg-surface rounded-xl p-1 mb-8 relative border border-white/10">
             <button 
               onClick={() => setIsLogin(true)}
-              className={`flex-1 py-2 text-sm font-semibold rounded-lg z-10 transition-colors ${isLogin ? 'text-black' : 'text-[#888] hover:text-white'}`}
+              className={`flex-1 py-2 text-sm font-semibold rounded-lg z-10 transition-colors ${isLogin ? 'text-black' : 'text-muted hover:text-main'}`}
             >
               Log In
             </button>
             <button 
               onClick={() => setIsLogin(false)}
-              className={`flex-1 py-2 text-sm font-semibold rounded-lg z-10 transition-colors ${!isLogin ? 'text-black' : 'text-[#888] hover:text-white'}`}
+              className={`flex-1 py-2 text-sm font-semibold rounded-lg z-10 transition-colors ${!isLogin ? 'text-black' : 'text-muted hover:text-main'}`}
             >
               Sign Up
             </button>
@@ -106,7 +106,7 @@ export default function Auth() {
                     value={username} 
                     onChange={e => setUsername(e.target.value)} 
                     placeholder="Developer Username"
-                    className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl pl-12 pr-4 py-3 text-sm text-white focus:border-primary/50 outline-none transition-colors"
+                    className="w-full glass-panel rounded-xl pl-12 pr-4 py-3 text-sm text-main focus:border-primary/50 outline-none transition-colors"
                   />
                 </motion.div>
               )}
@@ -122,7 +122,7 @@ export default function Auth() {
                 value={email} 
                 onChange={e => setEmail(e.target.value)} 
                 placeholder="Email Address"
-                className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl pl-12 pr-4 py-3 text-sm text-white focus:border-primary/50 outline-none transition-colors"
+                className="w-full glass-panel rounded-xl pl-12 pr-4 py-3 text-sm text-main focus:border-primary/50 outline-none transition-colors"
               />
             </div>
 
@@ -136,7 +136,7 @@ export default function Auth() {
                 value={password} 
                 onChange={e => setPassword(e.target.value)} 
                 placeholder="Password"
-                className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl pl-12 pr-4 py-3 text-sm text-white focus:border-primary/50 outline-none transition-colors"
+                className="w-full glass-panel rounded-xl pl-12 pr-4 py-3 text-sm text-main focus:border-primary/50 outline-none transition-colors"
               />
             </div>
 

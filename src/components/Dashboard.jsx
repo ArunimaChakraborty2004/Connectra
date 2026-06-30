@@ -49,8 +49,8 @@ export default function Dashboard({ session }) {
 
   if (!profile) {
     return (
-      <div className="min-h-screen bg-[#000] flex items-center justify-center">
-        <div className="animate-spin text-white">
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-spin text-main">
           <Hexagon size={48} />
         </div>
       </div>
@@ -58,30 +58,11 @@ export default function Dashboard({ session }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#000] text-[#ededed] selection:bg-white/20 font-sans selection:text-white">
+    <div className="min-h-screen bg-background text-main selection:bg-white/20 font-sans selection:text-main">
       {/* Refined Ambient Glow */}
       <div className="fixed top-[-20%] right-[-10%] w-[800px] h-[800px] rounded-full bg-white/[0.02] blur-[120px] pointer-events-none z-0"></div>
 
-      <header className="sticky top-0 z-50 bg-[#000]/80 backdrop-blur-xl border-b border-[#222]">
-        <div className="max-w-[1400px] mx-auto px-6 h-16 flex items-center justify-between relative z-10">
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 bg-[#111] border border-[#333] rounded-lg flex items-center justify-center text-white">
-              <Hexagon size={20} className="text-white" />
-            </div>
-            <h1 className="text-xl font-bold tracking-tight text-white">
-              DevConnect
-            </h1>
-          </div>
-          
-          <button 
-            onClick={handleLogout} 
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#111] hover:bg-[#222] border border-[#333] transition-colors text-sm font-medium text-[#aaa] hover:text-white"
-          >
-            <LogOut size={16} />
-            <span className="hidden sm:inline">Sign Out</span>
-          </button>
-        </div>
-      </header>
+
 
       <div className="max-w-[1400px] mx-auto px-6 py-8 flex flex-col lg:flex-row gap-8 relative items-start justify-center z-10">
         <div className="hidden lg:block w-full max-w-[300px] shrink-0">

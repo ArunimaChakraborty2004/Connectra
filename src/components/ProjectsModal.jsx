@@ -89,22 +89,22 @@ export default function ProjectsModal({ session, onClose }) {
         initial={{ scale: 0.95, opacity: 0, y: 20 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.95, opacity: 0, y: 20 }}
-        className="relative w-full max-w-2xl bg-[#0a0a0a] border border-[#222] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        className="relative w-full max-w-2xl glass-panel rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-[#222] bg-[#050505]">
+        <div className="flex items-center justify-between p-6 border-b border-white/10 bg-[#050505]">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-[#111] border border-[#333] text-[#888] rounded-lg">
+            <div className="p-2 glass-panel text-muted rounded-lg">
               <FolderGit2 size={24} />
             </div>
             <div>
-              <h2 className="text-xl font-semibold text-white">My Repositories</h2>
-              <p className="text-sm text-[#888]">Manage and showcase your projects</p>
+              <h2 className="text-xl font-semibold text-main">My Repositories</h2>
+              <p className="text-sm text-muted">Manage and showcase your projects</p>
             </div>
           </div>
           <button 
             onClick={onClose}
-            className="p-2 text-[#666] hover:text-white rounded-lg transition-colors"
+            className="p-2 text-[#666] hover:text-main rounded-lg transition-colors"
           >
             <X size={20} />
           </button>
@@ -114,24 +114,24 @@ export default function ProjectsModal({ session, onClose }) {
         <div className="flex-1 overflow-y-auto p-6 scrollbar-hide">
           <div className="flex flex-col gap-4">
             {projects.length === 0 ? (
-              <div className="text-center py-12 px-4 border border-dashed border-white/10 rounded-xl bg-white/5">
+              <div className="text-center py-12 px-4 border border-dashed border-white/10 rounded-xl bg-surface">
                 <FolderGit2 size={48} className="mx-auto text-gray-600 mb-4" />
-                <h3 className="text-lg font-medium text-white mb-2">No projects yet</h3>
+                <h3 className="text-lg font-medium text-main mb-2">No projects yet</h3>
                 <p className="text-gray-400 text-sm">Add your first repository manually or import from GitHub.</p>
               </div>
             ) : (
               projects.map(p => (
-                <div key={p.id} className="group p-5 bg-[#0a0a0a] border border-white/5 rounded-xl hover:border-primary/50 transition-colors">
+                <div key={p.id} className="group p-5 glass-panel rounded-xl hover:border-primary/50 transition-colors">
                   <div className="flex justify-between items-start mb-2">
-                    <h3 className="text-lg font-bold text-white group-hover:text-primary transition-colors">{p.title}</h3>
+                    <h3 className="text-lg font-bold text-main group-hover:text-primary transition-colors">{p.title}</h3>
                     <div className="flex gap-2">
                       {p.repo_url && (
-                        <a href={p.repo_url} target="_blank" rel="noreferrer" className="p-2 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded-lg transition-colors tooltip" title="Repository">
+                        <a href={p.repo_url} target="_blank" rel="noreferrer" className="p-2 bg-surface hover:bg-surface-hover text-gray-300 hover:text-main rounded-lg transition-colors tooltip" title="Repository">
                           <GitBranch size={16} />
                         </a>
                       )}
                       {p.demo_url && (
-                        <a href={p.demo_url} target="_blank" rel="noreferrer" className="p-2 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white rounded-lg transition-colors tooltip" title="Live Demo">
+                        <a href={p.demo_url} target="_blank" rel="noreferrer" className="p-2 bg-surface hover:bg-surface-hover text-gray-300 hover:text-main rounded-lg transition-colors tooltip" title="Live Demo">
                           <ExternalLink size={16} />
                         </a>
                       )}
@@ -151,7 +151,7 @@ export default function ProjectsModal({ session, onClose }) {
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
                 onSubmit={handleAdd} 
-                className="flex flex-col gap-4 mt-6 p-5 bg-white/5 border border-white/10 rounded-xl overflow-hidden"
+                className="flex flex-col gap-4 mt-6 p-5 glass-panel rounded-xl overflow-hidden"
               >
                 <h4 className="text-sm font-semibold text-primary uppercase tracking-wider mb-2">Add Manual Project</h4>
                 <input 
@@ -160,28 +160,28 @@ export default function ProjectsModal({ session, onClose }) {
                   onChange={e => setTitle(e.target.value)} 
                   placeholder="Project Title" 
                   required 
-                  className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:border-primary/50 outline-none transition-colors"
+                  className="w-full glass-panel rounded-xl px-4 py-2.5 text-sm text-main focus:border-primary/50 outline-none transition-colors"
                 />
                 <textarea 
                   value={description} 
                   onChange={e => setDescription(e.target.value)} 
                   placeholder="Short Description" 
                   rows="2" 
-                  className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:border-primary/50 outline-none transition-colors resize-none"
+                  className="w-full glass-panel rounded-xl px-4 py-2.5 text-sm text-main focus:border-primary/50 outline-none transition-colors resize-none"
                 ></textarea>
                 <div className="flex gap-4">
                   <div className="flex-1 relative">
                     <GitBranch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
-                    <input type="url" value={repoUrl} onChange={e => setRepoUrl(e.target.value)} placeholder="Repository URL" className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white focus:border-primary/50 outline-none transition-colors" />
+                    <input type="url" value={repoUrl} onChange={e => setRepoUrl(e.target.value)} placeholder="Repository URL" className="w-full glass-panel rounded-xl pl-10 pr-4 py-2.5 text-sm text-main focus:border-primary/50 outline-none transition-colors" />
                   </div>
                   <div className="flex-1 relative">
                     <ExternalLink className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
-                    <input type="url" value={demoUrl} onChange={e => setDemoUrl(e.target.value)} placeholder="Live Demo URL" className="w-full bg-[#0a0a0a] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white focus:border-primary/50 outline-none transition-colors" />
+                    <input type="url" value={demoUrl} onChange={e => setDemoUrl(e.target.value)} placeholder="Live Demo URL" className="w-full glass-panel rounded-xl pl-10 pr-4 py-2.5 text-sm text-main focus:border-primary/50 outline-none transition-colors" />
                   </div>
                 </div>
                 <div className="flex justify-end gap-3 mt-2">
-                  <button type="button" onClick={() => setAddMode('none')} className="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors">Cancel</button>
-                  <button type="submit" className="px-6 py-2 bg-gradient-to-r from-primary to-purple-600 text-white text-sm font-semibold rounded-lg shadow-lg hover:shadow-primary/25 transition-all hover:scale-105">Save Project</button>
+                  <button type="button" onClick={() => setAddMode('none')} className="px-4 py-2 text-sm font-medium text-gray-400 hover:text-main transition-colors">Cancel</button>
+                  <button type="submit" className="px-6 py-2 bg-gradient-to-r from-primary to-purple-600 text-main text-sm font-semibold rounded-lg shadow-lg hover:shadow-primary/25 transition-all hover:scale-105">Save Project</button>
                 </div>
               </motion.form>
             )}
@@ -192,13 +192,13 @@ export default function ProjectsModal({ session, onClose }) {
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
-                className="flex flex-col gap-4 mt-6 p-5 bg-white/5 border border-white/10 rounded-xl overflow-hidden"
+                className="flex flex-col gap-4 mt-6 p-5 glass-panel rounded-xl overflow-hidden"
               >
                 <div className="flex justify-between items-center mb-2">
                   <h4 className="text-sm font-semibold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
                     <GithubIcon size={16} /> Import from GitHub
                   </h4>
-                  <button onClick={() => setAddMode('none')} className="text-gray-400 hover:text-white"><X size={16}/></button>
+                  <button onClick={() => setAddMode('none')} className="text-gray-400 hover:text-main"><X size={16}/></button>
                 </div>
                 
                 <form onSubmit={fetchGithubRepos} className="flex gap-3">
@@ -208,7 +208,7 @@ export default function ProjectsModal({ session, onClose }) {
                     onChange={e => setGithubUsername(e.target.value)} 
                     placeholder="Enter GitHub Username" 
                     required 
-                    className="flex-1 bg-[#0a0a0a] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:border-emerald-500/50 outline-none transition-colors"
+                    className="flex-1 glass-panel rounded-xl px-4 py-2.5 text-sm text-main focus:border-emerald-500/50 outline-none transition-colors"
                   />
                   <button 
                     type="submit" 
@@ -223,15 +223,15 @@ export default function ProjectsModal({ session, onClose }) {
                 {githubRepos.length > 0 && (
                   <div className="flex flex-col gap-3 mt-4 max-h-[300px] overflow-y-auto pr-2 scrollbar-hide">
                     {githubRepos.map(repo => (
-                      <div key={repo.id} className="flex items-center justify-between p-4 bg-[#0a0a0a] border border-white/5 rounded-xl">
+                      <div key={repo.id} className="flex items-center justify-between p-4 glass-panel rounded-xl">
                         <div>
-                          <h5 className="text-white font-bold text-sm mb-1">{repo.name}</h5>
+                          <h5 className="text-main font-bold text-sm mb-1">{repo.name}</h5>
                           <p className="text-gray-500 text-xs line-clamp-1">{repo.description || 'No description'}</p>
                         </div>
                         <button 
                           onClick={() => importGithubRepo(repo)}
                           disabled={importingId === repo.id}
-                          className="px-4 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap ml-4"
+                          className="px-4 py-1.5 bg-surface-hover hover:bg-white/20 text-main text-xs font-semibold rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap ml-4"
                         >
                           {importingId === repo.id ? <Loader2 size={14} className="animate-spin" /> : 'Import'}
                         </button>
@@ -246,10 +246,10 @@ export default function ProjectsModal({ session, onClose }) {
 
         {/* Footer */}
         {addMode === 'none' && (
-          <div className="p-6 border-t border-[#222] bg-[#050505] flex gap-4">
+          <div className="p-6 border-t border-white/10 bg-[#050505] flex gap-4">
             <button 
               onClick={() => setAddMode('github')}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-[#111] hover:bg-[#222] text-white border border-[#333] rounded-xl font-medium transition-colors"
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-surface hover:bg-surface-hover text-main border border-white/10 rounded-xl font-medium transition-colors"
             >
               <GithubIcon size={18} />
               Import from GitHub

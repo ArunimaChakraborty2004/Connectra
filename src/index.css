@@ -1,12 +1,128 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: #0a0a0a;
-  --color-surface: #171717;
-  --color-primary: #3b82f6;
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-heading: 'Sora', 'Inter', system-ui, sans-serif;
+
+  --color-background: var(--bg-color);
+  --color-surface: var(--surface-color);
+  --color-surface-hover: var(--surface-hover);
+  --color-border: var(--border-color);
+  --color-border-hover: var(--border-hover);
+  --color-text-main: var(--text-color);
+  --color-text-muted: var(--text-muted);
+  --color-primary: var(--primary-color);
+  --color-primary-hover: var(--primary-hover);
+}
+
+:root {
+  /* Light Theme - Vibrant Glassmorphism */
+  --bg-color: #f3f4f6; /* Base soft gray */
+  --surface-color: rgba(255, 255, 255, 0.7); /* Translucent white */
+  --surface-hover: rgba(255, 255, 255, 0.9);
+  --border-color: rgba(255, 255, 255, 0.4); /* Frosted borders */
+  --border-hover: rgba(0, 0, 0, 0.1);
+  --text-color: #0f172a; /* Slate 900 */
+  --text-muted: #64748b; /* Slate 500 */
+  --primary-color: #8b5cf6; /* Vibrant Violet */
+  --primary-hover: #7c3aed;
+}
+
+.dark {
+  /* Dark Theme - Glowing Glassmorphism */
+  --bg-color: #020617; /* Very deep Slate */
+  --surface-color: rgba(30, 41, 59, 0.4); /* Translucent slate */
+  --surface-hover: rgba(30, 41, 59, 0.6);
+  --border-color: rgba(255, 255, 255, 0.05);
+  --border-hover: rgba(255, 255, 255, 0.15);
+  --text-color: #f8fafc; /* Slate 50 */
+  --text-muted: #94a3b8; /* Slate 400 */
+  --primary-color: #a855f7; /* Vibrant Purple */
+  --primary-hover: #c084fc;
 }
 
 body {
+  font-family: var(--font-sans);
   background-color: var(--color-background);
-  color: #e5e7eb;
+  color: var(--color-text-main);
+  transition: background-color 0.3s ease, color 0.3s ease;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Animated Mesh Background applied globally to root */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: radial-gradient(circle at 15% 50%, rgba(139, 92, 246, 0.12), transparent 25%),
+              radial-gradient(circle at 85% 30%, rgba(56, 189, 248, 0.12), transparent 25%);
+  animation: bgPulse 15s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+.dark body::before {
+  background: radial-gradient(circle at 15% 50%, rgba(139, 92, 246, 0.15), transparent 25%),
+              radial-gradient(circle at 85% 30%, rgba(56, 189, 248, 0.15), transparent 25%);
+}
+
+@keyframes bgPulse {
+  0% { transform: scale(1); opacity: 0.8; }
+  100% { transform: scale(1.1); opacity: 1; }
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* Utility for glass panels */
+.glass-panel {
+  background: var(--surface-color);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-panel:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-hover);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+/* Vibrant Button */
+.vibrant-btn {
+  background: linear-gradient(135deg, var(--primary-color), var(--primary-hover));
+  color: white;
+  border: none;
+  box-shadow: 0 4px 14px 0 rgba(139, 92, 246, 0.39);
+  transition: all 0.2s ease;
+}
+.vibrant-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(139, 92, 246, 0.5);
+}
+.vibrant-btn:active {
+  transform: translateY(0);
+}
+
+/* Base custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-hover);
 }

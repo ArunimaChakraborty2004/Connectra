@@ -87,14 +87,14 @@ export default function SearchPage({ session }) {
   };
 
   return (
-    <div className="min-h-screen bg-[#000] text-[#ededed] font-sans">
+    <div className="min-h-screen bg-background text-main font-sans">
       <div className="max-w-[1400px] mx-auto px-6 py-8 flex flex-col lg:flex-row gap-8 relative items-start justify-center z-10">
         <div className="hidden lg:block w-full max-w-[300px] shrink-0">
           {profile ? <Sidebar profile={profile} stats={{followers:0,following:0}} /> : <Loader />}
         </div>
         
         <div className="flex-1 w-full max-w-2xl shrink-0">
-          <div className="bg-[#0a0a0a] border border-[#222] rounded-2xl p-6 mb-6">
+          <div className="glass-panel rounded-2xl p-6 mb-6">
             <div className="relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#666]" size={20} />
               <input
@@ -102,7 +102,7 @@ export default function SearchPage({ session }) {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search developers by username..."
-                className="w-full bg-[#111] border border-[#222] rounded-xl pl-12 pr-4 py-3 text-white focus:border-primary/50 outline-none transition-colors"
+                className="w-full glass-panel rounded-xl pl-12 pr-4 py-3 text-main focus:border-primary/50 outline-none transition-colors"
               />
             </div>
           </div>
@@ -116,15 +116,15 @@ export default function SearchPage({ session }) {
               <EmptyState title="Search for connections" description="Type a username above to find other developers." icon={Search} />
             ) : (
               users.map(user => (
-                <div key={user.id} className="bg-[#0a0a0a] border border-[#222] rounded-2xl p-5 flex items-center gap-4 hover:border-[#333] transition-colors">
-                  <Link to={`/profile/${user.username}`} className="h-12 w-12 rounded-xl bg-[#111] border border-[#333] flex items-center justify-center text-lg font-bold text-white shrink-0 overflow-hidden">
+                <div key={user.id} className="glass-panel rounded-2xl p-5 flex items-center gap-4 hover:border-white/10 transition-colors">
+                  <Link to={`/profile/${user.username}`} className="h-12 w-12 rounded-xl glass-panel flex items-center justify-center text-lg font-bold text-main shrink-0 overflow-hidden">
                     {user.avatar_url ? <img src={user.avatar_url} alt={user.username} className="w-full h-full object-cover" /> : user.username[0].toUpperCase()}
                   </Link>
                   <div className="flex-1 min-w-0">
-                    <Link to={`/profile/${user.username}`} className="font-semibold text-white text-[15px] hover:underline block truncate">
+                    <Link to={`/profile/${user.username}`} className="font-semibold text-main text-[15px] hover:underline block truncate">
                       {user.username}
                     </Link>
-                    <p className="text-[#888] text-sm truncate">{user.bio || 'Developer'}</p>
+                    <p className="text-muted text-sm truncate">{user.bio || 'Developer'}</p>
                   </div>
                   
                   <button 
