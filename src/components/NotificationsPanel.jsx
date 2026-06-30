@@ -82,16 +82,16 @@ export default function NotificationsPanel({ session, isOpen, onClose }) {
             animate={{ x: 0 }} 
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            className="fixed top-0 right-0 h-full w-full max-w-sm bg-[#0a0a0a] border-l border-[#222] shadow-2xl z-50 flex flex-col"
+            className="fixed top-0 right-0 h-full w-full max-w-sm bg-background border-l border-white/10 shadow-2xl z-50 flex flex-col"
           >
-            <div className="p-4 border-b border-[#222] flex items-center justify-between bg-[#111]">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between bg-surface">
               <div className="flex items-center gap-2">
-                <Bell size={20} className="text-white" />
-                <h2 className="text-lg font-bold text-white">Notifications</h2>
+                <Bell size={20} className="text-main" />
+                <h2 className="text-lg font-bold text-main">Notifications</h2>
               </div>
               <div className="flex items-center gap-3">
-                <button onClick={markAllRead} className="text-xs text-[#888] hover:text-white transition-colors">Mark all read</button>
-                <button onClick={onClose} className="p-1.5 hover:bg-white/10 rounded-lg text-white transition-colors"><X size={20} /></button>
+                <button onClick={markAllRead} className="text-xs text-muted hover:text-main transition-colors">Mark all read</button>
+                <button onClick={onClose} className="p-1.5 hover:bg-surface-hover rounded-lg text-main transition-colors"><X size={20} /></button>
               </div>
             </div>
 
@@ -102,7 +102,7 @@ export default function NotificationsPanel({ session, isOpen, onClose }) {
                 <div className="text-center text-[#666] py-12 text-sm">No new notifications.</div>
               ) : (
                 notifications.map((n) => (
-                  <div key={n.id} className={`p-4 rounded-xl border flex gap-3 ${!n.is_read ? 'bg-[#111] border-[#333]' : 'bg-[#0a0a0a] border-[#222]'}`}>
+                  <div key={n.id} className={`p-4 rounded-xl border flex gap-3 ${!n.is_read ? 'bg-surface border-white/10' : 'bg-background border-white/10'}`}>
                     <div className="pt-1">
                       {n.type === 'connection_request' && <UserPlus size={18} className="text-blue-400" />}
                       {n.type === 'like' && <Heart size={18} className="text-pink-500" />}
@@ -110,7 +110,7 @@ export default function NotificationsPanel({ session, isOpen, onClose }) {
                       {n.type === 'connection_accepted' && <Check size={18} className="text-green-400" />}
                     </div>
                     <div className="flex-1 text-sm text-[#ccc]">
-                      <span className="font-semibold text-white mr-1">{n.profiles?.username}</span>
+                      <span className="font-semibold text-main mr-1">{n.profiles?.username}</span>
                       {n.type === 'connection_request' && 'sent you a connection request.'}
                       {n.type === 'like' && 'liked your post.'}
                       {n.type === 'comment' && 'commented on your post.'}

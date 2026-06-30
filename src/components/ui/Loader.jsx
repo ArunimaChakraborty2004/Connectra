@@ -12,7 +12,7 @@ export default function Loader({ fullScreen = false }) {
 
   if (fullScreen) {
     return (
-      <div className="min-h-screen bg-[#000] flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         {content}
       </div>
     );

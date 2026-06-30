@@ -43,10 +43,10 @@ export default function Rightbar({ profile, onProfileUpdate }) {
 
   return (
     <aside className="sticky top-24 w-full">
-      <div className="bg-[#0a0a0a] border border-[#222] rounded-2xl p-6 relative overflow-hidden group max-h-[calc(100vh-8rem)] overflow-y-auto no-scrollbar">
+      <div className="glass-panel rounded-2xl p-6 relative overflow-hidden group max-h-[calc(100vh-8rem)] overflow-y-auto no-scrollbar">
         
-        <div className="flex items-center gap-2 mb-6 text-white">
-          <Settings2 size={20} className="text-[#888]" />
+        <div className="flex items-center gap-2 mb-6 text-main">
+          <Settings2 size={20} className="text-muted" />
           <h3 className="font-semibold text-sm">Profile Settings</h3>
         </div>
 
@@ -58,7 +58,7 @@ export default function Rightbar({ profile, onProfileUpdate }) {
               value={username} 
               onChange={e => setUsername(e.target.value)} 
               required 
-              className="w-full bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-sm text-white focus:border-primary/50 outline-none transition-colors"
+              className="w-full glass-panel rounded-lg px-3 py-2 text-sm text-main focus:border-primary/50 outline-none transition-colors"
             />
           </div>
 
@@ -69,7 +69,7 @@ export default function Rightbar({ profile, onProfileUpdate }) {
               value={bio} 
               onChange={e => setBio(e.target.value)} 
               placeholder="Tell us about yourself..."
-              className="w-full bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-sm text-white focus:border-primary/50 outline-none transition-colors resize-none"
+              className="w-full glass-panel rounded-lg px-3 py-2 text-sm text-main focus:border-primary/50 outline-none transition-colors resize-none"
             ></textarea>
           </div>
 
@@ -80,7 +80,7 @@ export default function Rightbar({ profile, onProfileUpdate }) {
               value={avatarUrl} 
               onChange={e => setAvatarUrl(e.target.value)} 
               placeholder="https://..." 
-              className="w-full bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-sm text-white focus:border-primary/50 outline-none transition-colors"
+              className="w-full glass-panel rounded-lg px-3 py-2 text-sm text-main focus:border-primary/50 outline-none transition-colors"
             />
           </div>
 
@@ -91,7 +91,7 @@ export default function Rightbar({ profile, onProfileUpdate }) {
               value={techStack} 
               onChange={e => setTechStack(e.target.value)} 
               placeholder="React, Node, Python..." 
-              className="w-full bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-sm text-white focus:border-primary/50 outline-none transition-colors"
+              className="w-full glass-panel rounded-lg px-3 py-2 text-sm text-main focus:border-primary/50 outline-none transition-colors"
             />
           </div>
 
@@ -102,7 +102,7 @@ export default function Rightbar({ profile, onProfileUpdate }) {
               value={githubUrl} 
               onChange={e => setGithubUrl(e.target.value)} 
               placeholder="https://github.com/..." 
-              className="w-full bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-sm text-white focus:border-primary/50 outline-none transition-colors"
+              className="w-full glass-panel rounded-lg px-3 py-2 text-sm text-main focus:border-primary/50 outline-none transition-colors"
             />
           </div>
           
@@ -113,7 +113,7 @@ export default function Rightbar({ profile, onProfileUpdate }) {
               value={linkedinUrl} 
               onChange={e => setLinkedinUrl(e.target.value)} 
               placeholder="https://linkedin.com/in/..." 
-              className="w-full bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-sm text-white focus:border-primary/50 outline-none transition-colors"
+              className="w-full glass-panel rounded-lg px-3 py-2 text-sm text-main focus:border-primary/50 outline-none transition-colors"
             />
           </div>
           
@@ -124,14 +124,14 @@ export default function Rightbar({ profile, onProfileUpdate }) {
               value={websiteUrl} 
               onChange={e => setWebsiteUrl(e.target.value)} 
               placeholder="https://..." 
-              className="w-full bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-sm text-white focus:border-primary/50 outline-none transition-colors"
+              className="w-full glass-panel rounded-lg px-3 py-2 text-sm text-main focus:border-primary/50 outline-none transition-colors"
             />
           </div>
 
           <button 
             type="submit" 
             disabled={loading}
-            className="mt-2 w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
+            className="mt-2 w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-main font-semibold py-2 px-4 rounded-lg transition-colors"
           >
             {loading ? (
               <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>

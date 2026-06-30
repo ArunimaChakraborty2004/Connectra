@@ -8,6 +8,7 @@ import ProfilePage from './pages/ProfilePage';
 import ToastContainer from './components/ui/Toast';
 import Loader from './components/ui/Loader';
 import NotificationsPanel from './components/NotificationsPanel';
+import Navbar from './components/Navbar';
 
 function App() {
   const [session, setSession] = useState(null);
@@ -48,6 +49,7 @@ function App() {
         <Auth />
       ) : (
         <>
+          <Navbar />
           <NotificationsPanel session={session} isOpen={showNotifications} onClose={() => setShowNotifications(false)} />
           <Routes>
             <Route path="/" element={<Dashboard session={session} />} />
