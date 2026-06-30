@@ -1,5 +1,6 @@
-import { GitBranch, FolderGit2, Users, Trophy, Code, Flame, MapPin, Link as LinkIcon, Calendar } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { Link } from 'react-router-dom';
+import { Users, FolderGit2, Search, Bell, Trophy, MapPin, Calendar, Link as LinkIcon, Code, Flame } from 'lucide-react';
 
 export default function Sidebar({ profile, stats, onOpenProjects }) {
   const initial = profile?.username ? profile.username[0].toUpperCase() : 'U';
@@ -123,6 +124,34 @@ export default function Sidebar({ profile, stats, onOpenProjects }) {
         transition={{ delay: 0.2 }}
         className="flex flex-col gap-3"
       >
+        <Link to="/" className="w-full flex items-center justify-between p-4 rounded-xl bg-[#0a0a0a] border border-[#222] hover:bg-[#111] transition-all group">
+          <div className="flex items-center gap-3">
+            <div className="text-[#888] group-hover:text-white transition-colors">
+              <Users size={18} />
+            </div>
+            <div className="text-left">
+              <span className="block font-medium text-white text-sm">Feed</span>
+              <span className="block text-[11px] text-[#666]">Home timeline</span>
+            </div>
+          </div>
+          <div className="text-[#444] group-hover:text-white transition-colors">
+            &rarr;
+          </div>
+        </Link>
+        <Link to="/search" className="w-full flex items-center justify-between p-4 rounded-xl bg-[#0a0a0a] border border-[#222] hover:bg-[#111] transition-all group">
+          <div className="flex items-center gap-3">
+            <div className="text-[#888] group-hover:text-white transition-colors">
+              <Search size={18} />
+            </div>
+            <div className="text-left">
+              <span className="block font-medium text-white text-sm">Search</span>
+              <span className="block text-[11px] text-[#666]">Find developers</span>
+            </div>
+          </div>
+          <div className="text-[#444] group-hover:text-white transition-colors">
+            &rarr;
+          </div>
+        </Link>
         <button onClick={onOpenProjects} className="w-full flex items-center justify-between p-4 rounded-xl bg-[#0a0a0a] border border-[#222] hover:bg-[#111] transition-all group">
           <div className="flex items-center gap-3">
             <div className="text-[#888] group-hover:text-white transition-colors">
@@ -138,14 +167,14 @@ export default function Sidebar({ profile, stats, onOpenProjects }) {
           </div>
         </button>
 
-        <button className="w-full flex items-center justify-between p-4 rounded-xl bg-[#0a0a0a] border border-[#222] hover:bg-[#111] transition-all group">
+        <button onClick={() => document.dispatchEvent(new CustomEvent('toggleNotifications'))} className="w-full flex items-center justify-between p-4 rounded-xl bg-[#0a0a0a] border border-[#222] hover:bg-[#111] transition-all group relative">
           <div className="flex items-center gap-3">
             <div className="text-[#888] group-hover:text-white transition-colors">
-              <Users size={18} />
+              <Bell size={18} />
             </div>
             <div className="text-left">
-              <span className="block font-medium text-white text-sm">Teams</span>
-              <span className="block text-[11px] text-[#666]">Collaborate with others</span>
+              <span className="block font-medium text-white text-sm">Notifications</span>
+              <span className="block text-[11px] text-[#666]">Recent activity</span>
             </div>
           </div>
           <div className="text-[#444] group-hover:text-white transition-colors">

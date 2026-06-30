@@ -1,11 +1,18 @@
 import { useState, useEffect } from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { supabase } from './lib/supabase';
 import Auth from './components/Auth';
 import Dashboard from './components/Dashboard';
+import SearchPage from './pages/SearchPage';
+import ProfilePage from './pages/ProfilePage';
+import ToastContainer from './components/ui/Toast';
+import Loader from './components/ui/Loader';
+import NotificationsPanel from './components/NotificationsPanel';
 
 function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -22,22 +29,34 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  useEffect(() => {
+    const handleToggle = () => setShowNotifications(prev => !prev);
+    document.addEventListener('toggleNotifications', handleToggle);
+    return () => document.removeEventListener('toggleNotifications', handleToggle);
+  }, []);
+
   if (loading) {
-    return (
-      <div className="loading-overlay">
-        <div className="spinner-container">
-          <div className="spinner"></div>
-          <p className="loading-text">Loading...</p>
-        </div>
-      </div>
-    );
+    return <Loader fullScreen />;
   }
 
   return (
     <>
       <div className="grain-overlay"></div>
       <div className="ambient-light"></div>
-      {!session ? <Auth /> : <Dashboard session={session} />}
+      <ToastContainer />
+      {!session ? (
+        <Auth />
+      ) : (
+        <>
+          <NotificationsPanel session={session} isOpen={showNotifications} onClose={() => setShowNotifications(false)} />
+          <Routes>
+            <Route path="/" element={<Dashboard session={session} />} />
+            <Route path="/search" element={<SearchPage session={session} />} />
+            <Route path="/profile/:username" element={<ProfilePage session={session} />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </>
+      )}
     </>
   );
 }

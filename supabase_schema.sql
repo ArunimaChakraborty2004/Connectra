@@ -8,9 +8,13 @@ ADD COLUMN IF NOT EXISTS github_url TEXT;
 
 -- 2. Update posts table
 ALTER TABLE posts
-ADD COLUMN IF NOT EXISTS image_url TEXT,
-ADD COLUMN IF NOT EXISTS code_snippet TEXT,
-ADD COLUMN IF NOT EXISTS code_language TEXT;
+  ADD COLUMN IF NOT EXISTS image_url TEXT,
+  ADD COLUMN IF NOT EXISTS code_snippet TEXT,
+  ADD COLUMN IF NOT EXISTS code_language TEXT,
+  ADD COLUMN IF NOT EXISTS content TEXT;
+ALTER TABLE posts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "All can view posts" ON posts FOR SELECT USING (true);
+CREATE POLICY "Authenticated users can insert their own posts" ON posts FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 -- 3. Create projects table
 CREATE TABLE IF NOT EXISTS projects (
