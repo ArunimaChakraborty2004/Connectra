@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, FolderGit2, ExternalLink, GitBranch, Plus, Code2 as GithubIcon, DownloadCloud, Loader2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 export default function ProjectsModal({ session, onClose }) {
   const [projects, setProjects] = useState([]);
@@ -123,7 +124,9 @@ export default function ProjectsModal({ session, onClose }) {
               projects.map(p => (
                 <div key={p.id} className="group p-5 glass-panel rounded-xl hover:border-primary/50 transition-colors">
                   <div className="flex justify-between items-start mb-2">
-                    <h3 className="text-lg font-bold text-main group-hover:text-primary transition-colors">{p.title}</h3>
+                    <Link to={`/projects/${p.id}`} onClick={onClose} className="text-lg font-bold text-main hover:text-primary transition-colors cursor-pointer hover:underline block truncate max-w-[70%]">
+                      {p.title}
+                    </Link>
                     <div className="flex gap-2">
                       {p.repo_url && (
                         <a href={p.repo_url} target="_blank" rel="noreferrer" className="p-2 bg-surface hover:bg-surface-hover text-gray-300 hover:text-main rounded-lg transition-colors tooltip" title="Repository">

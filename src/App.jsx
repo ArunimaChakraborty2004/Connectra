@@ -5,6 +5,7 @@ import Auth from './components/Auth';
 import Dashboard from './components/Dashboard';
 import SearchPage from './pages/SearchPage';
 import ProfilePage from './pages/ProfilePage';
+import ProjectDetails from './pages/ProjectDetails';
 import ToastContainer from './components/ui/Toast';
 import Loader from './components/ui/Loader';
 import NotificationsPanel from './components/NotificationsPanel';
@@ -55,6 +56,7 @@ function App() {
             <Route path="/" element={<Dashboard session={session} />} />
             <Route path="/search" element={<SearchPage session={session} />} />
             <Route path="/profile/:username" element={<ProfilePage session={session} />} />
+            <Route path="/projects/:id" element={<ProjectDetails session={session} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </>
