@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Users, FolderGit2, Search, Bell, Trophy, MapPin, Calendar, Link as LinkIcon, Code, Flame, Moon, Sun } from 'lucide-react';
 import { useTheme } from '../lib/ThemeContext';
 
-export default function Sidebar({ profile, stats, onOpenProjects }) {
+export default function Sidebar({ profile, stats }) {
   const initial = profile?.username ? profile.username[0].toUpperCase() : 'U';
   const techStack = profile?.tech_stack ? profile.tech_stack.split(',') : [];
   const { theme, toggleTheme } = useTheme();
@@ -22,39 +22,39 @@ export default function Sidebar({ profile, stats, onOpenProjects }) {
       <motion.div 
         initial={{ opacity: 0, x: -20 }}
         animate={{ opacity: 1, x: 0 }}
-        className="relative overflow-hidden rounded-2xl glass-panel group"
+        className="relative overflow-hidden rounded-2xl glass-panel group shadow-sm hover:shadow-md transition-shadow"
       >
         {/* Subtle Header Banner */}
-        <div className="h-28 w-full bg-surface relative overflow-hidden border-b border-white/10">
-          <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, #ffffff 1px, transparent 0)', backgroundSize: '16px 16px' }}></div>
+        <div className="h-24 w-full bg-gradient-to-br from-primary/10 to-transparent relative overflow-hidden border-b border-white/5">
+          <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, currentColor 1px, transparent 0)', backgroundSize: '16px 16px' }}></div>
         </div>
         
         <div className="px-6 pb-6 relative">
           {/* Avatar Area */}
-          <div className="flex justify-between items-end -mt-12 mb-4 relative z-10">
+          <div className="flex justify-between items-end -mt-10 mb-4 relative z-10">
             <div className="relative inline-block">
-              <div className="h-24 w-24 rounded-2xl glass-panel flex items-center justify-center text-3xl font-bold text-main shadow-xl">
+              <div className="h-20 w-20 rounded-2xl bg-surface border border-white/10 flex items-center justify-center text-3xl font-bold text-main shadow-lg">
                 {initial}
               </div>
-              <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-white border-2 border-background rounded-full flex items-center justify-center tooltip" title="Online">
+              <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-background rounded-full" title="Online">
               </div>
             </div>
             
             {/* Level Badge */}
             <div className="flex flex-col items-center mb-2">
-              <div className="glass-panel text-main text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1.5">
-                <Trophy size={12} className="text-muted" /> LVL {level}
+              <div className="bg-primary/10 text-primary text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1">
+                <Trophy size={10} /> LVL {level}
               </div>
             </div>
           </div>
           
           {/* User Info */}
           <div className="mb-5">
-            <h2 className="text-xl font-bold text-main flex items-center gap-2">
+            <h2 className="text-lg font-bold text-main flex items-center gap-2">
               {profile?.username || 'Developer'}
-              <span className="bg-surface text-muted text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-white/10">PRO</span>
+              <span className="bg-primary/20 text-primary text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded">PRO</span>
             </h2>
-            <p className="text-sm text-muted mt-1.5 leading-relaxed">{profile?.bio || 'Software Engineer building minimal and fast web applications.'}</p>
+            <p className="text-xs text-muted mt-1 leading-relaxed">{profile?.bio || 'Software Engineer building minimal and fast web applications.'}</p>
           </div>
 
           {/* Location & Links */}
@@ -88,16 +88,16 @@ export default function Sidebar({ profile, stats, onOpenProjects }) {
 
           {/* XP Progress Bar */}
           <div className="mb-6">
-            <div className="flex justify-between text-xs mb-2">
-              <span className="text-muted font-medium flex items-center gap-1.5"><Code size={12}/> Code XP</span>
-              <span className="text-main font-medium">{xp} / {level * 1000}</span>
+            <div className="flex justify-between text-[10px] font-bold mb-2 uppercase tracking-wide">
+              <span className="text-muted flex items-center gap-1"><Code size={12}/> Code XP</span>
+              <span className="text-main">{xp} / {level * 1000}</span>
             </div>
-            <div className="h-1.5 w-full bg-surface rounded-full overflow-hidden border border-white/10">
+            <div className="h-1.5 w-full bg-surface-hover rounded-full overflow-hidden">
               <motion.div 
                 initial={{ width: 0 }}
                 animate={{ width: `${xpProgress}%` }}
-                transition={{ duration: 1, delay: 0.5 }}
-                className="h-full bg-white rounded-full relative"
+                transition={{ duration: 1, delay: 0.5, type: 'spring' }}
+                className="h-full bg-primary rounded-full relative"
               >
               </motion.div>
             </div>
@@ -121,12 +121,12 @@ export default function Sidebar({ profile, stats, onOpenProjects }) {
       
       {/* Action Cards */}
       <motion.div 
-        initial={{ opacity: 0, y: 20 }}
+        initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="flex flex-col gap-3"
+        transition={{ delay: 0.1 }}
+        className="flex flex-col gap-2"
       >
-        <Link to="/" className="w-full flex items-center justify-between p-4 rounded-xl glass-panel transition-all group">
+        <Link to="/" className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-surface-hover transition-colors group border border-transparent hover:border-white/5">
           <div className="flex items-center gap-3">
             <div className="text-muted group-hover:text-primary transition-colors">
               <Users size={18} />
@@ -136,11 +136,25 @@ export default function Sidebar({ profile, stats, onOpenProjects }) {
               <span className="block text-[11px] text-muted">Home timeline</span>
             </div>
           </div>
-          <div className="text-muted group-hover:text-primary transition-colors">
+          <div className="text-muted group-hover:text-primary transition-colors transform group-hover:translate-x-1 duration-300">
             &rarr;
           </div>
         </Link>
-        <Link to="/search" className="w-full flex items-center justify-between p-4 rounded-xl glass-panel transition-all group">
+        <Link to="/reels" className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-surface-hover transition-colors group border border-transparent hover:border-white/5">
+          <div className="flex items-center gap-3">
+            <div className="text-muted group-hover:text-primary transition-colors">
+              <Code size={18} />
+            </div>
+            <div className="text-left">
+              <span className="block font-medium text-main text-sm">Reels</span>
+              <span className="block text-[11px] text-muted">Short-form videos</span>
+            </div>
+          </div>
+          <div className="text-muted group-hover:text-primary transition-colors transform group-hover:translate-x-1 duration-300">
+            &rarr;
+          </div>
+        </Link>
+        <Link to="/search" className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-surface-hover transition-colors group border border-transparent hover:border-white/5">
           <div className="flex items-center gap-3">
             <div className="text-muted group-hover:text-primary transition-colors">
               <Search size={18} />
@@ -150,11 +164,11 @@ export default function Sidebar({ profile, stats, onOpenProjects }) {
               <span className="block text-[11px] text-muted">Find developers</span>
             </div>
           </div>
-          <div className="text-muted group-hover:text-primary transition-colors">
+          <div className="text-muted group-hover:text-primary transition-colors transform group-hover:translate-x-1 duration-300">
             &rarr;
           </div>
         </Link>
-        <button onClick={onOpenProjects} className="w-full flex items-center justify-between p-4 rounded-xl glass-panel transition-all group">
+        <button onClick={() => document.dispatchEvent(new CustomEvent('toggleProjects'))} className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-surface-hover transition-colors group border border-transparent hover:border-white/5">
           <div className="flex items-center gap-3">
             <div className="text-muted group-hover:text-primary transition-colors">
               <FolderGit2 size={18} />
@@ -164,12 +178,12 @@ export default function Sidebar({ profile, stats, onOpenProjects }) {
               <span className="block text-[11px] text-muted">Manage open source work</span>
             </div>
           </div>
-          <div className="text-muted group-hover:text-primary transition-colors">
+          <div className="text-muted group-hover:text-primary transition-colors transform group-hover:translate-x-1 duration-300">
             &rarr;
           </div>
         </button>
 
-        <button onClick={() => document.dispatchEvent(new CustomEvent('toggleNotifications'))} className="w-full flex items-center justify-between p-4 rounded-xl glass-panel transition-all group relative">
+        <button onClick={() => document.dispatchEvent(new CustomEvent('toggleNotifications'))} className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-surface-hover transition-colors group border border-transparent hover:border-white/5">
           <div className="flex items-center gap-3">
             <div className="text-muted group-hover:text-primary transition-colors">
               <Bell size={18} />
@@ -179,20 +193,8 @@ export default function Sidebar({ profile, stats, onOpenProjects }) {
               <span className="block text-[11px] text-muted">Recent activity</span>
             </div>
           </div>
-          <div className="text-muted group-hover:text-primary transition-colors">
+          <div className="text-muted group-hover:text-primary transition-colors transform group-hover:translate-x-1 duration-300">
             &rarr;
-          </div>
-        </button>
-
-        <button onClick={toggleTheme} className="w-full flex items-center justify-between p-4 rounded-xl glass-panel transition-all group relative">
-          <div className="flex items-center gap-3">
-            <div className="text-muted group-hover:text-primary transition-colors">
-              {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
-            </div>
-            <div className="text-left">
-              <span className="block font-medium text-main text-sm">Theme</span>
-              <span className="block text-[11px] text-muted">Toggle {theme === 'light' ? 'Dark' : 'Light'} Mode</span>
-            </div>
           </div>
         </button>
       </motion.div>

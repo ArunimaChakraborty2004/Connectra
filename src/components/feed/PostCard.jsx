@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Heart, MessageSquare, Share2, Trash2, Edit2, Send } from 'lucide-react';
+import { Heart, MessageSquare, Share2, Trash2, Edit2, Send, Bookmark } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from '../../lib/toast';
 import { Link } from 'react-router-dom';
@@ -10,6 +10,7 @@ export default function PostCard({ post, session, onUpdate }) {
   const [commentText, setCommentText] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(post.content);
+  const [isBookmarked, setIsBookmarked] = useState(false);
 
   const isOwner = session.user.id === post.user_id;
   const isEdited = post.updated_at && post.updated_at !== post.created_at;
@@ -73,6 +74,38 @@ export default function PostCard({ post, session, onUpdate }) {
     if (error) toast.error('Failed to delete comment');
   };
 
+  const handleShare = async () => {
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: `Post by ${post.profiles?.username}`,
+          text: post.content,
+          url: `${window.location.origin}/post/${post.id}`,
+        });
+      } else {
+        await navigator.clipboard.writeText(`${window.location.origin}/post/${post.id}`);
+        toast.success('Link copied to clipboard!');
+      }
+    } catch (err) {
+      console.log('Share failed:', err);
+    }
+  };
+
+  const renderContentWithHashtags = (text) => {
+    if (!text) return null;
+    const parts = text.split(/(#\w+)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith('#')) {
+        return (
+          <Link key={i} to={`/search?q=${part.slice(1)}`} className="text-primary hover:underline">
+            {part}
+          </Link>
+        );
+      }
+      return <span key={i}>{part}</span>;
+    });
+  };
+
   return (
     <motion.div 
       initial={{ y: 20, opacity: 0 }}
@@ -118,7 +151,7 @@ export default function PostCard({ post, session, onUpdate }) {
             </div>
           </div>
         ) : (
-          post.content
+          renderContentWithHashtags(post.content)
         )}
       </div>
 
@@ -153,7 +186,13 @@ export default function PostCard({ post, session, onUpdate }) {
           <MessageSquare size={20} /> 
           <span className="font-medium text-sm">{post.comments?.length || 0}</span>
         </button>
-        <button onClick={() => toast.info('Share feature coming soon')} className="flex items-center gap-2 text-gray-400 hover:text-green-400 transition-colors ml-auto">
+        <button 
+          onClick={() => setIsBookmarked(!isBookmarked)} 
+          className={`flex items-center gap-2 transition-colors ml-auto ${isBookmarked ? 'text-primary' : 'text-gray-400 hover:text-primary'}`}
+        >
+          <Bookmark size={20} className={isBookmarked ? "fill-primary/20" : ""} />
+        </button>
+        <button onClick={handleShare} className="flex items-center gap-2 text-gray-400 hover:text-green-400 transition-colors">
           <Share2 size={20} />
         </button>
       </div>

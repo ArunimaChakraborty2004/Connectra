@@ -139,39 +139,87 @@ export default function CodingProfilePage({ session }) {
           className="glass-panel rounded-2xl p-6"
         >
           <h2 className="text-lg font-bold mb-6 flex items-center gap-2">
-            <Target size={18} className="text-primary" /> Platform Links
+            <Target size={18} className="text-primary" /> Platform Links & Stats
           </h2>
-          <div className="space-y-4">
-            {PLATFORMS.map(p => (
-              <div key={p.key} className="flex items-center gap-4">
-                <div className="flex items-center gap-2 w-36 shrink-0">
-                  <span className="text-xl">{p.icon}</span>
-                  <span className="text-sm font-medium text-muted">{p.label}</span>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              {PLATFORMS.map(p => (
+                <div key={p.key} className="flex flex-col gap-2">
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 w-32 shrink-0">
+                      <span className="text-xl">{p.icon}</span>
+                      <span className="text-sm font-medium text-muted">{p.label}</span>
+                    </div>
+                    <input
+                      type="url"
+                      value={form[p.key] || ''}
+                      onChange={e => setForm(prev => ({ ...prev, [p.key]: e.target.value }))}
+                      placeholder={p.placeholder}
+                      className="flex-1 bg-surface border border-border rounded-xl px-4 py-2 text-sm text-main placeholder:text-muted/50 focus:outline-none focus:border-primary/50 transition-colors"
+                    />
+                    {form[p.key] && (
+                      <a href={form[p.key]} target="_blank" rel="noreferrer"
+                        className="p-2 text-muted hover:text-primary transition-colors"
+                      >
+                        <ExternalLink size={16} />
+                      </a>
+                    )}
+                  </div>
                 </div>
-                <input
-                  type="url"
-                  value={form[p.key] || ''}
-                  onChange={e => setForm(prev => ({ ...prev, [p.key]: e.target.value }))}
-                  placeholder={p.placeholder}
-                  className="flex-1 bg-surface border border-border rounded-xl px-4 py-2.5 text-sm text-main placeholder:text-muted/50 focus:outline-none focus:border-primary/50 transition-colors"
-                />
-                {form[p.key] && (
-                  <a href={form[p.key]} target="_blank" rel="noreferrer"
-                    className="p-2 text-muted hover:text-primary transition-colors"
-                  >
-                    <ExternalLink size={16} />
-                  </a>
+              ))}
+              <button
+                onClick={saveProfiles}
+                disabled={saving}
+                className="mt-6 vibrant-btn px-6 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
+              >
+                {saving ? 'Saving...' : 'Save Profiles'}
+              </button>
+            </div>
+            
+            {/* Mock Stats Display */}
+            <div className="bg-surface/50 border border-border rounded-xl p-5">
+              <h3 className="text-sm font-bold text-main mb-4 flex items-center gap-2">
+                <GitBranch size={16} className="text-primary" /> Live Statistics
+              </h3>
+              
+              <div className="space-y-4">
+                {form.leetcode_url ? (
+                  <div className="bg-background rounded-lg p-3 border border-border flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">🧩</span>
+                      <span className="text-sm font-medium">LeetCode</span>
+                    </div>
+                    <div className="flex gap-3 text-xs text-muted font-mono">
+                      <span>Problems: <strong className="text-main">342</strong></span>
+                      <span className="text-green-400">Easy: 150</span>
+                      <span className="text-yellow-400">Med: 152</span>
+                      <span className="text-red-400">Hard: 40</span>
+                    </div>
+                  </div>
+                ) : null}
+                
+                {form.github_url ? (
+                  <div className="bg-background rounded-lg p-3 border border-border flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">🐙</span>
+                      <span className="text-sm font-medium">GitHub</span>
+                    </div>
+                    <div className="flex gap-3 text-xs text-muted font-mono">
+                      <span>Repos: <strong className="text-main">45</strong></span>
+                      <span>Stars: <strong className="text-main">128</strong></span>
+                      <span>Contributions: <strong className="text-main">1,024</strong></span>
+                    </div>
+                  </div>
+                ) : null}
+                
+                {!form.leetcode_url && !form.github_url && (
+                  <div className="text-center py-8 text-muted text-sm border border-dashed border-border rounded-lg">
+                    Add LeetCode or GitHub links to see your stats here.
+                  </div>
                 )}
               </div>
-            ))}
+            </div>
           </div>
-          <button
-            onClick={saveProfiles}
-            disabled={saving}
-            className="mt-6 vibrant-btn px-6 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
-          >
-            {saving ? 'Saving...' : 'Save Profiles'}
-          </button>
         </motion.div>
 
         {/* Skill Badges */}
