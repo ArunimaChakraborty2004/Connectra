@@ -3,13 +3,11 @@ import { supabase } from '../lib/supabase';
 import Sidebar from './Sidebar';
 import Feed from './Feed';
 import Rightbar from './Rightbar';
-import ProjectsModal from './ProjectsModal';
 import { LogOut, Hexagon } from 'lucide-react';
 
 export default function Dashboard({ session }) {
   const [profile, setProfile] = useState(null);
   const [stats, setStats] = useState({ followers: 0, following: 0 });
-  const [showProjects, setShowProjects] = useState(false);
 
   const loadData = async () => {
     // 1. Fetch Profile
@@ -66,7 +64,7 @@ export default function Dashboard({ session }) {
 
       <div className="max-w-[1400px] mx-auto px-6 py-8 flex flex-col lg:flex-row gap-8 relative items-start justify-center z-10">
         <div className="hidden lg:block w-full max-w-[300px] shrink-0">
-          <Sidebar profile={profile} stats={stats} onOpenProjects={() => setShowProjects(true)} />
+          <Sidebar profile={profile} stats={stats} />
         </div>
         
         <div className="flex-1 w-full max-w-2xl shrink-0">
@@ -77,10 +75,6 @@ export default function Dashboard({ session }) {
           <Rightbar profile={profile} onProfileUpdate={loadData} />
         </div>
       </div>
-
-      {showProjects && (
-        <ProjectsModal session={session} onClose={() => setShowProjects(false)} />
-      )}
     </div>
   );
 }

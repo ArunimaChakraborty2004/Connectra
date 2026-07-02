@@ -5,14 +5,16 @@ import Sidebar from '../components/Sidebar';
 import Loader from '../components/ui/Loader';
 import EmptyState from '../components/ui/EmptyState';
 import { toast } from '../lib/toast';
-import { Settings, MapPin, Link as LinkIcon, Code, Briefcase } from 'lucide-react';
-import Feed from '../components/Feed'; // Reuse Feed component but maybe pass userId filter
+import { Settings, MapPin, Link as LinkIcon, Code2, Briefcase } from 'lucide-react';
+import Feed from '../components/Feed';
+import EditProfileModal from '../components/profile/EditProfileModal';
 
 export default function ProfilePage({ session }) {
   const { username } = useParams();
   const [profile, setProfile] = useState(null);
   const [currentUserProfile, setCurrentUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -63,7 +65,10 @@ export default function ProfilePage({ session }) {
                       {profile.avatar_url ? <img src={profile.avatar_url} alt={profile.username} className="w-full h-full object-cover" /> : profile.username[0].toUpperCase()}
                     </div>
                     {session.user.id === profile.id ? (
-                      <button className="px-4 py-2 bg-surface-hover hover:bg-white/20 text-main rounded-lg text-sm font-semibold flex items-center gap-2 transition-colors border border-white/10">
+                      <button 
+                        onClick={() => setIsEditModalOpen(true)}
+                        className="px-4 py-2 bg-surface-hover hover:bg-white/20 text-main rounded-lg text-sm font-semibold flex items-center gap-2 transition-colors border border-white/10"
+                      >
                         <Settings size={16} /> Edit Profile
                       </button>
                     ) : (
@@ -96,6 +101,21 @@ export default function ProfilePage({ session }) {
                     )}
                   </div>
                   
+                  <div className="flex gap-3 mt-6">
+                    <Link 
+                      to={`/profile/${profile.username}/coding`}
+                      className="flex-1 py-2 glass-panel rounded-xl flex items-center justify-center gap-2 hover:bg-white/5 transition-colors border border-white/10 text-sm font-semibold"
+                    >
+                      <Code2 size={16} className="text-primary" /> Coding Profile
+                    </Link>
+                    <Link 
+                      to={`/profile/${profile.username}/portfolio`}
+                      className="flex-1 py-2 glass-panel rounded-xl flex items-center justify-center gap-2 hover:bg-white/5 transition-colors border border-white/10 text-sm font-semibold"
+                    >
+                      <Briefcase size={16} className="text-yellow-400" /> Portfolio Showcase
+                    </Link>
+                  </div>
+                  
                   {profile.tech_stack && (
                     <div className="mt-6">
                       <h4 className="text-xs font-bold text-[#666] uppercase tracking-wider mb-2">Tech Stack</h4>
@@ -114,6 +134,16 @@ export default function ProfilePage({ session }) {
               {/* User's Posts Feed */}
               <div className="mb-4 text-lg font-bold text-main border-b border-white/10 pb-2 mt-8">Recent Activity</div>
               <Feed session={session} userIdFilter={profile.id} />
+              
+              <EditProfileModal 
+                isOpen={isEditModalOpen} 
+                onClose={() => setIsEditModalOpen(false)} 
+                profile={profile} 
+                onUpdate={(updatedProfile) => {
+                  setProfile(updatedProfile);
+                  if (session.user.id === updatedProfile.id) setCurrentUserProfile(updatedProfile);
+                }} 
+              />
             </>
           )}
         </div>
