@@ -6,7 +6,7 @@ import ProjectKanban from '../components/projects/ProjectKanban';
 import ProjectTeam from '../components/projects/ProjectTeam';
 import ProjectFiles from '../components/projects/ProjectFiles';
 import ProjectMilestones from '../components/projects/ProjectMilestones';
-import { LayoutDashboard, CheckSquare, Users, FolderOpen, Flag, ExternalLink, Github } from 'lucide-react';
+import { LayoutDashboard, CheckSquare, Users, FolderOpen, Flag, ExternalLink, GitBranch } from 'lucide-react';
 import { toast } from '../lib/toast';
 
 export default function ProjectDetails({ session }) {
@@ -93,7 +93,7 @@ export default function ProjectDetails({ session }) {
               <div className="flex items-center gap-4 mt-6">
                 {project.repo_url && (
                   <a href={project.repo_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm text-main hover:text-primary transition-colors">
-                    <Github size={16} /> Repository
+                    <GitBranch size={16} /> Repository
                   </a>
                 )}
                 {project.demo_url && (
