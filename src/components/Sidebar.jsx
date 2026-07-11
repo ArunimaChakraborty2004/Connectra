@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { Users, FolderGit2, Search, Bell, Trophy, MapPin, Calendar, Link as LinkIcon, Code, Flame, Moon, Sun } from 'lucide-react';
+import { Users, User, FolderGit2, Search, Bell, Trophy, MapPin, Calendar, Link as LinkIcon, Code, Flame, Moon, Sun } from 'lucide-react';
 import { useTheme } from '../lib/ThemeContext';
 
 export default function Sidebar({ profile, stats }) {
@@ -50,10 +50,10 @@ export default function Sidebar({ profile, stats }) {
           
           {/* User Info */}
           <div className="mb-5">
-            <h2 className="text-lg font-bold text-main flex items-center gap-2">
+            <Link to={`/profile/${profile?.username}`} className="text-lg font-bold text-main flex items-center gap-2 hover:text-primary transition-colors w-fit">
               {profile?.username || 'Developer'}
               <span className="bg-primary/20 text-primary text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded">PRO</span>
-            </h2>
+            </Link>
             <p className="text-xs text-muted mt-1 leading-relaxed">{profile?.bio || 'Software Engineer building minimal and fast web applications.'}</p>
           </div>
 
@@ -126,6 +126,20 @@ export default function Sidebar({ profile, stats }) {
         transition={{ delay: 0.1 }}
         className="flex flex-col gap-2"
       >
+        <Link to={`/profile/${profile?.username}`} className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-surface-hover transition-colors group border border-transparent hover:border-white/5">
+          <div className="flex items-center gap-3">
+            <div className="text-muted group-hover:text-primary transition-colors">
+              <User size={18} />
+            </div>
+            <div className="text-left">
+              <span className="block font-medium text-main text-sm">My Profile</span>
+              <span className="block text-[11px] text-muted">View and edit your profile</span>
+            </div>
+          </div>
+          <div className="text-muted group-hover:text-primary transition-colors transform group-hover:translate-x-1 duration-300">
+            &rarr;
+          </div>
+        </Link>
         <Link to="/" className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-surface-hover transition-colors group border border-transparent hover:border-white/5">
           <div className="flex items-center gap-3">
             <div className="text-muted group-hover:text-primary transition-colors">

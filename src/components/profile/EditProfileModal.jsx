@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Upload, CheckCircle2, AlertCircle } from 'lucide-react';
@@ -19,6 +19,33 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
   const [avatarFile, setAvatarFile] = useState(null);
   const [avatarPreview, setAvatarPreview] = useState(profile?.avatar_url || '');
   const [loading, setLoading] = useState(false);
+  const [githubLinked, setGithubLinked] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const checkLinkedAccounts = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const gitIdentity = user.identities?.find(i => i.provider === 'github');
+      if (gitIdentity) {
+        setGithubLinked(true);
+        const username = gitIdentity.identity_data.user_name || gitIdentity.identity_data.preferred_username;
+        if (username && !formData.github_url) {
+           setFormData(prev => ({ ...prev, github_url: `https://github.com/${username}` }));
+        }
+      }
+    };
+    checkLinkedAccounts();
+  }, [isOpen]);
+
+  const handleLinkGithub = async () => {
+    toast.success("Redirecting to GitHub for verification...");
+    const { error } = await supabase.auth.linkIdentity({ 
+      provider: 'github', 
+      options: { redirectTo: window.location.href }
+    });
+    if (error) toast.error(error.message);
+  };
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -175,15 +202,34 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-muted mb-1">GitHub URL</label>
-                    <input
-                      type="url"
-                      name="github_url"
-                      value={formData.github_url}
-                      onChange={handleChange}
-                      placeholder="https://github.com/username"
-                      className="w-full bg-background border border-white/10 rounded-xl p-3 text-sm text-main focus:border-primary/50 outline-none transition-colors"
-                    />
+                    <label className="block text-xs font-medium text-muted mb-1 flex justify-between">
+                      GitHub URL
+                      {!githubLinked && <span className="text-primary text-[10px]">Verification Required</span>}
+                    </label>
+                    {githubLinked ? (
+                      <div className="flex items-center justify-between bg-surface border border-emerald-500/30 rounded-xl p-3 text-sm text-emerald-400">
+                         <span className="truncate max-w-[150px]">{formData.github_url || 'Linked'}</span>
+                         <div className="flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider shrink-0"><CheckCircle2 size={14}/> Verified</div>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2">
+                        <input
+                          type="url"
+                          name="github_url"
+                          value={formData.github_url}
+                          disabled
+                          placeholder="Verify to link"
+                          className="flex-1 w-full bg-background/50 border border-white/10 rounded-xl p-3 text-sm text-gray-500 cursor-not-allowed outline-none"
+                        />
+                        <button 
+                          type="button" 
+                          onClick={handleLinkGithub} 
+                          className="px-4 bg-white text-black text-xs font-bold rounded-xl hover:bg-[#e5e5e5] transition-colors whitespace-nowrap"
+                        >
+                          Verify Link
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-muted mb-1">LinkedIn URL</label>

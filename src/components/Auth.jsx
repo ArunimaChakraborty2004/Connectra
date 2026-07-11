@@ -251,20 +251,16 @@ export default function Auth() {
                   <button
                     type="button"
                     onClick={() => handleOAuth('github')}
-                    className="flex-1 flex items-center justify-center gap-2 glass-panel hover:bg-white/5 py-3 rounded-xl text-sm font-semibold transition-colors border border-white/10"
+                    className="w-full flex items-center justify-center gap-2 glass-panel hover:bg-white/5 py-3 rounded-xl text-sm font-semibold transition-colors border border-white/10"
                   >
                     <Code size={18} />
                     GitHub
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => handleOAuth('google')}
-                    className="flex-1 flex items-center justify-center gap-2 glass-panel hover:bg-white/5 py-3 rounded-xl text-sm font-semibold transition-colors border border-white/10"
-                  >
-                    <Globe size={18} />
-                    Google
-                  </button>
                 </div>
+                <p className="text-[10px] text-muted text-center mt-2">
+                  Note: Email auth may be rate-limited by the Supabase free plan. 
+                  If you encounter an error, please use GitHub.
+                </p>
               </div>
             )}
             

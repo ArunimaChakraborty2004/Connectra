@@ -5,9 +5,66 @@ import Sidebar from '../components/Sidebar';
 import Loader from '../components/ui/Loader';
 import EmptyState from '../components/ui/EmptyState';
 import { toast } from '../lib/toast';
-import { Settings, MapPin, Link as LinkIcon, Code2, Briefcase } from 'lucide-react';
+import { Settings, MapPin, Link as LinkIcon, Code2, Briefcase, Grid, FileText, FolderGit2, GitBranch, ExternalLink } from 'lucide-react';
 import Feed from '../components/Feed';
 import EditProfileModal from '../components/profile/EditProfileModal';
+
+function ProfileRepos({ userId }) {
+  const [projects, setProjects] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchProjects = async () => {
+      const { data } = await supabase
+        .from('projects')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+      if (data) setProjects(data);
+      setLoading(false);
+    };
+    fetchProjects();
+  }, [userId]);
+
+  if (loading) return <div className="text-center py-8 text-muted">Loading repositories...</div>;
+
+  if (projects.length === 0) {
+    return (
+      <div className="text-center py-12 px-4 border border-dashed border-white/10 rounded-xl bg-surface mt-4">
+        <FolderGit2 size={48} className="mx-auto text-gray-600 mb-4" />
+        <h3 className="text-lg font-medium text-main mb-2">No repositories yet</h3>
+        <p className="text-gray-400 text-sm">This user hasn't added any repositories.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+      {projects.map(p => (
+        <div key={p.id} className="group p-5 glass-panel rounded-xl hover:border-primary/50 transition-colors">
+          <div className="flex justify-between items-start mb-2">
+            <Link to={`/projects/${p.id}`} className="text-lg font-bold text-main hover:text-primary transition-colors cursor-pointer hover:underline block truncate max-w-[70%]">
+              {p.title}
+            </Link>
+            <div className="flex gap-2">
+              {p.repo_url && (
+                <a href={p.repo_url} target="_blank" rel="noreferrer" className="p-2 bg-surface hover:bg-surface-hover text-gray-300 hover:text-main rounded-lg transition-colors tooltip" title="Repository">
+                  <GitBranch size={16} />
+                </a>
+              )}
+              {p.demo_url && (
+                <a href={p.demo_url} target="_blank" rel="noreferrer" className="p-2 bg-surface hover:bg-surface-hover text-gray-300 hover:text-main rounded-lg transition-colors tooltip" title="Live Demo">
+                  <ExternalLink size={16} />
+                </a>
+              )}
+            </div>
+          </div>
+          <p className="text-sm text-gray-400 mt-2 line-clamp-2">{p.description}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function ProfilePage({ session }) {
   const { username } = useParams();
@@ -15,6 +72,7 @@ export default function ProfilePage({ session }) {
   const [currentUserProfile, setCurrentUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('posts'); // 'posts' or 'repos'
 
   useEffect(() => {
     const loadData = async () => {
@@ -131,9 +189,31 @@ export default function ProfilePage({ session }) {
                 </div>
               </div>
               
-              {/* User's Posts Feed */}
-              <div className="mb-4 text-lg font-bold text-main border-b border-white/10 pb-2 mt-8">Recent Activity</div>
-              <Feed session={session} userIdFilter={profile.id} />
+              {/* Profile Tabs */}
+              <div className="flex gap-8 border-b border-white/10 mt-8 mb-6">
+                <button 
+                  onClick={() => setActiveTab('posts')} 
+                  className={`flex items-center gap-2 pb-4 font-semibold text-sm transition-colors relative ${activeTab === 'posts' ? 'text-main' : 'text-muted hover:text-main'}`}
+                >
+                  <Grid size={16} />
+                  Posts
+                  {activeTab === 'posts' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-t-full"></div>}
+                </button>
+                <button 
+                  onClick={() => setActiveTab('repos')} 
+                  className={`flex items-center gap-2 pb-4 font-semibold text-sm transition-colors relative ${activeTab === 'repos' ? 'text-main' : 'text-muted hover:text-main'}`}
+                >
+                  <FolderGit2 size={16} />
+                  Repositories
+                  {activeTab === 'repos' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-t-full"></div>}
+                </button>
+              </div>
+              
+              {activeTab === 'posts' ? (
+                <Feed session={session} userIdFilter={profile.id} />
+              ) : (
+                <ProfileRepos userId={profile.id} />
+              )}
               
               <EditProfileModal 
                 isOpen={isEditModalOpen} 

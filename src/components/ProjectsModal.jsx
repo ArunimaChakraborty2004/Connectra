@@ -17,6 +17,7 @@ export default function ProjectsModal({ session, onClose }) {
   const [githubRepos, setGithubRepos] = useState([]);
   const [isFetchingGithub, setIsFetchingGithub] = useState(false);
   const [importingId, setImportingId] = useState(null);
+  const [currentUserProfile, setCurrentUserProfile] = useState(null);
 
   const loadProjects = async () => {
     const { data } = await supabase
@@ -27,8 +28,29 @@ export default function ProjectsModal({ session, onClose }) {
     if (data) setProjects(data);
   };
 
+  const loadUserProfile = async () => {
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', session.user.id)
+      .single();
+    if (data) {
+      setCurrentUserProfile(data);
+      if (data.github_url) {
+        try {
+          const urlParts = new URL(data.github_url).pathname.split('/');
+          const username = urlParts[1];
+          if (username) setGithubUsername(username);
+        } catch(e) {
+          console.error("Invalid github url");
+        }
+      }
+    }
+  };
+
   useEffect(() => {
     loadProjects();
+    loadUserProfile();
   }, []);
 
   const handleAdd = async (e) => {
@@ -204,23 +226,37 @@ export default function ProjectsModal({ session, onClose }) {
                   <button onClick={() => setAddMode('none')} className="text-gray-400 hover:text-main"><X size={16}/></button>
                 </div>
                 
-                <form onSubmit={fetchGithubRepos} className="flex gap-3">
-                  <input 
-                    type="text" 
-                    value={githubUsername} 
-                    onChange={e => setGithubUsername(e.target.value)} 
-                    placeholder="Enter GitHub Username" 
-                    required 
-                    className="flex-1 glass-panel rounded-xl px-4 py-2.5 text-sm text-main focus:border-emerald-500/50 outline-none transition-colors"
-                  />
-                  <button 
-                    type="submit" 
-                    disabled={isFetchingGithub || !githubUsername}
-                    className="px-6 py-2.5 bg-white text-black hover:bg-[#e5e5e5] text-sm font-semibold rounded-xl disabled:opacity-50 transition-colors flex items-center gap-2"
-                  >
-                    {isFetchingGithub ? <Loader2 size={16} className="animate-spin" /> : <DownloadCloud size={16} />}
-                    Fetch Repos
-                  </button>
+                <form onSubmit={fetchGithubRepos} className="flex gap-3 flex-col">
+                  {currentUserProfile?.github_url ? (
+                    <div className="flex gap-3">
+                      <input 
+                        type="text" 
+                        value={githubUsername} 
+                        disabled 
+                        placeholder="GitHub Username" 
+                        className="flex-1 glass-panel rounded-xl px-4 py-2.5 text-sm text-gray-400 bg-black/50 border-white/10 outline-none cursor-not-allowed"
+                      />
+                      <button 
+                        type="submit" 
+                        disabled={isFetchingGithub || !githubUsername}
+                        className="px-6 py-2.5 bg-white text-black hover:bg-[#e5e5e5] text-sm font-semibold rounded-xl disabled:opacity-50 transition-colors flex items-center gap-2"
+                      >
+                        {isFetchingGithub ? <Loader2 size={16} className="animate-spin" /> : <DownloadCloud size={16} />}
+                        Fetch Repos
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm flex flex-col items-start gap-3">
+                      <p>Please link your GitHub profile in your account settings first to import repositories.</p>
+                      <Link 
+                        to={`/profile/${currentUserProfile?.username}`} 
+                        onClick={onClose} 
+                        className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-white rounded-lg text-xs font-semibold transition-colors"
+                      >
+                        Go to Profile
+                      </Link>
+                    </div>
+                  )}
                 </form>
 
                 {githubRepos.length > 0 && (
