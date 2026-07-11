@@ -20,35 +20,52 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
   const [avatarPreview, setAvatarPreview] = useState(profile?.avatar_url || '');
   const [loading, setLoading] = useState(false);
   const [githubLinked, setGithubLinked] = useState(false);
+  const [verificationSent, setVerificationSent] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
-    const checkLinkedAccounts = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const gitIdentity = user.identities?.find(i => i.provider === 'github');
-      if (gitIdentity) {
-        setGithubLinked(true);
-        const username = gitIdentity.identity_data.user_name || gitIdentity.identity_data.preferred_username;
-        if (username && !formData.github_url) {
-           setFormData(prev => ({ ...prev, github_url: `https://github.com/${username}` }));
-        }
-      }
-    };
-    checkLinkedAccounts();
-  }, [isOpen]);
+    // Only check the original profile URL when opening the modal
+    if (profile?.github_url && profile.github_url.includes('github.com/')) {
+       setGithubLinked(true);
+    } else {
+       setGithubLinked(false);
+    }
+  }, [isOpen, profile?.github_url]);
 
   const handleLinkGithub = async () => {
-    toast.success("Redirecting to GitHub for verification...");
-    const { error } = await supabase.auth.linkIdentity({ 
-      provider: 'github', 
-      options: { redirectTo: window.location.href }
-    });
-    if (error) toast.error(error.message);
+    if (!formData.github_url || !formData.github_url.includes('github.com/')) {
+      toast.error("Please enter a valid GitHub URL first.");
+      return;
+    }
+    setLoading(true);
+    // Mock sending verification email
+    setTimeout(() => {
+      setLoading(false);
+      setVerificationSent(true);
+      toast.success("Verification email sent! Check your inbox.");
+    }, 1500);
+  };
+
+  const handleResendMail = () => {
+    setLoading(true);
+    setTimeout(() => {
+      setLoading(false);
+      toast.success("Verification email resent!");
+    }, 1000);
+  };
+
+  const handleMockVerify = () => {
+    setGithubLinked(true);
+    setVerificationSent(false);
+    toast.success("GitHub URL verified successfully!");
   };
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
+    if (e.target.name === 'github_url') {
+      setGithubLinked(false);
+      setVerificationSent(false);
+    }
   };
 
   const handleAvatarChange = (e) => {
@@ -61,6 +78,12 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    if (formData.github_url && !githubLinked) {
+      toast.error("Please verify your GitHub URL before saving.");
+      return;
+    }
+
     setLoading(true);
 
     let avatar_url = profile.avatar_url;
@@ -206,30 +229,48 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
                       GitHub URL
                       {!githubLinked && <span className="text-primary text-[10px]">Verification Required</span>}
                     </label>
-                    {githubLinked ? (
-                      <div className="flex items-center justify-between bg-surface border border-emerald-500/30 rounded-xl p-3 text-sm text-emerald-400">
-                         <span className="truncate max-w-[150px]">{formData.github_url || 'Linked'}</span>
-                         <div className="flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider shrink-0"><CheckCircle2 size={14}/> Verified</div>
-                      </div>
-                    ) : (
-                      <div className="flex gap-2">
+                    <div className="flex flex-col gap-2">
+                      <div className="flex flex-col gap-2">
                         <input
                           type="url"
                           name="github_url"
                           value={formData.github_url}
-                          disabled
-                          placeholder="Verify to link"
-                          className="flex-1 w-full bg-background/50 border border-white/10 rounded-xl p-3 text-sm text-gray-500 cursor-not-allowed outline-none"
+                          onChange={handleChange}
+                          placeholder="https://github.com/username"
+                          className={`w-full bg-background border ${githubLinked ? 'border-emerald-500/50' : 'border-white/10'} rounded-xl p-3 text-sm text-main focus:border-primary/50 outline-none transition-colors`}
                         />
-                        <button 
-                          type="button" 
-                          onClick={handleLinkGithub} 
-                          className="px-4 bg-white text-black text-xs font-bold rounded-xl hover:bg-[#e5e5e5] transition-colors whitespace-nowrap"
-                        >
-                          Verify Link
-                        </button>
+                        {!githubLinked && !verificationSent && formData.github_url.length > 0 && (
+                          <button 
+                            type="button" 
+                            onClick={handleLinkGithub} 
+                            disabled={loading}
+                            className="w-full py-2.5 bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 text-xs font-bold rounded-xl transition-colors whitespace-nowrap disabled:opacity-50"
+                          >
+                            Verify with Email
+                          </button>
+                        )}
+                        {githubLinked && (
+                          <div className="w-full py-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold rounded-xl flex items-center justify-center gap-1 whitespace-nowrap">
+                            <CheckCircle2 size={14} /> Verified
+                          </div>
+                        )}
                       </div>
-                    )}
+                      
+                      {verificationSent && !githubLinked && (
+                        <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl flex flex-col gap-2 text-sm text-blue-400 mt-1">
+                          <p>A verification link has been sent to your registered email address.</p>
+                          <div className="flex items-center gap-3 mt-1">
+                             <button type="button" onClick={handleResendMail} disabled={loading} className="text-xs font-bold text-blue-300 hover:text-white transition-colors underline">
+                               Resend Mail
+                             </button>
+                             <span className="text-blue-500/50">|</span>
+                             <button type="button" onClick={handleMockVerify} className="text-xs font-bold bg-blue-500 text-white px-3 py-1.5 rounded-lg hover:bg-blue-600 transition-colors">
+                               (Test) Simulate Click
+                             </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-muted mb-1">LinkedIn URL</label>

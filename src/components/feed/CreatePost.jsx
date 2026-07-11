@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Code2, Image as ImageIcon, Send, X } from 'lucide-react';
+import { Code2, Image as ImageIcon, Send, X, BarChart2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from '../../lib/toast';
 
@@ -12,9 +12,16 @@ export default function CreatePost({ session, onPostCreated }) {
   const [showExtras, setShowExtras] = useState(false);
   const [loading, setLoading] = useState(false);
   const [imageFile, setImageFile] = useState(null);
+  const [showPoll, setShowPoll] = useState(false);
+  const [pollQuestion, setPollQuestion] = useState('');
+  const [pollOptions, setPollOptions] = useState(['', '']);
 
   const handlePost = async () => {
-    if (!content.trim() && !imageUrl.trim() && !codeSnippet.trim() && !imageFile) return;
+    if (!content.trim() && !imageUrl.trim() && !codeSnippet.trim() && !imageFile && !showPoll) return;
+    if (showPoll && (!pollQuestion.trim() || pollOptions.filter(o => o.trim()).length < 2)) {
+      toast.error('Please add a poll question and at least 2 options.');
+      return;
+    }
     setLoading(true);
     
     let finalImageUrl = imageUrl;
@@ -39,13 +46,19 @@ export default function CreatePost({ session, onPostCreated }) {
         return;
       }
     }
+
+    const pollPayload = showPoll ? {
+      question: pollQuestion,
+      options: pollOptions.filter(o => o.trim()).map(text => ({ text, votes: [] }))
+    } : null;
     
     const { error } = await supabase.from('posts').insert({
       user_id: session.user.id,
       content,
       image_url: finalImageUrl || null,
       code_snippet: codeSnippet || null,
-      code_language: codeLang || null
+      code_language: codeLang || null,
+      poll_data: pollPayload
     });
     
     setLoading(false);
@@ -59,6 +72,9 @@ export default function CreatePost({ session, onPostCreated }) {
       setCodeSnippet('');
       setCodeLang('');
       setShowExtras(false);
+      setShowPoll(false);
+      setPollQuestion('');
+      setPollOptions(['', '']);
       toast.success('Post created!');
       if (onPostCreated) onPostCreated();
     }
@@ -136,15 +152,68 @@ export default function CreatePost({ session, onPostCreated }) {
           <button onClick={() => setShowExtras(true)} className="p-2 text-[#666] hover:text-main rounded-lg transition-colors" title="Add Code">
             <Code2 size={18} />
           </button>
+          <button
+            onClick={() => { setShowPoll(p => !p); setShowExtras(false); }}
+            className={`p-2 rounded-lg transition-colors ${showPoll ? 'text-primary bg-primary/10' : 'text-[#666] hover:text-main'}`}
+            title="Create Poll"
+          >
+            <BarChart2 size={18} />
+          </button>
         </div>
         <button 
           onClick={handlePost} 
-          disabled={loading || (!content && !imageUrl && !codeSnippet && !imageFile)}
+          disabled={loading || (!content && !imageUrl && !codeSnippet && !imageFile && !showPoll)}
           className="px-5 py-1.5 bg-primary text-main font-semibold rounded-lg disabled:opacity-50 transition-colors flex items-center gap-2 text-sm hover:bg-primary/90"
         >
           {loading ? 'Posting...' : 'Post'} <Send size={14} />
         </button>
       </div>
+
+      {/* Poll Builder */}
+      <AnimatePresence>
+        {showPoll && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="px-4 py-3 bg-primary/5 border-t border-primary/20 flex flex-col gap-3">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-primary uppercase tracking-wider flex items-center gap-1.5"><BarChart2 size={12}/> Poll</span>
+                <button onClick={() => setShowPoll(false)} className="text-muted hover:text-main"><X size={14}/></button>
+              </div>
+              <input
+                value={pollQuestion}
+                onChange={e => setPollQuestion(e.target.value)}
+                placeholder="Ask a question..."
+                className="w-full bg-background border border-white/10 rounded-xl px-3 py-2 text-sm text-main outline-none focus:border-primary/50"
+              />
+              {pollOptions.map((opt, i) => (
+                <div key={i} className="flex gap-2">
+                  <input
+                    value={opt}
+                    onChange={e => setPollOptions(prev => prev.map((o, j) => j === i ? e.target.value : o))}
+                    placeholder={`Option ${i + 1}`}
+                    className="flex-1 bg-background border border-white/10 rounded-xl px-3 py-2 text-sm text-main outline-none focus:border-primary/50"
+                  />
+                  {pollOptions.length > 2 && (
+                    <button onClick={() => setPollOptions(prev => prev.filter((_, j) => j !== i))} className="text-muted hover:text-red-400"><X size={14}/></button>
+                  )}
+                </div>
+              ))}
+              {pollOptions.length < 4 && (
+                <button
+                  onClick={() => setPollOptions(prev => [...prev, ''])}
+                  className="text-xs text-primary hover:underline text-left"
+                >
+                  + Add option
+                </button>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.section>
   );
 }

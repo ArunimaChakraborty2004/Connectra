@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { supabase } from './lib/supabase';
 import Auth from './components/Auth';
 import Dashboard from './components/Dashboard';
@@ -11,17 +11,63 @@ import PortfolioPage from './pages/PortfolioPage';
 import CommunitiesPage from './pages/CommunitiesPage';
 import EventsPage from './pages/EventsPage';
 import ReelsPage from './pages/ReelsPage';
+import ChatPage from './pages/ChatPage';
+import CollabBoardPage from './pages/CollabBoardPage';
 import ToastContainer from './components/ui/Toast';
 import Loader from './components/ui/Loader';
 import NotificationsPanel from './components/NotificationsPanel';
 import Navbar from './components/Navbar';
 import ProjectsModal from './components/ProjectsModal';
 
+function AppInner({ session }) {
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [showProjects, setShowProjects] = useState(false);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const handleToggleNotifs = () => setShowNotifications(prev => !prev);
+    const handleToggleProjects = () => setShowProjects(prev => !prev);
+    const handleStartChat = () => navigate('/chat');
+
+    document.addEventListener('toggleNotifications', handleToggleNotifs);
+    document.addEventListener('toggleProjects', handleToggleProjects);
+    document.addEventListener('startChat', handleStartChat);
+
+    return () => {
+      document.removeEventListener('toggleNotifications', handleToggleNotifs);
+      document.removeEventListener('toggleProjects', handleToggleProjects);
+      document.removeEventListener('startChat', handleStartChat);
+    };
+  }, [navigate]);
+
+  return (
+    <>
+      <Navbar />
+      <NotificationsPanel session={session} isOpen={showNotifications} onClose={() => setShowNotifications(false)} />
+      <Routes>
+        <Route path="/" element={<Dashboard session={session} />} />
+        <Route path="/search" element={<SearchPage session={session} />} />
+        <Route path="/profile/:username" element={<ProfilePage session={session} />} />
+        <Route path="/profile/:username/coding" element={<CodingProfilePage session={session} />} />
+        <Route path="/profile/:username/portfolio" element={<PortfolioPage session={session} />} />
+        <Route path="/projects/:id" element={<ProjectDetails session={session} />} />
+        <Route path="/communities" element={<CommunitiesPage session={session} />} />
+        <Route path="/events" element={<EventsPage session={session} />} />
+        <Route path="/reels" element={<ReelsPage session={session} />} />
+        <Route path="/chat" element={<ChatPage session={session} />} />
+        <Route path="/collab" element={<CollabBoardPage session={session} />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+      {showProjects && (
+        <ProjectsModal session={session} onClose={() => setShowProjects(false)} />
+      )}
+    </>
+  );
+}
+
 function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [showProjects, setShowProjects] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -29,26 +75,11 @@ function App() {
       setLoading(false);
     });
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
 
     return () => subscription.unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    const handleToggleNotifs = () => setShowNotifications(prev => !prev);
-    const handleToggleProjects = () => setShowProjects(prev => !prev);
-    
-    document.addEventListener('toggleNotifications', handleToggleNotifs);
-    document.addEventListener('toggleProjects', handleToggleProjects);
-    
-    return () => {
-      document.removeEventListener('toggleNotifications', handleToggleNotifs);
-      document.removeEventListener('toggleProjects', handleToggleProjects);
-    };
   }, []);
 
   if (loading) {
@@ -63,25 +94,7 @@ function App() {
       {!session ? (
         <Auth />
       ) : (
-        <>
-          <Navbar />
-          <NotificationsPanel session={session} isOpen={showNotifications} onClose={() => setShowNotifications(false)} />
-          <Routes>
-            <Route path="/" element={<Dashboard session={session} />} />
-            <Route path="/search" element={<SearchPage session={session} />} />
-            <Route path="/profile/:username" element={<ProfilePage session={session} />} />
-            <Route path="/profile/:username/coding" element={<CodingProfilePage session={session} />} />
-            <Route path="/profile/:username/portfolio" element={<PortfolioPage session={session} />} />
-            <Route path="/projects/:id" element={<ProjectDetails session={session} />} />
-            <Route path="/communities" element={<CommunitiesPage session={session} />} />
-            <Route path="/events" element={<EventsPage session={session} />} />
-            <Route path="/reels" element={<ReelsPage session={session} />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-          {showProjects && (
-            <ProjectsModal session={session} onClose={() => setShowProjects(false)} />
-          )}
-        </>
+        <AppInner session={session} />
       )}
     </>
   );

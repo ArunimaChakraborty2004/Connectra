@@ -11,6 +11,10 @@ export default function PostCard({ post, session, onUpdate }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(post.content);
   const [isBookmarked, setIsBookmarked] = useState(false);
+  const [pollData, setPollData] = useState(post.poll_data || null);
+  const [hasVoted, setHasVoted] = useState(
+    post.poll_data?.options?.some(o => o.votes?.includes(session.user.id)) || false
+  );
 
   const isOwner = session.user.id === post.user_id;
   const isEdited = post.updated_at && post.updated_at !== post.created_at;
@@ -91,6 +95,18 @@ export default function PostCard({ post, session, onUpdate }) {
     }
   };
 
+  const handleVote = async (optionIndex) => {
+    if (hasVoted || !pollData) return;
+    const updated = { ...pollData };
+    updated.options = pollData.options.map((opt, i) => ({
+      ...opt,
+      votes: i === optionIndex ? [...(opt.votes || []), session.user.id] : (opt.votes || [])
+    }));
+    setPollData(updated);
+    setHasVoted(true);
+    await supabase.from('posts').update({ poll_data: updated }).eq('id', post.id);
+  };
+
   const renderContentWithHashtags = (text) => {
     if (!text) return null;
     const parts = text.split(/(#\w+)/g);
@@ -154,6 +170,44 @@ export default function PostCard({ post, session, onUpdate }) {
           renderContentWithHashtags(post.content)
         )}
       </div>
+
+      {/* Poll */}
+      {pollData && (
+        <div className="px-5 pb-4">
+          <div className="bg-background/50 border border-white/10 rounded-xl p-4 flex flex-col gap-3">
+            <p className="text-sm font-bold text-main">{pollData.question}</p>
+            {pollData.options.map((opt, i) => {
+              const totalVotes = pollData.options.reduce((s, o) => s + (o.votes?.length || 0), 0);
+              const pct = totalVotes > 0 ? Math.round(((opt.votes?.length || 0) / totalVotes) * 100) : 0;
+              const voted = opt.votes?.includes(session.user.id);
+              return (
+                <button
+                  key={i}
+                  onClick={() => handleVote(i)}
+                  disabled={hasVoted}
+                  className={`w-full text-left rounded-lg overflow-hidden border transition-colors ${
+                    voted ? 'border-primary/60' : 'border-white/10 hover:border-primary/40'
+                  } relative`}
+                >
+                  {hasVoted && (
+                    <div
+                      className={`absolute inset-y-0 left-0 ${voted ? 'bg-primary/25' : 'bg-white/5'} rounded-lg transition-all`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  )}
+                  <div className="relative flex items-center justify-between px-3 py-2">
+                    <span className="text-sm text-main">{opt.text}</span>
+                    {hasVoted && <span className="text-xs font-bold text-muted">{pct}%</span>}
+                  </div>
+                </button>
+              );
+            })}
+            <p className="text-[11px] text-muted">
+              {pollData.options.reduce((s, o) => s + (o.votes?.length || 0), 0)} vote{pollData.options.reduce((s, o) => s + (o.votes?.length || 0), 0) !== 1 ? 's' : ''}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Media Attachments */}
       {post.image_url && (

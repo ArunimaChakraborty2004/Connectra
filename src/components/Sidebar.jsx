@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { Users, User, FolderGit2, Search, Bell, Trophy, MapPin, Calendar, Link as LinkIcon, Code, Flame, Moon, Sun } from 'lucide-react';
+import { Users, User, FolderGit2, Search, Bell, Trophy, MapPin, Calendar, Link as LinkIcon, Code, Flame, Moon, Sun, MessageSquare, Briefcase } from 'lucide-react';
 import { useTheme } from '../lib/ThemeContext';
 
 export default function Sidebar({ profile, stats }) {
@@ -197,6 +197,34 @@ export default function Sidebar({ profile, stats }) {
           </div>
         </button>
 
+        <Link to="/chat" className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-surface-hover transition-colors group border border-transparent hover:border-white/5">
+          <div className="flex items-center gap-3">
+            <div className="text-muted group-hover:text-primary transition-colors">
+              <MessageSquare size={18} />
+            </div>
+            <div className="text-left">
+              <span className="block font-medium text-main text-sm">Messages</span>
+              <span className="block text-[11px] text-muted">Direct messages</span>
+            </div>
+          </div>
+          <div className="text-muted group-hover:text-primary transition-colors transform group-hover:translate-x-1 duration-300">
+            &rarr;
+          </div>
+        </Link>
+        <Link to="/collab" className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-surface-hover transition-colors group border border-transparent hover:border-white/5">
+          <div className="flex items-center gap-3">
+            <div className="text-muted group-hover:text-primary transition-colors">
+              <Briefcase size={18} />
+            </div>
+            <div className="text-left">
+              <span className="block font-medium text-main text-sm">Collab Board</span>
+              <span className="block text-[11px] text-muted">Find project partners</span>
+            </div>
+          </div>
+          <div className="text-muted group-hover:text-primary transition-colors transform group-hover:translate-x-1 duration-300">
+            &rarr;
+          </div>
+        </Link>
         <button onClick={() => document.dispatchEvent(new CustomEvent('toggleNotifications'))} className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-surface-hover transition-colors group border border-transparent hover:border-white/5">
           <div className="flex items-center gap-3">
             <div className="text-muted group-hover:text-primary transition-colors">

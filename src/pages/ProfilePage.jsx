@@ -5,9 +5,11 @@ import Sidebar from '../components/Sidebar';
 import Loader from '../components/ui/Loader';
 import EmptyState from '../components/ui/EmptyState';
 import { toast } from '../lib/toast';
-import { Settings, MapPin, Link as LinkIcon, Code2, Briefcase, Grid, FileText, FolderGit2, GitBranch, ExternalLink } from 'lucide-react';
+import { Settings, MapPin, Link as LinkIcon, Code2, Briefcase, Grid, FileText, FolderGit2, GitBranch, ExternalLink, MessageCircle, Trophy } from 'lucide-react';
 import Feed from '../components/Feed';
 import EditProfileModal from '../components/profile/EditProfileModal';
+import BadgesPanel from '../components/profile/BadgesPanel';
+import AIReviewPanel from '../components/profile/AIReviewPanel';
 
 function ProfileRepos({ userId }) {
   const [projects, setProjects] = useState([]);
@@ -72,7 +74,9 @@ export default function ProfilePage({ session }) {
   const [currentUserProfile, setCurrentUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('posts'); // 'posts' or 'repos'
+  const [activeTab, setActiveTab] = useState('posts');
+  const [repoCount, setRepoCount] = useState(0);
+  const [postCount, setPostCount] = useState(0); // 'posts' or 'repos'
 
   useEffect(() => {
     const loadData = async () => {
@@ -93,6 +97,12 @@ export default function ProfilePage({ session }) {
         setProfile(null);
       } else {
         setProfile(targetProfile);
+        // Load repo count for badges
+        const { count } = await supabase.from('projects').select('*', { count: 'exact', head: true }).eq('user_id', targetProfile.id);
+        setRepoCount(count || 0);
+        // Load post count for badges
+        const { count: pCount } = await supabase.from('posts').select('*', { count: 'exact', head: true }).eq('user_id', targetProfile.id);
+        setPostCount(pCount || 0);
       }
       setLoading(false);
     };
@@ -130,9 +140,18 @@ export default function ProfilePage({ session }) {
                         <Settings size={16} /> Edit Profile
                       </button>
                     ) : (
-                      <button className="px-5 py-2 bg-white text-black hover:bg-gray-200 rounded-lg text-sm font-bold transition-colors">
-                        Connect
-                      </button>
+                      <div className="flex gap-2">
+                        <button className="px-5 py-2 bg-white text-black hover:bg-gray-200 rounded-lg text-sm font-bold transition-colors">
+                          Connect
+                        </button>
+                        <button
+                          onClick={() => document.dispatchEvent(new CustomEvent('startChat', { detail: { userId: profile.id, username: profile.username } }))}
+                          className="p-2 bg-surface-hover hover:bg-white/10 rounded-lg transition-colors border border-white/10"
+                          title="Send Message"
+                        >
+                          <MessageCircle size={18} className="text-primary" />
+                        </button>
+                      </div>
                     )}
                   </div>
                   
@@ -207,12 +226,27 @@ export default function ProfilePage({ session }) {
                   Repositories
                   {activeTab === 'repos' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-t-full"></div>}
                 </button>
+                <button 
+                  onClick={() => setActiveTab('badges')} 
+                  className={`flex items-center gap-2 pb-4 font-semibold text-sm transition-colors relative ${activeTab === 'badges' ? 'text-main' : 'text-muted hover:text-main'}`}
+                >
+                  <Trophy size={16} />
+                  Badges
+                  {activeTab === 'badges' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-t-full"></div>}
+                </button>
               </div>
               
               {activeTab === 'posts' ? (
                 <Feed session={session} userIdFilter={profile.id} />
-              ) : (
+              ) : activeTab === 'repos' ? (
                 <ProfileRepos userId={profile.id} />
+              ) : (
+                <div className="flex flex-col gap-4">
+                  <BadgesPanel stats={{ postCount, repoCount, totalLikes: 0, connections: 0, streak: 1, githubUrl: profile.github_url }} />
+                  {session.user.id === profile.id && (
+                    <AIReviewPanel profile={profile} repoCount={repoCount} />
+                  )}
+                </div>
               )}
               
               <EditProfileModal 
