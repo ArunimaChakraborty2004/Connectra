@@ -1,15 +1,25 @@
-import { LogOut, Hexagon, Moon, Sun, ArrowLeft } from 'lucide-react';
+import { LogOut, Hexagon, Moon, Sun, ArrowLeft, Search } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../lib/ThemeContext';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 
 export default function Navbar() {
   const { theme, toggleTheme } = useTheme();
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchQuery, setSearchQuery] = useState('');
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+  };
+
+  const handleSearch = (e) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
+      setSearchQuery('');
+    }
   };
 
   const isHome = location.pathname === '/';
@@ -28,9 +38,23 @@ export default function Navbar() {
               <Hexagon size={18} fill="currentColor" strokeWidth={1.5} />
             </div>
             <h1 className="text-lg font-bold tracking-tight text-main hidden sm:block">
-              DevConnect
+              Connectra
             </h1>
           </Link>
+        </div>
+
+        {/* Global Search */}
+        <div className="hidden md:flex flex-1 max-w-md mx-6">
+          <form onSubmit={handleSearch} className="w-full relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" size={16} />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search Connectra..."
+              className="w-full bg-surface-hover/50 border border-white/5 rounded-full pl-10 pr-4 py-1.5 text-sm text-main focus:outline-none focus:border-primary/50 focus:bg-surface-hover transition-colors"
+            />
+          </form>
         </div>
         
         <div className="flex items-center gap-2">

@@ -2,57 +2,26 @@ import { useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, X, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
-
-const CANNED_REVIEWS = [
-  (profile, repos) => `
-🌟 **Profile Snapshot**
-
-Your profile shows the hallmarks of a dedicated developer. With **${repos} repositories** on GitHub and a tech stack including **${profile.tech_stack || 'various technologies'}**, you clearly have a passion for building.
-
-💡 **Strengths**
-- Strong code output: your repository count indicates consistent development activity.
-- Diverse tech exposure based on your listed skills.
-
-📈 **Growth Areas**
-- Add a detailed bio to attract collaborators and recruiters.
-- Consider pinning your best 3-4 repos to showcase your strongest work.
-- Engage more on the feed — posts and comments boost your visibility significantly.
-
-🚀 **Verdict**: You're on a solid path! Keep shipping and engaging with the community.`,
-  (profile, repos) => `
-🔍 **AI Developer Analysis**
-
-Hey **${profile.username}**! Here's a quick breakdown of your developer profile:
-
-🏗️ **Builder Score**: ${Math.min(95, 60 + (repos || 0) * 5)}/100
-
-Your combination of **${profile.tech_stack || 'a varied tech stack'}** puts you in a strong position for full-stack or specialized roles.
-
-✅ **What's Working**
-- GitHub integration signals transparency and open-source engagement.
-- Your bio effectively communicates your interests.
-
-⚠️ **Action Items**
-- Participate in the Collab Board — great for networking!
-- Share more code snippets in posts to showcase expertise.
-- Reach Level 5 by being more active to unlock advanced features.
-
-💼 **Career Fit**: You align well with roles such as Full-Stack Developer, Software Engineer, or Open Source Contributor.`,
-];
+import { generateProfileReview } from '../../lib/gemini';
 
 export default function AIReviewPanel({ profile, repoCount }) {
   const [review, setReview] = useState(null);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
-  const generateReview = () => {
+  const generateReview = async () => {
     setLoading(true);
-    setTimeout(() => {
-      const template = CANNED_REVIEWS[Math.floor(Math.random() * CANNED_REVIEWS.length)];
-      setReview(template(profile, repoCount || 0));
-      setLoading(false);
+    try {
+      const result = await generateProfileReview(profile, repoCount || 0);
+      setReview(result);
       setExpanded(true);
-    }, 2500);
+    } catch (error) {
+      console.error(error);
+      setReview(`⚠️ **Error**\n\nFailed to generate AI review. Please ensure VITE_GEMINI_API_KEY is set in your .env file.`);
+      setExpanded(true);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const formatReview = (text) => {
