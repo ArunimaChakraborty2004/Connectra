@@ -18,6 +18,7 @@ import Loader from './components/ui/Loader';
 import NotificationsPanel from './components/NotificationsPanel';
 import Navbar from './components/Navbar';
 import ProjectsModal from './components/ProjectsModal';
+import SettingsPage from './pages/SettingsPage';
 
 function AppInner({ session }) {
   const [showNotifications, setShowNotifications] = useState(false);
@@ -56,6 +57,7 @@ function AppInner({ session }) {
         <Route path="/reels" element={<ReelsPage session={session} />} />
         <Route path="/chat" element={<ChatPage session={session} />} />
         <Route path="/collab" element={<CollabBoardPage session={session} />} />
+        <Route path="/settings" element={<SettingsPage session={session} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       {showProjects && (

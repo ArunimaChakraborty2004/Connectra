@@ -40,7 +40,7 @@ export default function Auth() {
       if (error) setStatus({ type: 'error', msg: error.message });
     } else {
       if (!username.trim()) {
-        setStatus({ type: 'error', msg: 'Username is required for DevConnect' });
+        setStatus({ type: 'error', msg: 'Username is required for Connectra' });
         setLoading(false);
         return;
       }
@@ -98,7 +98,7 @@ export default function Auth() {
               <Hexagon size={32} fill="currentColor" strokeWidth={1.5} />
             </motion.div>
             <h1 className="text-3xl font-extrabold tracking-tight text-main mb-2">
-              DevConnect
+              Connectra
             </h1>
             <p className="text-muted text-sm font-medium">The network for developers.</p>
           </div>
@@ -217,7 +217,7 @@ export default function Auth() {
               {loading ? (
                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
               ) : (
-                <span>{isResetPassword ? 'Send Reset Link' : isLogin ? 'Enter DevConnect' : 'Join the Network'}</span>
+                <span>{isResetPassword ? 'Send Reset Link' : isLogin ? 'Enter Connectra' : 'Join the Network'}</span>
               )}
             </button>
 

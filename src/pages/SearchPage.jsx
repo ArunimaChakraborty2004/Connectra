@@ -5,13 +5,30 @@ import { Search, UserPlus, UserCheck, Clock } from 'lucide-react';
 import Loader from '../components/ui/Loader';
 import EmptyState from '../components/ui/EmptyState';
 import { toast } from '../lib/toast';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 export default function SearchPage({ session }) {
-  const [query, setQuery] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlQuery = searchParams.get('q') || '';
+  const [query, setQuery] = useState(urlQuery);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [profile, setProfile] = useState(null);
+
+  // Sync local state when URL parameter changes
+  useEffect(() => {
+    setQuery(urlQuery);
+  }, [urlQuery]);
+
+  const handleQueryChange = (e) => {
+    const val = e.target.value;
+    setQuery(val);
+    if (val.trim()) {
+      setSearchParams({ q: val });
+    } else {
+      setSearchParams({});
+    }
+  };
 
   useEffect(() => {
     // Load current user profile for Sidebar
@@ -100,7 +117,7 @@ export default function SearchPage({ session }) {
               <input
                 type="text"
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={handleQueryChange}
                 placeholder="Search developers by username..."
                 className="w-full glass-panel rounded-xl pl-12 pr-4 py-3 text-main focus:border-primary/50 outline-none transition-colors"
               />
