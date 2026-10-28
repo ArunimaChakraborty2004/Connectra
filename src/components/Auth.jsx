@@ -36,19 +36,45 @@ export default function Auth() {
     }
 
     if (isLogin) {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) setStatus({ type: 'error', msg: error.message });
+      const { data: signInData, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        setStatus({ type: 'error', msg: error.message });
+      } else if (signInData.user) {
+        // Ensure profile has username populated from metadata if empty
+        const metaUsername = signInData.user.user_metadata?.username || signInData.user.user_metadata?.full_name || email.split('@')[0];
+        if (metaUsername) {
+          const { data: existingProfile } = await supabase.from('profiles').select('username').eq('id', signInData.user.id).maybeSingle();
+          if (!existingProfile?.username) {
+            await supabase.from('profiles').upsert({ id: signInData.user.id, username: metaUsername });
+          }
+        }
+      }
     } else {
       if (!username.trim()) {
         setStatus({ type: 'error', msg: 'Username is required for Connectra' });
         setLoading(false);
         return;
       }
-      const { data, error } = await supabase.auth.signUp({ email, password });
+      const cleanUsername = username.trim();
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            username: cleanUsername,
+            full_name: cleanUsername,
+          }
+        }
+      });
       if (error) {
         setStatus({ type: 'error', msg: error.message });
       } else if (data.user) {
-        await supabase.from("profiles").upsert({ id: data.user.id, username: username.trim() });
+        // Try upserting directly into profiles table as well
+        await supabase.from("profiles").upsert({
+          id: data.user.id,
+          username: cleanUsername,
+          full_name: cleanUsername,
+        });
         setStatus({ type: 'success', msg: 'Welcome aboard! Please check your email to verify.' });
       }
     }

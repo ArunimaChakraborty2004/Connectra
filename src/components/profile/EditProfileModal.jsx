@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Upload, CheckCircle2, AlertCircle } from 'lucide-react';
+import { X, Upload, CheckCircle2, AlertCircle, Sparkles, Wand2, Shield, Rocket, Briefcase, RefreshCw } from 'lucide-react';
 import { toast } from '../../lib/toast';
+import { generateBioOptions } from '../../lib/ai';
 
 export default function EditProfileModal({ isOpen, onClose, profile, onUpdate }) {
   const [formData, setFormData] = useState({
@@ -21,6 +22,29 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
   const [loading, setLoading] = useState(false);
   const [githubLinked, setGithubLinked] = useState(false);
   const [verificationSent, setVerificationSent] = useState(false);
+
+  // AI Bio Generation State
+  const [aiBioLoading, setAiBioLoading] = useState(false);
+  const [aiBioSuggestions, setAiBioSuggestions] = useState(null);
+  const [showAiBioPanel, setShowAiBioPanel] = useState(false);
+
+  const handleGenerateAiBios = async () => {
+    setAiBioLoading(true);
+    setShowAiBioPanel(true);
+    try {
+      const suggestions = await generateBioOptions({
+        username: profile?.username,
+        techStack: formData.tech_stack,
+        location: formData.location,
+        currentBio: formData.bio,
+      });
+      setAiBioSuggestions(suggestions);
+    } catch (err) {
+      toast.error('Failed to generate AI bios');
+    } finally {
+      setAiBioLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -89,33 +113,95 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
     let avatar_url = profile.avatar_url;
 
     if (avatarFile) {
-      const fileExt = avatarFile.name.split('.').pop();
-      const fileName = `${profile.id}-${Math.random()}.${fileExt}`;
-      const filePath = `avatars/${fileName}`;
+      // 1. Try uploading to Supabase Storage bucket 'avatars'
+      try {
+        const fileExt = avatarFile.name.split('.').pop();
+        const fileName = `${profile.id}-${Date.now()}.${fileExt}`;
+        const filePath = `avatars/${fileName}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(filePath, avatarFile);
-
-      if (uploadError) {
-        toast.error('Error uploading avatar');
-      } else {
-        const { data: publicUrlData } = supabase.storage
+        const { error: uploadError } = await supabase.storage
           .from('avatars')
-          .getPublicUrl(filePath);
-        avatar_url = publicUrlData.publicUrl;
+          .upload(filePath, avatarFile, { upsert: true });
+
+        if (!uploadError) {
+          const { data: publicUrlData } = supabase.storage
+            .from('avatars')
+            .getPublicUrl(filePath);
+          avatar_url = publicUrlData.publicUrl;
+        } else {
+          // If storage bucket doesn't exist or errors, convert to compressed base64 Data URL
+          console.warn('Storage bucket upload failed, using Data URL fallback:', uploadError.message);
+          avatar_url = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              const img = new Image();
+              img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const MAX_DIM = 256;
+                let width = img.width;
+                let height = img.height;
+                if (width > height) {
+                  if (width > MAX_DIM) {
+                    height *= MAX_DIM / width;
+                    width = MAX_DIM;
+                  }
+                } else {
+                  if (height > MAX_DIM) {
+                    width *= MAX_DIM / height;
+                    height = MAX_DIM;
+                  }
+                }
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                resolve(canvas.toDataURL('image/jpeg', 0.85));
+              };
+              img.src = e.target.result;
+            };
+            reader.readAsDataURL(avatarFile);
+          });
+        }
+      } catch (err) {
+        console.warn('Avatar process fallback:', err);
       }
     }
 
-    const { data, error } = await supabase
+    // Base payload with columns guaranteed to exist in the database
+    const updatePayload = {
+      bio: formData.bio,
+      tech_stack: formData.tech_stack,
+      website_url: formData.website_url,
+      linkedin_url: formData.linkedin_url,
+      github_url: formData.github_url,
+      avatar_url,
+    };
+
+    // If extra columns (location, leetcode_url, twitter_url) exist in Supabase, include them; otherwise fallback safely
+    let { data, error } = await supabase
       .from('profiles')
       .update({
-        ...formData,
-        avatar_url,
+        ...updatePayload,
+        ...(formData.location ? { location: formData.location } : {}),
+        ...(formData.twitter_url ? { twitter_url: formData.twitter_url } : {}),
+        ...(formData.leetcode_url ? { leetcode_url: formData.leetcode_url } : {}),
       })
       .eq('id', profile.id)
       .select()
       .single();
+
+    // If schema error occurred due to missing optional columns (e.g. leetcode_url or location column missing in Postgres)
+    if (error && (error.message?.includes('leetcode_url') || error.message?.includes('location') || error.message?.includes('twitter_url') || error.code === 'PGRST204')) {
+      console.warn('Optional columns missing in schema, retrying with core columns:', error.message);
+      const retryResult = await supabase
+        .from('profiles')
+        .update(updatePayload)
+        .eq('id', profile.id)
+        .select()
+        .single();
+      data = retryResult.data;
+      error = retryResult.error;
+    }
 
     if (error) {
       toast.error(error.message);
@@ -136,12 +222,12 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
-          className="bg-surface border border-white/10 w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+          className="bg-surface border border-border w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
         >
-          <div className="flex justify-between items-center p-6 border-b border-white/10">
+          <div className="flex justify-between items-center p-6 border-b border-border">
             <h2 className="text-xl font-bold text-main">Edit Profile</h2>
-            <button onClick={onClose} className="text-muted hover:text-main transition-colors">
-              <X size={24} />
+            <button onClick={onClose} className="text-muted hover:text-main transition-colors cursor-pointer">
+              <X size={22} />
             </button>
           </div>
 
@@ -173,7 +259,89 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
               {/* Bio & Details */}
               <div className="flex flex-col gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-main mb-1">Bio</label>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="block text-sm font-semibold text-main">Bio</label>
+                    <button
+                      type="button"
+                      onClick={handleGenerateAiBios}
+                      disabled={aiBioLoading}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      {aiBioLoading ? (
+                        <RefreshCw size={12} className="animate-spin" />
+                      ) : (
+                        <Sparkles size={12} />
+                      )}
+                      <span>{aiBioLoading ? 'Generating...' : '✨ AI Bio Crafter (Groq)'}</span>
+                    </button>
+                  </div>
+
+                  <AnimatePresence>
+                    {showAiBioPanel && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="mb-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 flex flex-col gap-3"
+                      >
+                        <div className="flex items-center justify-between pb-1 border-b border-slate-200/60 dark:border-slate-800/60">
+                          <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                            <Wand2 size={13} className="text-indigo-500" /> AI Suggested Bios
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setShowAiBioPanel(false)}
+                            className="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
+                          >
+                            Close
+                          </button>
+                        </div>
+
+                        {aiBioLoading ? (
+                          <div className="flex flex-col gap-2 py-3">
+                            <div className="flex items-center gap-2 text-xs text-indigo-600 dark:text-indigo-400 font-medium">
+                              <RefreshCw size={12} className="animate-spin" />
+                              Llama 3 is crafting tailored bios based on your tech stack...
+                            </div>
+                            <div className="h-3 bg-slate-200 dark:bg-slate-800 rounded animate-pulse w-5/6"></div>
+                            <div className="h-3 bg-slate-200 dark:bg-slate-800 rounded animate-pulse w-3/5"></div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-2.5">
+                            {aiBioSuggestions?.map((item, idx) => (
+                              <div
+                                key={idx}
+                                className="p-3 rounded-lg bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-600 transition-colors flex flex-col gap-2 text-left shadow-sm"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                                    {idx === 0 && <Briefcase size={12} className="text-indigo-500" />}
+                                    {idx === 1 && <Rocket size={12} className="text-indigo-500" />}
+                                    {idx === 2 && <Shield size={12} className="text-indigo-500" />}
+                                    {item.style}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setFormData(prev => ({ ...prev, bio: item.bio }));
+                                      toast.success(`Applied ${item.style} bio!`);
+                                    }}
+                                    className="px-2.5 py-1 rounded text-[11px] font-bold bg-indigo-600 text-white hover:bg-indigo-700 transition-all cursor-pointer"
+                                  >
+                                    Use this
+                                  </button>
+                                </div>
+                                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed select-text">
+                                  {item.bio}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
                   <textarea
                     name="bio"
                     value={formData.bio}
@@ -299,18 +467,18 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
             </form>
           </div>
 
-          <div className="p-6 border-t border-white/10 flex justify-end gap-3 bg-surface shrink-0">
+          <div className="p-5 border-t border-border flex justify-end gap-3 bg-surface shrink-0">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-lg text-sm font-semibold text-main hover:bg-white/5 transition-colors"
+              className="px-4 py-2 rounded-xl text-xs font-semibold text-muted hover:text-main hover:bg-surface-hover transition-colors cursor-pointer"
             >
               Cancel
             </button>
             <button
               onClick={handleSubmit}
               disabled={loading}
-              className="px-6 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 flex items-center gap-2"
+              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50 flex items-center gap-2 shadow-sm cursor-pointer"
             >
               {loading ? (
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />

@@ -15,7 +15,7 @@ export default function Feed({ session, userIdFilter = null }) {
     let query = supabase
       .from('posts')
       .select(`
-        id, user_id, content, image_url, code_snippet, code_language, created_at, updated_at,
+        id, user_id, content, image_url, code_snippet, code_language, created_at, updated_at, poll_data,
         profiles(username, avatar_url), likes(count),
         comments(id, user_id, content, created_at, profiles(username, avatar_url))
       `)
@@ -25,7 +25,8 @@ export default function Feed({ session, userIdFilter = null }) {
       query = query.eq('user_id', userIdFilter);
     }
 
-    const { data } = await query;
+    const { data, error } = await query;
+    if (error) console.error('Feed error:', error);
     if (data) setPosts(data);
     setLoading(false);
   };
@@ -33,7 +34,7 @@ export default function Feed({ session, userIdFilter = null }) {
   useEffect(() => {
     loadFeed();
     const sub = supabase
-      .channel('feed-channel')
+      .channel('feed-channel-' + (userIdFilter || 'all'))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, loadFeed)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'likes' }, loadFeed)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, loadFeed)
@@ -44,33 +45,34 @@ export default function Feed({ session, userIdFilter = null }) {
   if (loading) return <Loader />;
 
   return (
-    <main className="flex flex-col gap-8 w-full max-w-2xl mx-auto">
-      
+    <main className="flex flex-col gap-6 w-full max-w-2xl mx-auto">
       {!userIdFilter && <CreatePost session={session} onPostCreated={loadFeed} />}
 
-      <div className="flex flex-col gap-6">
-        <AnimatePresence>
-          {posts.length === 0 ? (
-            <EmptyState 
-              icon={MessageSquare} 
-              title={userIdFilter ? "No posts yet" : "Your feed is empty"} 
-              description={userIdFilter ? "This user hasn't posted anything yet." : "Be the first to post something exciting!"} 
-            />
-          ) : (
-            posts.map((post, i) => (
-              <motion.div 
-                key={post.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                transition={{ duration: 0.2, delay: i * 0.05 }}
-              >
-                <PostCard post={post} session={session} onUpdate={loadFeed} />
-              </motion.div>
-            ))
-          )}
-        </AnimatePresence>
-      </div>
+      <AnimatePresence>
+        {posts.length === 0 ? (
+          <EmptyState
+            icon={MessageSquare}
+            title={userIdFilter ? 'No posts yet' : 'Your feed is empty'}
+            description={
+              userIdFilter
+                ? "This user hasn't posted anything yet."
+                : 'Be the first to post something exciting!'
+            }
+          />
+        ) : (
+          posts.map((post, i) => (
+            <motion.div
+              key={post.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.97 }}
+              transition={{ duration: 0.2, delay: i * 0.04 }}
+            >
+              <PostCard post={post} session={session} onUpdate={loadFeed} />
+            </motion.div>
+          ))
+        )}
+      </AnimatePresence>
     </main>
   );
 }

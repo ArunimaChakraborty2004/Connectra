@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, X, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
-import { generateProfileReview } from '../../lib/gemini';
+import { generateProfileReview } from '../../lib/ai';
 
 export default function AIReviewPanel({ profile, repoCount }) {
   const [review, setReview] = useState(null);

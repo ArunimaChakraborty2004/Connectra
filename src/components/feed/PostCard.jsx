@@ -129,41 +129,41 @@ export default function PostCard({ post, session, onUpdate }) {
       className="glass-panel rounded-2xl overflow-hidden"
     >
       {/* Header */}
-      <div className="p-5 flex items-center gap-3">
-        <Link to={`/profile/${post.profiles?.username}`} className="h-9 w-9 rounded-xl glass-panel flex items-center justify-center text-sm font-bold text-main overflow-hidden">
+      <div className="p-5 pb-3 flex items-center gap-3">
+        <Link to={`/profile/${post.profiles?.username}`} className="h-10 w-10 rounded-xl glass-panel flex items-center justify-center text-sm font-bold text-main overflow-hidden border border-border">
           {post.profiles?.avatar_url ? <img src={post.profiles.avatar_url} alt="Avatar" className="w-full h-full object-cover" /> : post.profiles?.username?.[0]?.toUpperCase() || 'U'}
         </Link>
-        <div className="flex-1">
-          <Link to={`/profile/${post.profiles?.username}`} className="font-semibold text-main text-[14px] hover:underline">
+        <div className="flex-1 min-w-0">
+          <Link to={`/profile/${post.profiles?.username}`} className="font-bold text-main text-sm hover:text-primary transition-colors block truncate">
             {post.profiles?.username || 'Unknown Developer'}
           </Link>
-          <div className="flex items-center gap-2">
-            <p className="text-[11px] text-[#666]">{new Date(post.created_at).toLocaleDateString()}</p>
-            {isEdited && <span className="text-[10px] bg-surface-hover text-muted px-1.5 py-0.5 rounded">Edited</span>}
+          <div className="flex items-center gap-2 mt-0.5">
+            <p className="text-[11px] text-muted">{new Date(post.created_at).toLocaleDateString()}</p>
+            {isEdited && <span className="text-[10px] bg-surface-hover text-muted px-1.5 py-0.2 rounded border border-border">Edited</span>}
           </div>
         </div>
         
         {isOwner && (
-          <div className="flex gap-2">
-            <button onClick={() => setIsEditing(!isEditing)} className="text-[#666] hover:text-main transition-colors"><Edit2 size={16} /></button>
-            <button onClick={handleDeletePost} className="text-[#666] hover:text-red-400 transition-colors"><Trash2 size={16} /></button>
+          <div className="flex gap-1.5">
+            <button onClick={() => setIsEditing(!isEditing)} className="p-1.5 rounded-lg text-muted hover:text-main hover:bg-surface-hover transition-colors cursor-pointer"><Edit2 size={15} /></button>
+            <button onClick={handleDeletePost} className="p-1.5 rounded-lg text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"><Trash2 size={15} /></button>
           </div>
         )}
       </div>
 
       {/* Content */}
-      <div className="px-5 pb-4 text-gray-300 text-[15px] leading-relaxed whitespace-pre-wrap">
+      <div className="px-5 pb-4 text-main/90 text-[15px] leading-relaxed whitespace-pre-wrap font-normal">
         {isEditing ? (
           <div className="flex flex-col gap-2">
             <textarea 
               value={editContent} 
-              onChange={e => setEditContent(e.target.value)}
+              onChange={e => setEditContent(e.target.value)} 
               className="w-full glass-panel rounded-lg p-3 text-main focus:outline-none"
               rows={3}
             />
             <div className="flex justify-end gap-2">
               <button onClick={() => setIsEditing(false)} className="text-sm px-3 py-1 bg-surface-hover rounded-md">Cancel</button>
-              <button onClick={handleEditPost} className="text-sm px-3 py-1 bg-primary text-main rounded-md">Save</button>
+              <button onClick={handleEditPost} className="text-sm px-3 py-1 bg-primary text-white rounded-md">Save</button>
             </div>
           </div>
         ) : (
@@ -231,23 +231,23 @@ export default function PostCard({ post, session, onUpdate }) {
       )}
 
       {/* Actions */}
-      <div className="px-5 py-3 border-t border-white/10 flex gap-6">
-        <button onClick={handleLike} className="flex items-center gap-2 text-gray-400 hover:text-pink-500 transition-colors group/btn">
-          <Heart size={20} className="group-hover/btn:fill-pink-500/20" /> 
-          <span className="font-medium text-sm">{post.likes?.[0]?.count || 0}</span>
+      <div className="px-5 py-3 border-t border-border flex items-center gap-6">
+        <button onClick={handleLike} className="flex items-center gap-2 text-muted hover:text-pink-500 transition-colors group/btn cursor-pointer">
+          <Heart size={18} className="group-hover/btn:fill-pink-500/20" /> 
+          <span className="font-semibold text-xs">{post.likes?.[0]?.count || 0}</span>
         </button>
-        <button onClick={() => setShowComments(!showComments)} className="flex items-center gap-2 text-gray-400 hover:text-primary transition-colors">
-          <MessageSquare size={20} /> 
-          <span className="font-medium text-sm">{post.comments?.length || 0}</span>
+        <button onClick={() => setShowComments(!showComments)} className="flex items-center gap-2 text-muted hover:text-primary transition-colors cursor-pointer">
+          <MessageSquare size={18} /> 
+          <span className="font-semibold text-xs">{post.comments?.length || 0}</span>
         </button>
         <button 
           onClick={() => setIsBookmarked(!isBookmarked)} 
-          className={`flex items-center gap-2 transition-colors ml-auto ${isBookmarked ? 'text-primary' : 'text-gray-400 hover:text-primary'}`}
+          className={`flex items-center gap-1.5 transition-colors ml-auto cursor-pointer ${isBookmarked ? 'text-primary' : 'text-muted hover:text-primary'}`}
         >
-          <Bookmark size={20} className={isBookmarked ? "fill-primary/20" : ""} />
+          <Bookmark size={18} className={isBookmarked ? "fill-primary/20" : ""} />
         </button>
-        <button onClick={handleShare} className="flex items-center gap-2 text-gray-400 hover:text-green-400 transition-colors">
-          <Share2 size={20} />
+        <button onClick={handleShare} className="flex items-center gap-2 text-muted hover:text-emerald-500 transition-colors cursor-pointer">
+          <Share2 size={18} />
         </button>
       </div>
       
@@ -258,7 +258,7 @@ export default function PostCard({ post, session, onUpdate }) {
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="bg-black/20 border-t border-white/10"
+            className="bg-surface-hover/30 border-t border-border"
           >
             <div className="p-5 flex flex-col gap-4">
               {post.comments?.map(c => (

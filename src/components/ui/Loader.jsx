@@ -3,16 +3,21 @@ import { Hexagon } from 'lucide-react';
 export default function Loader({ fullScreen = false }) {
   const content = (
     <div className="flex flex-col items-center justify-center gap-3">
-      <div className="animate-spin text-primary">
+      <div className="animate-spin" style={{ color: 'var(--primary-color)' }}>
         <Hexagon size={40} />
       </div>
-      <p className="text-[#666] text-sm font-medium animate-pulse">Loading...</p>
+      <p className="text-sm font-medium animate-pulse" style={{ color: 'var(--text-muted)' }}>
+        Loading...
+      </p>
     </div>
   );
 
   if (fullScreen) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ backgroundColor: 'var(--bg-color)' }}
+      >
         {content}
       </div>
     );
