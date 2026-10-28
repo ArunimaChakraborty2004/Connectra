@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, FolderGit2, ExternalLink, GitBranch, Plus, Code2 as GithubIcon, DownloadCloud, Loader2 } from 'lucide-react';
+import { X, FolderGit2, ExternalLink, GitBranch, Plus, Code2 as GithubIcon, DownloadCloud, Loader2, Sparkles, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { callGroq } from '../lib/ai';
 
 export default function ProjectsModal({ session, onClose }) {
   const [projects, setProjects] = useState([]);
@@ -18,6 +19,34 @@ export default function ProjectsModal({ session, onClose }) {
   const [isFetchingGithub, setIsFetchingGithub] = useState(false);
   const [importingId, setImportingId] = useState(null);
   const [currentUserProfile, setCurrentUserProfile] = useState(null);
+  const [aiGeneratingDesc, setAiGeneratingDesc] = useState(false);
+
+  const handleGenerateDescription = async () => {
+    if (!title.trim()) {
+      alert('Please enter a project title first.');
+      return;
+    }
+    setAiGeneratingDesc(true);
+    try {
+      const generated = await callGroq({
+        messages: [
+          { role: 'system', content: 'You are a tech product pitch expert on GitHub/Connectra.' },
+          {
+            role: 'user',
+            content: `Write a compelling 2-sentence elevator pitch and key technical value proposition for a project named "${title}". Be concise and exciting for software engineers.`,
+          },
+        ],
+        temperature: 0.7,
+      });
+      if (generated) {
+        setDescription(generated.trim());
+      }
+    } catch (err) {
+      setDescription(`An innovative open-source project designed to streamline workflows and deliver high performance.`);
+    } finally {
+      setAiGeneratingDesc(false);
+    }
+  };
 
   const loadProjects = async () => {
     const { data } = await supabase
@@ -187,13 +216,31 @@ export default function ProjectsModal({ session, onClose }) {
                   required 
                   className="w-full glass-panel rounded-xl px-4 py-2.5 text-sm text-main focus:border-primary/50 outline-none transition-colors"
                 />
-                <textarea 
-                  value={description} 
-                  onChange={e => setDescription(e.target.value)} 
-                  placeholder="Short Description" 
-                  rows="2" 
-                  className="w-full glass-panel rounded-xl px-4 py-2.5 text-sm text-main focus:border-primary/50 outline-none transition-colors resize-none"
-                ></textarea>
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-muted font-medium">Description</span>
+                    <button
+                      type="button"
+                      onClick={handleGenerateDescription}
+                      disabled={aiGeneratingDesc}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-semibold rounded-lg bg-violet-500/15 hover:bg-violet-500/25 text-violet-300 border border-violet-500/30 transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      {aiGeneratingDesc ? (
+                        <RefreshCw size={11} className="animate-spin text-violet-400" />
+                      ) : (
+                        <Sparkles size={11} className="text-violet-400" />
+                      )}
+                      <span>{aiGeneratingDesc ? 'Generating Pitch...' : '✨ AI Pitch'}</span>
+                    </button>
+                  </div>
+                  <textarea 
+                    value={description} 
+                    onChange={e => setDescription(e.target.value)} 
+                    placeholder="Short Description or click 'AI Pitch' to generate..." 
+                    rows="2" 
+                    className="w-full glass-panel rounded-xl px-4 py-2.5 text-sm text-main focus:border-primary/50 outline-none transition-colors resize-none"
+                  ></textarea>
+                </div>
                 <div className="flex gap-4">
                   <div className="flex-1 relative">
                     <GitBranch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />

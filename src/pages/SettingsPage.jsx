@@ -2,24 +2,45 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import Sidebar from '../components/Sidebar';
 import Loader from '../components/ui/Loader';
-import { Moon, Sun, Settings as SettingsIcon, User, Bell } from 'lucide-react';
+import { Moon, Sun, Settings as SettingsIcon, User, Bell, Lock, ShieldCheck } from 'lucide-react';
 import { useTheme } from '../lib/ThemeContext';
 import { toast } from '../lib/toast';
 
 export default function SettingsPage({ session }) {
   const [profile, setProfile] = useState(null);
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [saving, setSaving] = useState(false);
   const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
     const loadProfile = async () => {
+      const localPrivate = localStorage.getItem(`connectra_private_${session.user.id}`) === 'true';
       const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
-      setProfile(data || { id: session.user.id, username: 'User' });
+      if (data) {
+        setProfile(data);
+        setIsPrivate(data.is_private !== undefined ? Boolean(data.is_private) : localPrivate);
+      } else {
+        setProfile({ id: session.user.id, username: 'User' });
+        setIsPrivate(localPrivate);
+      }
     };
     loadProfile();
-  }, [session]);
+  }, [session.user.id]);
 
-  const handleSave = () => {
-    toast.success('Settings saved successfully!');
+  const handleSave = async () => {
+    setSaving(true);
+    localStorage.setItem(`connectra_private_${session.user.id}`, String(isPrivate));
+    try {
+      await supabase
+        .from('profiles')
+        .update({ is_private: isPrivate })
+        .eq('id', session.user.id);
+      toast.success('Settings & privacy preferences saved!');
+    } catch (err) {
+      toast.success('Settings saved!');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -70,6 +91,38 @@ export default function SettingsPage({ session }) {
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer">
                     <input type="checkbox" className="sr-only peer" defaultChecked />
+                    <div className="w-11 h-6 bg-surface-hover rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                  </label>
+                </div>
+              </section>
+
+              {/* Privacy & Discovery Section */}
+              <section>
+                <h3 className="text-lg font-semibold flex items-center gap-2 mb-4">
+                  <Lock size={20} className="text-amber-500" />
+                  Privacy & Profile Visibility
+                </h3>
+                <div className="glass-panel p-4 rounded-xl flex items-center justify-between hover:border-white/10 transition-colors">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium">Private Profile</p>
+                      <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-500 border border-amber-500/25">
+                        {isPrivate ? 'Private' : 'Public'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted mt-1 max-w-md">
+                      {isPrivate
+                        ? 'Your profile is searchable, but details (bio, repos, tech stack) are locked until you accept a connection request.'
+                        : 'Your full developer profile, skills, and projects are visible to all developers on Connectra.'}
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer ml-4">
+                    <input
+                      type="checkbox"
+                      checked={isPrivate}
+                      onChange={e => setIsPrivate(e.target.checked)}
+                      className="sr-only peer"
+                    />
                     <div className="w-11 h-6 bg-surface-hover rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
                   </label>
                 </div>

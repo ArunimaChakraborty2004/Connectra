@@ -5,7 +5,7 @@ import Sidebar from '../components/Sidebar';
 import Loader from '../components/ui/Loader';
 import EmptyState from '../components/ui/EmptyState';
 import { toast } from '../lib/toast';
-import { Settings, MapPin, Link as LinkIcon, Code2, Briefcase, Grid, FileText, FolderGit2, GitBranch, ExternalLink, MessageCircle, Trophy } from 'lucide-react';
+import { Settings, MapPin, Link as LinkIcon, Code2, Briefcase, Grid, FileText, FolderGit2, GitBranch, ExternalLink, MessageCircle, Trophy, CheckCircle2, Clock, UserPlus, UserCheck, UserMinus } from 'lucide-react';
 import Feed from '../components/Feed';
 import EditProfileModal from '../components/profile/EditProfileModal';
 import BadgesPanel from '../components/profile/BadgesPanel';
@@ -78,6 +78,11 @@ export default function ProfilePage({ session }) {
   const [repoCount, setRepoCount] = useState(0);
   const [postCount, setPostCount] = useState(0); // 'posts' or 'repos'
 
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [isFollower, setIsFollower] = useState(false);
+  const [profileStats, setProfileStats] = useState({ followers: 0, following: 0 });
+  const [actionLoading, setActionLoading] = useState(false);
+
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
@@ -85,18 +90,69 @@ export default function ProfilePage({ session }) {
       const { data: currUser } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
       setCurrentUserProfile(currUser || { id: session.user.id, username: 'User' });
 
-      // Load requested profile
-      const { data: targetProfile, error } = await supabase
+      // Load requested profile (try username first, fallback to id if UUID)
+      let targetProfile = null;
+      const { data: byUsername } = await supabase
         .from('profiles')
         .select('*')
         .eq('username', username)
-        .single();
+        .maybeSingle();
+
+      targetProfile = byUsername;
+
+      if (!targetProfile) {
+        const { data: byId } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', username)
+          .maybeSingle();
+        targetProfile = byId;
+      }
       
-      if (error || !targetProfile) {
+      if (!targetProfile) {
         toast.error('Profile not found');
         setProfile(null);
       } else {
         setProfile(targetProfile);
+        
+        // Load target profile follower & following counts
+        const { count: targetFollowersCount } = await supabase
+          .from('follows')
+          .select('*', { count: 'exact', head: true })
+          .eq('following_id', targetProfile.id);
+
+        const { count: targetFollowingCount } = await supabase
+          .from('follows')
+          .select('*', { count: 'exact', head: true })
+          .eq('follower_id', targetProfile.id);
+
+        setProfileStats({
+          followers: targetFollowersCount || 0,
+          following: targetFollowingCount || 0,
+        });
+
+        // Load follow relationship if not viewing self
+        if (targetProfile.id !== session.user.id) {
+          // Do I follow target?
+          const { data: followingRecord } = await supabase
+            .from('follows')
+            .select('follower_id')
+            .eq('follower_id', session.user.id)
+            .eq('following_id', targetProfile.id)
+            .maybeSingle();
+
+          // Does target follow me?
+          const { data: followerRecord } = await supabase
+            .from('follows')
+            .select('follower_id')
+            .eq('follower_id', targetProfile.id)
+            .eq('following_id', session.user.id)
+            .maybeSingle();
+
+          setIsFollowing(Boolean(followingRecord));
+          setIsFollower(Boolean(followerRecord));
+        }
+
         // Load repo count for badges
         const { count } = await supabase.from('projects').select('*', { count: 'exact', head: true }).eq('user_id', targetProfile.id);
         setRepoCount(count || 0);
@@ -108,6 +164,65 @@ export default function ProfilePage({ session }) {
     };
     loadData();
   }, [username, session.user.id]);
+
+  const handleFollow = async () => {
+    if (!profile || actionLoading) return;
+    setActionLoading(true);
+    setIsFollowing(true);
+    setProfileStats(prev => ({ ...prev, followers: prev.followers + 1 }));
+
+    try {
+      const { error } = await supabase.from('follows').insert({
+        follower_id: session.user.id,
+        following_id: profile.id,
+      });
+
+      if (error) {
+        setIsFollowing(false);
+        setProfileStats(prev => ({ ...prev, followers: Math.max(0, prev.followers - 1) }));
+        toast.error(error.message);
+      } else {
+        toast.success(`Following ${profile.username}!`);
+        window.dispatchEvent(new Event('refreshStats'));
+      }
+    } catch {
+      setIsFollowing(false);
+      setProfileStats(prev => ({ ...prev, followers: Math.max(0, prev.followers - 1) }));
+      toast.error('Failed to follow');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleUnfollow = async () => {
+    if (!profile || actionLoading) return;
+    setActionLoading(true);
+    setIsFollowing(false);
+    setProfileStats(prev => ({ ...prev, followers: Math.max(0, prev.followers - 1) }));
+
+    try {
+      const { error } = await supabase
+        .from('follows')
+        .delete()
+        .eq('follower_id', session.user.id)
+        .eq('following_id', profile.id);
+
+      if (error) {
+        setIsFollowing(true);
+        setProfileStats(prev => ({ ...prev, followers: prev.followers + 1 }));
+        toast.error(error.message);
+      } else {
+        toast.info(`Unfollowed ${profile.username}`);
+        window.dispatchEvent(new Event('refreshStats'));
+      }
+    } catch {
+      setIsFollowing(true);
+      setProfileStats(prev => ({ ...prev, followers: prev.followers + 1 }));
+      toast.error('Failed to unfollow');
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   if (loading) return <Loader fullScreen />;
 
@@ -141,12 +256,43 @@ export default function ProfilePage({ session }) {
                       </button>
                     ) : (
                       <div className="flex gap-2">
-                        <button className="px-5 py-2 bg-white text-black hover:bg-gray-200 rounded-lg text-sm font-bold transition-colors">
-                          Connect
-                        </button>
+                        {isFollowing ? (
+                          <button
+                            onClick={handleUnfollow}
+                            disabled={actionLoading}
+                            className="group px-5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border bg-surface-hover border-border text-main hover:border-rose-500/30"
+                            title="Click to Unfollow"
+                          >
+                            <span className="group-hover:hidden flex items-center gap-1.5 text-emerald-400">
+                              <UserCheck size={14} /> Following
+                            </span>
+                            <span className="hidden group-hover:flex items-center gap-1.5 text-rose-400">
+                              <UserMinus size={14} /> Unfollow
+                            </span>
+                          </button>
+                        ) : isFollower ? (
+                          <button
+                            onClick={handleFollow}
+                            disabled={actionLoading}
+                            className="px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm"
+                            title="Follow back this developer"
+                          >
+                            <UserPlus size={14} /> Follow Back
+                          </button>
+                        ) : (
+                          <button
+                            onClick={handleFollow}
+                            disabled={actionLoading}
+                            className="px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer bg-primary hover:opacity-90 text-white shadow-sm"
+                            title="Follow developer"
+                          >
+                            <UserPlus size={14} /> Follow
+                          </button>
+                        )}
+
                         <button
                           onClick={() => document.dispatchEvent(new CustomEvent('startChat', { detail: { userId: profile.id, username: profile.username } }))}
-                          className="p-2 bg-surface-hover hover:bg-white/10 rounded-lg transition-colors border border-white/10"
+                          className="p-2.5 bg-surface-hover hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-colors border border-border cursor-pointer"
                           title="Send Message"
                         >
                           <MessageCircle size={18} className="text-primary" />
@@ -158,6 +304,19 @@ export default function ProfilePage({ session }) {
                   <div>
                     <h1 className="text-2xl font-bold text-main">{profile.username}</h1>
                     <p className="text-muted mt-1 text-[15px]">{profile.bio || 'No bio provided.'}</p>
+                    
+                    {/* Follower / Following Stats */}
+                    <div className="flex items-center gap-5 mt-3 text-sm">
+                      <span className="text-main font-semibold">
+                        {profileStats.followers} <span className="font-normal text-muted">Followers</span>
+                      </span>
+                      <span className="text-main font-semibold">
+                        {profileStats.following} <span className="font-normal text-muted">Following</span>
+                      </span>
+                      <span className="text-main font-semibold">
+                        {postCount} <span className="font-normal text-muted">Posts</span>
+                      </span>
+                    </div>
                   </div>
                   
                   <div className="flex flex-wrap gap-4 mt-4 text-sm text-muted">
