@@ -3,14 +3,12 @@ import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, X, UserPlus, Heart, MessageSquare, Check, XCircle } from 'lucide-react';
 import { toast } from '../lib/toast';
-import { Link } from 'react-router-dom';
 
 export default function NotificationsPanel({ session, isOpen, onClose }) {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const loadNotifications = async () => {
-    // Also include pending connection requests where this user is the recipient
     const { data: notifs } = await supabase
       .from('notifications')
       .select('id, type, is_read, created_at, actor_id, profiles!actor_id(username, avatar_url)')
@@ -75,55 +73,57 @@ export default function NotificationsPanel({ session, isOpen, onClose }) {
             animate={{ opacity: 1 }} 
             exit={{ opacity: 0 }} 
             onClick={onClose}
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50"
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
           />
           <motion.div 
             initial={{ x: '100%' }} 
             animate={{ x: 0 }} 
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            className="fixed top-0 right-0 h-full w-full max-w-sm bg-background border-l border-white/10 shadow-2xl z-50 flex flex-col"
+            className="fixed top-0 right-0 h-full w-full max-w-sm bg-white border-l border-[#f1e4d3] shadow-2xl z-50 flex flex-col"
           >
-            <div className="p-4 border-b border-white/10 flex items-center justify-between bg-surface">
+            <div className="p-4 border-b border-[#f1e4d3] flex items-center justify-between bg-[#fffcf7]">
               <div className="flex items-center gap-2">
-                <Bell size={20} className="text-main" />
-                <h2 className="text-lg font-bold text-main">Notifications</h2>
+                <div className="p-2 bg-[#ffedd5] text-[#ea580c] rounded-xl">
+                  <Bell size={18} />
+                </div>
+                <h2 className="text-base font-bold text-[#1c130d]">Notifications</h2>
               </div>
               <div className="flex items-center gap-3">
-                <button onClick={markAllRead} className="text-xs text-muted hover:text-main transition-colors">Mark all read</button>
-                <button onClick={onClose} className="p-1.5 hover:bg-surface-hover rounded-lg text-main transition-colors"><X size={20} /></button>
+                <button onClick={markAllRead} className="text-xs font-bold text-[#ea580c] hover:underline cursor-pointer">Mark all read</button>
+                <button onClick={onClose} className="p-1.5 hover:bg-[#faf6f0] rounded-xl text-[#6b5546] hover:text-[#1c130d] transition-colors cursor-pointer"><X size={18} /></button>
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto no-scrollbar p-4 flex flex-col gap-3">
+            <div className="flex-1 overflow-y-auto no-scrollbar p-4 flex flex-col gap-3 bg-[#faf6f0]/40">
               {loading ? (
-                <div className="flex justify-center p-8"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"></div></div>
+                <div className="flex justify-center p-8"><div className="w-6 h-6 border-2 border-[#ea580c] border-t-transparent rounded-full animate-spin"></div></div>
               ) : notifications.length === 0 ? (
-                <div className="text-center text-[#666] py-12 text-sm">No new notifications.</div>
+                <div className="text-center text-[#6b5546] py-12 text-sm font-semibold">No new notifications.</div>
               ) : (
                 notifications.map((n) => (
-                  <div key={n.id} className={`p-4 rounded-xl border flex gap-3 ${!n.is_read ? 'bg-surface border-white/10' : 'bg-background border-white/10'}`}>
-                    <div className="pt-1">
-                      {n.type === 'connection_request' && <UserPlus size={18} className="text-blue-400" />}
-                      {n.type === 'like' && <Heart size={18} className="text-pink-500" />}
-                      {n.type === 'comment' && <MessageSquare size={18} className="text-green-400" />}
-                      {n.type === 'connection_accepted' && <Check size={18} className="text-green-400" />}
+                  <div key={n.id} className={`p-4 rounded-2xl border flex gap-3 ${!n.is_read ? 'bg-[#fff7ed] border-orange-200 shadow-2xs' : 'bg-white border-[#f1e4d3]'}`}>
+                    <div className="pt-0.5">
+                      {n.type === 'connection_request' && <UserPlus size={18} className="text-blue-500" />}
+                      {n.type === 'like' && <Heart size={18} className="text-rose-500" fill="#f43f5e" />}
+                      {n.type === 'comment' && <MessageSquare size={18} className="text-[#ea580c]" />}
+                      {n.type === 'connection_accepted' && <Check size={18} className="text-emerald-500" />}
                     </div>
-                    <div className="flex-1 text-sm text-[#ccc]">
-                      <span className="font-semibold text-main mr-1">{n.profiles?.username}</span>
+                    <div className="flex-1 text-xs text-[#6b5546] leading-relaxed">
+                      <span className="font-bold text-[#1c130d] mr-1">{n.profiles?.username || 'Someone'}</span>
                       {n.type === 'connection_request' && 'sent you a connection request.'}
                       {n.type === 'like' && 'liked your post.'}
                       {n.type === 'comment' && 'commented on your post.'}
                       {n.type === 'connection_accepted' && 'accepted your connection request.'}
                       
-                      <div className="text-xs text-[#666] mt-1">{new Date(n.created_at).toLocaleDateString()}</div>
+                      <div className="text-[10px] text-[#8d7565] font-semibold mt-1">{new Date(n.created_at).toLocaleDateString()}</div>
                       
                       {n.type === 'connection_request' && (
                         <div className="flex gap-2 mt-3">
-                          <button onClick={() => handleAcceptRequest(n.connection_id)} className="flex-1 bg-green-500/20 text-green-400 hover:bg-green-500/30 py-1.5 rounded-md font-semibold transition-colors flex items-center justify-center gap-1">
+                          <button onClick={() => handleAcceptRequest(n.connection_id)} className="flex-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 py-1.5 rounded-xl font-bold transition-colors flex items-center justify-center gap-1 cursor-pointer">
                             <Check size={14} /> Accept
                           </button>
-                          <button onClick={() => handleRejectRequest(n.connection_id)} className="flex-1 bg-red-500/10 text-red-400 hover:bg-red-500/20 py-1.5 rounded-md font-semibold transition-colors flex items-center justify-center gap-1">
+                          <button onClick={() => handleRejectRequest(n.connection_id)} className="flex-1 bg-rose-100 hover:bg-rose-200 text-rose-800 py-1.5 rounded-xl font-bold transition-colors flex items-center justify-center gap-1 cursor-pointer">
                             <XCircle size={14} /> Reject
                           </button>
                         </div>

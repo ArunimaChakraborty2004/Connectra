@@ -1,256 +1,113 @@
 @import "tailwindcss";
 
-/* =============================
-   CONNECTRA — Design System v2
-   Tailwind v4 + CSS Variables
-   ============================= */
+/* =========================================================================
+   CONNECTRA DESIGN SYSTEM
+   Warm Cream & Apricot Light Theme + High Contrast Typography
+   ========================================================================= */
 
-/* Light Mode Tokens (default) */
 :root {
-  --bg-color: #f0f4f8;
-  --surface-color: #ffffff;
-  --surface-hover: #f1f5f9;
-  --border-color: #e2e8f0;
-  --border-hover: #cbd5e1;
-  --text-color: #0f172a;
-  --text-muted: #64748b;
-  --primary-color: #4f46e5;
-  --primary-hover: #4338ca;
-  --card-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.06), 0 1px 2px -1px rgba(0, 0, 0, 0.06);
+  --bg-color: #faf6f0;           /* Luxurious warm soft cream */
+  --surface-color: #ffffff;      /* Pure white card surface */
+  --surface-hover: #fff7ed;      /* Soft peach-cream hover */
+  --border-color: #f1e4d3;       /* Crisp warm border */
+  --border-hover: #e2cbb2;
+  
+  --text-color: #1c130d;         /* High-contrast deep roasted espresso */
+  --text-muted: #6b5546;         /* Readable warm cocoa */
+  
+  --primary-color: #ea580c;      /* Sunset Flame Orange */
+  --primary-hover: #c2410c;
+  --accent-amber: #f59e0b;
+  --accent-peach: #ffedd5;
+
+  --card-shadow: 0 4px 16px -2px rgba(234, 88, 12, 0.06), 0 2px 6px -1px rgba(28, 19, 13, 0.05);
 }
 
-/* Dark Mode Tokens */
-.dark {
-  --bg-color: #0b0f17;
-  --surface-color: #111726;
-  --surface-hover: #1a2235;
-  --border-color: #1e293b;
-  --border-hover: #334155;
-  --text-color: #f1f5f9;
-  --text-muted: #94a3b8;
-  --primary-color: #6366f1;
-  --primary-hover: #4f46e5;
-  --card-shadow: 0 4px 24px -2px rgba(0, 0, 0, 0.55);
-}
-
-/* =============================
-   Tailwind v4 Theme Tokens
-   ============================= */
-@theme {
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-heading: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
-}
-
-/* =============================
-   Base / Reset
-   ============================= */
-html {
-  scroll-behavior: smooth;
-}
-
+/* Base Body Styles */
 body {
-  font-family: var(--font-sans);
   background-color: var(--bg-color);
   color: var(--text-color);
-  transition: background-color 0.25s ease, color 0.25s ease;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  min-height: 100vh;
-  overflow-x: hidden;
 }
 
-h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-heading);
-  letter-spacing: -0.02em;
-}
+/* Semantic Utility Classes for Full Visibility Across All Components */
+.bg-background { background-color: #faf6f0 !important; }
+.bg-surface { background-color: #ffffff !important; }
+.bg-surface-hover { background-color: #fff7ed !important; }
 
-/* =============================
-   Semantic Utility Classes
-   (used instead of Tailwind tokens for theme-aware colors)
-   ============================= */
+.text-main { color: #1c130d !important; }
+.text-muted { color: #6b5546 !important; }
+.text-primary { color: #ea580c !important; }
 
-/* Backgrounds */
-.bg-background { background-color: var(--bg-color) !important; }
-.bg-surface { background-color: var(--surface-color) !important; }
-.bg-surface-hover { background-color: var(--surface-hover) !important; }
+.border-border { border-color: #f1e4d3 !important; }
+.border-primary { border-color: #ea580c !important; }
 
-/* Text */
-.text-main { color: var(--text-color) !important; }
-.text-muted { color: var(--text-muted) !important; }
-.text-primary { color: var(--primary-color) !important; }
-.text-primary-hover { color: var(--primary-hover) !important; }
-
-/* Borders */
-.border-border { border-color: var(--border-color) !important; }
-.border-border-hover { border-color: var(--border-hover) !important; }
-.border-primary { border-color: var(--primary-color) !important; }
-
-/* Background variants for primary */
-.bg-primary { background-color: var(--primary-color) !important; }
-.bg-primary-hover { background-color: var(--primary-hover) !important; }
-
-/* Hover states */
-.hover\:bg-primary\/90:hover { background-color: color-mix(in oklch, var(--primary-color) 90%, transparent) !important; }
-.hover\:bg-surface-hover:hover { background-color: var(--surface-hover) !important; }
-.hover\:text-main:hover { color: var(--text-color) !important; }
-.hover\:text-primary:hover { color: var(--primary-color) !important; }
-.hover\:text-primary-hover:hover { color: var(--primary-hover) !important; }
-.hover\:border-primary\/30:hover { border-color: color-mix(in oklch, var(--primary-color) 30%, transparent) !important; }
-
-/* Focus variants */
-.focus\:border-primary\/50:focus { border-color: color-mix(in oklch, var(--primary-color) 50%, transparent) !important; }
-
-/* Opacity utilities for primary */
-.bg-primary\/10 { background-color: color-mix(in oklch, var(--primary-color) 10%, transparent) !important; }
-.bg-primary\/15 { background-color: color-mix(in oklch, var(--primary-color) 15%, transparent) !important; }
-.bg-primary\/20 { background-color: color-mix(in oklch, var(--primary-color) 20%, transparent) !important; }
-.bg-primary\/30 { background-color: color-mix(in oklch, var(--primary-color) 30%, transparent) !important; }
-.text-primary\/80 { color: color-mix(in oklch, var(--primary-color) 80%, transparent) !important; }
-.border-primary\/20 { border-color: color-mix(in oklch, var(--primary-color) 20%, transparent) !important; }
-.border-primary\/25 { border-color: color-mix(in oklch, var(--primary-color) 25%, transparent) !important; }
-.border-primary\/30 { border-color: color-mix(in oklch, var(--primary-color) 30%, transparent) !important; }
-.border-primary\/50 { border-color: color-mix(in oklch, var(--primary-color) 50%, transparent) !important; }
-
-/* Active nav item */
-.bg-primary\/15 { background-color: color-mix(in oklch, var(--primary-color) 15%, transparent) !important; }
-.border-primary\/25 { border-color: color-mix(in oklch, var(--primary-color) 25%, transparent) !important; }
-
-/* =============================
-   Glass Panel Component
-   ============================= */
+/* Glass Panel styling in Cream/White */
 .glass-panel {
-  background-color: var(--surface-color);
-  border: 1px solid var(--border-color);
-  box-shadow: var(--card-shadow);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+  background-color: #ffffff !important;
+  border: 1px solid #f1e4d3 !important;
+  color: #1c130d !important;
+  box-shadow: 0 2px 8px rgba(28, 19, 13, 0.04);
 }
 
 .glass-panel:hover {
-  border-color: var(--border-hover);
+  border-color: #e2cbb2 !important;
 }
 
-/* =============================
-   Ambient Background Gradients
-   ============================= */
-.ambient-glow-bg::before {
+/* Input, Textarea, Select universal high contrast */
+input, textarea, select {
+  background-color: #faf6f0 !important;
+  color: #1c130d !important;
+  border: 1px solid #f1e4d3 !important;
+}
+
+input:focus, textarea:focus, select:focus {
+  background-color: #ffffff !important;
+  border-color: #ea580c !important;
+  outline: none;
+}
+
+input::placeholder, textarea::placeholder {
+  color: #8d7565 !important;
+  opacity: 0.85;
+}
+
+/* Ambient subtle warm peach backdrop */
+body::before {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -1;
-  background:
-    radial-gradient(circle at 10% 15%, rgba(99, 102, 241, 0.07), transparent 45%),
-    radial-gradient(circle at 90% 85%, rgba(139, 92, 246, 0.05), transparent 45%);
+  background: 
+    radial-gradient(circle at 12% 10%, rgba(254, 215, 170, 0.35), transparent 45%),
+    radial-gradient(circle at 88% 85%, rgba(255, 237, 213, 0.45), transparent 50%);
   pointer-events: none;
 }
 
-.dark .ambient-glow-bg::before {
-  background:
-    radial-gradient(circle at 12% 15%, rgba(124, 58, 237, 0.14), transparent 45%),
-    radial-gradient(circle at 88% 85%, rgba(59, 130, 246, 0.09), transparent 45%);
-}
-
-/* =============================
-   Scrollbars
-   ============================= */
+/* Custom scrollbars */
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
 }
-
 ::-webkit-scrollbar-track {
   background: transparent;
 }
-
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.3);
+  background: #f1e4d3;
   border-radius: 9999px;
 }
-
-.dark ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
-}
-
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.55);
+  background: #e2cbb2;
 }
-
-.dark ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
-
-.custom-scrollbar::-webkit-scrollbar { width: 4px; }
-.no-scrollbar::-webkit-scrollbar { display: none; }
-.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
-/* =============================
-   Navbar Glass
-   ============================= */
-.navbar-glass {
-  background-color: color-mix(in oklch, var(--surface-color) 85%, transparent);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-bottom: 1px solid var(--border-color);
-}
-
-/* =============================
-   Input Base
-   ============================= */
-input, textarea, select {
-  background-color: var(--bg-color);
-  color: var(--text-color);
-  border: 1px solid var(--border-color);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-
-input:focus, textarea:focus, select:focus {
-  outline: none;
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary-color) 15%, transparent);
-}
-
-input::placeholder, textarea::placeholder {
-  color: var(--text-muted);
-  opacity: 0.65;
-}
-
-/* =============================
-   Toast Animations
-   ============================= */
-@keyframes slideIn {
-  from { transform: translateX(110%); opacity: 0; }
-  to   { transform: translateX(0);    opacity: 1; }
-}
-
-@keyframes slideOut {
-  from { transform: translateX(0);    opacity: 1; }
-  to   { transform: translateX(110%); opacity: 0; }
-}
-
-.toast-enter { animation: slideIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
-.toast-exit  { animation: slideOut 0.25s ease-in forwards; }
-
-/* =============================
-   Code / Syntax highlight helper
-   ============================= */
-pre, code {
-  font-family: var(--font-mono);
-}
-
-/* =============================
-   Gradient Text
-   ============================= */
-.gradient-text {
-  background: linear-gradient(135deg, var(--primary-color), #8b5cf6);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-/* =============================
-   Selection Color
-   ============================= */
-::selection {
-  background-color: color-mix(in oklch, var(--primary-color) 25%, transparent);
-  color: var(--text-color);
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }

@@ -26,29 +26,16 @@ export default function Dashboard({ session }) {
     } else {
       const fallbackName = session.user.user_metadata?.username || session.user.email?.split('@')[0] || 'User';
       supabase.from('profiles').upsert({ id: session.user.id, username: fallbackName }).then(() => {});
-      setProfile({
-        id: session.user.id,
-        username: fallbackName,
-        xp: 0,
-        level: 1,
-      });
+      setProfile({ id: session.user.id, username: fallbackName, xp: 0, level: 1 });
     }
 
     try {
       const { count: followersCount } = await supabase
-        .from('follows')
-        .select('*', { count: 'exact', head: true })
-        .eq('following_id', session.user.id);
-
+        .from('follows').select('*', { count: 'exact', head: true }).eq('following_id', session.user.id);
       const { count: followingCount } = await supabase
-        .from('follows')
-        .select('*', { count: 'exact', head: true })
-        .eq('follower_id', session.user.id);
-
-      // Also count accepted connections (two-way developer network connections)
+        .from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', session.user.id);
       const { count: acceptedConnectionsCount } = await supabase
-        .from('connections')
-        .select('*', { count: 'exact', head: true })
+        .from('connections').select('*', { count: 'exact', head: true })
         .or(`requester_id.eq.${session.user.id},receiver_id.eq.${session.user.id}`)
         .eq('status', 'accepted');
 
@@ -72,48 +59,30 @@ export default function Dashboard({ session }) {
 
   if (!profile) {
     return (
-      <div
-        className="min-h-screen flex items-center justify-center"
-        style={{ backgroundColor: 'var(--bg-color)' }}
-      >
+      <div className="min-h-screen flex items-center justify-center bg-[#faf6f0]">
         <div className="flex flex-col items-center gap-3">
-          <div className="animate-spin text-violet-500">
-            <Hexagon size={40} />
-          </div>
-          <p className="text-sm animate-pulse" style={{ color: 'var(--text-muted)' }}>
-            Loading your workspace...
-          </p>
+          <div className="animate-spin text-orange-600"><Hexagon size={40} /></div>
+          <p className="text-sm font-semibold text-[#8d7565]">Loading your workspace...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div
-      className="min-h-screen"
-      style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)' }}
-    >
-      {/* Ambient Glow — dark mode only */}
-      <div
-        className="fixed top-0 right-0 w-[700px] h-[700px] rounded-full pointer-events-none z-0"
-        style={{
-          background: 'radial-gradient(circle, rgba(99,102,241,0.04) 0%, transparent 70%)',
-        }}
-      />
-
-      <div className="max-w-[1400px] mx-auto px-6 py-8 flex flex-col lg:flex-row gap-8 relative items-start justify-center z-10">
+    <div className="min-h-screen bg-[#faf6f0] text-[#2b1f17]">
+      <div className="max-w-[1380px] mx-auto px-4 py-6 flex gap-6 items-start">
         {/* Left Sidebar */}
-        <div className="hidden lg:block w-full max-w-[300px] shrink-0">
+        <div className="hidden lg:block shrink-0 w-[210px]">
           <Sidebar profile={profile} stats={stats} />
         </div>
 
         {/* Main Feed */}
-        <div className="flex-1 w-full max-w-2xl shrink-0">
+        <div className="flex-1 min-w-0 max-w-[650px]">
           <Feed session={session} />
         </div>
 
-        {/* Right Bar */}
-        <div className="hidden xl:block w-full max-w-[320px] shrink-0">
+        {/* Right Sidebar */}
+        <div className="hidden xl:block shrink-0 w-[300px]">
           <Rightbar profile={profile} onProfileUpdate={loadData} />
         </div>
       </div>

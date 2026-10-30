@@ -5,37 +5,304 @@ import CreatePost from './feed/CreatePost';
 import PostCard from './feed/PostCard';
 import Loader from './ui/Loader';
 import EmptyState from './ui/EmptyState';
-import { MessageSquare } from 'lucide-react';
+import { MessageSquare, Plus, X, ChevronLeft, ChevronRight, Play, Film } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import CreateReel from './reels/CreateReel';
+
+function StoriesRow({ session }) {
+  const [users, setUsers] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [reels, setReels] = useState([]);
+  const [activeStory, setActiveStory] = useState(null);
+  const [showCreateStory, setShowCreateStory] = useState(false);
+
+  const fetchStoriesAndReels = async () => {
+    try {
+      // 1. Fetch reels from database
+      const { data: reelsData } = await supabase
+        .from('reels')
+        .select('*, profiles(username, avatar_url)')
+        .order('created_at', { ascending: false });
+
+      if (reelsData) {
+        setReels(reelsData);
+      }
+
+      // 2. Fetch profiles
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, username, avatar_url, bio')
+        .limit(10);
+
+      if (profiles) {
+        const self = profiles.find((p) => p.id === session?.user?.id);
+        const others = profiles.filter((p) => p.id !== session?.user?.id);
+        setCurrentUser(self);
+        setUsers(others);
+      }
+    } catch (err) {
+      console.error('Error fetching stories:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (session?.user?.id) {
+      fetchStoriesAndReels();
+    }
+  }, [session?.user?.id]);
+
+  const handleOpenUserStory = (user) => {
+    // Check if this user has posted reels
+    const userReels = reels.filter((r) => r.user_id === user.id);
+    if (userReels.length > 0) {
+      setActiveStory({
+        user,
+        reel: userReels[0],
+      });
+    } else {
+      // Fallback display card preview if no video reel uploaded yet
+      setActiveStory({
+        user,
+        fallbackText: `${user.username}'s Daily Dev Update: Exploring code and building in Connectra!`,
+      });
+    }
+  };
+
+  const initial = currentUser?.username?.[0]?.toUpperCase() || 'U';
+
+  return (
+    <>
+      <div className="rounded-2xl p-4 bg-white border border-[#f1e4d3] shadow-xs">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-bold text-[#2b1f17] tracking-tight">Stories</h2>
+          <button
+            onClick={() => setShowCreateStory(true)}
+            className="text-[11px] font-bold text-[#ea580c] hover:underline flex items-center gap-1 cursor-pointer"
+          >
+            <Plus size={13} strokeWidth={3} /> Post Story
+          </button>
+        </div>
+
+        <div className="flex items-center gap-4 overflow-x-auto no-scrollbar pb-1">
+          {/* + Add Story Button (Opens Reel/Story Creator modal directly) */}
+          <button
+            onClick={() => setShowCreateStory(true)}
+            className="flex flex-col items-center gap-1.5 shrink-0 cursor-pointer group text-left"
+          >
+            <div className="w-14 h-14 rounded-full bg-[#fff7ed] border border-[#fed7aa] flex items-center justify-center text-orange-600 group-hover:scale-105 group-hover:border-orange-500 transition-all shadow-2xs">
+              <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-[#ea580c] to-[#f97316] flex items-center justify-center text-white shadow-xs">
+                <Plus size={20} strokeWidth={2.8} />
+              </div>
+            </div>
+            <span className="text-[11px] font-bold text-[#8d7565] group-hover:text-[#ea580c] transition-colors">
+              Add Story
+            </span>
+          </button>
+
+          {/* Current User Story */}
+          {currentUser && (
+            <button
+              onClick={() => handleOpenUserStory(currentUser)}
+              className="flex flex-col items-center gap-1.5 shrink-0 cursor-pointer group"
+            >
+              <div className="p-0.5 rounded-full bg-gradient-to-tr from-[#ea580c] via-[#f97316] to-[#facc15] group-hover:scale-105 transition-all shadow-2xs">
+                <div className="w-13 h-13 rounded-full overflow-hidden p-0.5 bg-white">
+                  {currentUser.avatar_url ? (
+                    <img
+                      src={currentUser.avatar_url}
+                      alt={currentUser.username}
+                      className="w-full h-full object-cover rounded-full"
+                    />
+                  ) : (
+                    <div className="w-full h-full rounded-full bg-[#faf6f0] flex items-center justify-center text-sm font-bold text-[#ea580c]">
+                      {initial}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <span className="text-[11px] font-semibold text-[#8d7565] group-hover:text-[#2b1f17] transition-colors truncate max-w-[62px] text-center">
+                Your Story
+              </span>
+            </button>
+          )}
+
+          {/* Real Users from Database */}
+          {users.map((user) => {
+            const userInitial = user.username?.[0]?.toUpperCase() || 'D';
+            const hasReel = reels.some((r) => r.user_id === user.id);
+
+            return (
+              <button
+                key={user.id}
+                onClick={() => handleOpenUserStory(user)}
+                className="flex flex-col items-center gap-1.5 shrink-0 cursor-pointer group"
+              >
+                <div className={`p-0.5 rounded-full ${hasReel ? 'bg-gradient-to-tr from-[#ea580c] via-[#f97316] to-[#facc15] shadow-xs' : 'bg-[#fed7aa]'} group-hover:scale-105 transition-all shadow-2xs`}>
+                  <div className="w-13 h-13 rounded-full overflow-hidden p-0.5 bg-white">
+                    {user.avatar_url ? (
+                      <img
+                        src={user.avatar_url}
+                        alt={user.username}
+                        className="w-full h-full object-cover rounded-full"
+                      />
+                    ) : (
+                      <div className="w-full h-full rounded-full bg-[#faf6f0] flex items-center justify-center text-sm font-bold text-[#ea580c]">
+                        {userInitial}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <span className="text-[11px] font-semibold text-[#8d7565] group-hover:text-[#2b1f17] transition-colors truncate max-w-[62px] text-center">
+                  {user.username}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Story Viewer Modal */}
+      <AnimatePresence>
+        {activeStory && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative w-full max-w-sm aspect-[9/16] max-h-[85vh] rounded-2xl overflow-hidden bg-black flex flex-col justify-between shadow-2xl border border-white/10"
+            >
+              {/* Top User Info Bar */}
+              <div className="p-4 bg-gradient-to-b from-black/80 to-transparent flex items-center justify-between z-10">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-full overflow-hidden border border-white/30 bg-[#ea580c] flex items-center justify-center text-xs font-bold text-white">
+                    {activeStory.user.avatar_url ? (
+                      <img src={activeStory.user.avatar_url} alt="avatar" className="w-full h-full object-cover" />
+                    ) : (
+                      activeStory.user.username?.[0]?.toUpperCase() || 'U'
+                    )}
+                  </div>
+                  <span className="text-sm font-bold text-white">{activeStory.user.username}</span>
+                </div>
+                <button
+                  onClick={() => setActiveStory(null)}
+                  className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Story Content (Video or fallback card) */}
+              <div className="flex-1 flex items-center justify-center p-6 text-center">
+                {activeStory.reel ? (
+                  <video
+                    src={activeStory.reel.video_url}
+                    autoPlay
+                    loop
+                    playsInline
+                    className="w-full h-full object-cover rounded-xl"
+                  />
+                ) : (
+                  <div className="p-6 rounded-2xl bg-gradient-to-br from-[#ea580c]/30 to-[#f97316]/20 border border-orange-500/30 text-white flex flex-col items-center gap-3">
+                    <Film size={36} className="text-[#ea580c]" />
+                    <p className="text-sm font-semibold leading-relaxed">
+                      {activeStory.fallbackText}
+                    </p>
+                    <Link
+                      to={`/profile/${activeStory.user.username}`}
+                      onClick={() => setActiveStory(null)}
+                      className="px-4 py-1.5 rounded-full bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white font-bold text-xs mt-2"
+                    >
+                      View Profile
+                    </Link>
+                  </div>
+                )}
+              </div>
+
+              {/* Bottom Caption if reel */}
+              {activeStory.reel?.caption && (
+                <div className="p-4 bg-gradient-to-t from-black/80 to-transparent z-10 text-white text-xs">
+                  {activeStory.reel.caption}
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Create Story/Reel Modal */}
+      {showCreateStory && (
+        <CreateReel
+          session={session}
+          onClose={() => setShowCreateStory(false)}
+          onCreated={fetchStoriesAndReels}
+        />
+      )}
+    </>
+  );
+}
 
 export default function Feed({ session, userIdFilter = null, communityIdFilter = null, placeholder }) {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const loadFeed = async () => {
-    let query = supabase
-      .from('posts')
-      .select(`
-        id, user_id, content, image_url, code_snippet, code_language, created_at, updated_at, poll_data, community_id,
-        profiles(username, avatar_url), likes(count),
-        comments(id, user_id, content, created_at, profiles(username, avatar_url))
-      `)
-      .order('created_at', { ascending: false });
+    try {
+      let query = supabase
+        .from('posts')
+        .select(`
+          id, user_id, content, image_url, code_snippet, code_language, created_at, updated_at,
+          profiles(username, avatar_url)
+        `)
+        .order('created_at', { ascending: false });
 
-    if (userIdFilter) {
-      query = query.eq('user_id', userIdFilter);
-    } else if (communityIdFilter) {
-      query = query.eq('community_id', communityIdFilter);
+      if (userIdFilter) {
+        query = query.eq('user_id', userIdFilter);
+      }
+
+      const { data: postsData, error: postsError } = await query;
+      if (postsError) {
+        console.error('Posts query error:', postsError);
+      }
+
+      if (postsData && postsData.length > 0) {
+        const postIds = postsData.map((p) => p.id);
+
+        const [{ data: likesData }, { data: commentsData }] = await Promise.all([
+          supabase.from('likes').select('id, post_id').in('post_id', postIds),
+          supabase.from('comments').select('id, post_id, user_id, content, created_at, profiles(username, avatar_url)').in('post_id', postIds).order('created_at', { ascending: true })
+        ]);
+
+        const likesCountMap = {};
+        (likesData || []).forEach((l) => {
+          likesCountMap[l.post_id] = (likesCountMap[l.post_id] || 0) + 1;
+        });
+
+        const commentsGroupMap = {};
+        (commentsData || []).forEach((c) => {
+          if (!commentsGroupMap[c.post_id]) commentsGroupMap[c.post_id] = [];
+          commentsGroupMap[c.post_id].push(c);
+        });
+
+        const formattedPosts = postsData.map((p) => ({
+          ...p,
+          likes: [{ count: likesCountMap[p.id] || 0 }],
+          comments: commentsGroupMap[p.id] || [],
+        }));
+
+        setPosts(formattedPosts);
+      } else {
+        setPosts([]);
+      }
+    } catch (err) {
+      console.error('Feed exception:', err);
+    } finally {
+      setLoading(false);
     }
-
-    const { data, error } = await query;
-    if (error) console.error('Feed error:', error);
-    if (data) setPosts(data);
-    setLoading(false);
   };
 
   useEffect(() => {
     loadFeed();
-    const filterKey = userIdFilter ? `user-${userIdFilter}` : communityIdFilter ? `comm-${communityIdFilter}` : 'all';
+    const filterKey = userIdFilter ? `user-${userIdFilter}` : 'all';
     const sub = supabase
       .channel('feed-channel-' + filterKey)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, loadFeed)
@@ -43,32 +310,35 @@ export default function Feed({ session, userIdFilter = null, communityIdFilter =
       .on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, loadFeed)
       .subscribe();
     return () => sub.unsubscribe();
-  }, [userIdFilter, communityIdFilter]);
+  }, [userIdFilter]);
 
   if (loading) return <Loader />;
 
   return (
-    <main className="flex flex-col gap-6 w-full max-w-2xl mx-auto">
+    <main className="flex flex-col gap-4 w-full">
+      {/* Stories Carousel */}
+      {!userIdFilter && !communityIdFilter && <StoriesRow session={session} />}
+
+      {/* Create Post Form */}
       {!userIdFilter && (
         <CreatePost
           session={session}
           onPostCreated={loadFeed}
           communityId={communityIdFilter}
-          placeholder={placeholder || (communityIdFilter ? "Start a discussion in this community..." : "What are you working on? Share code, ideas, or questions...")}
+          placeholder={placeholder}
         />
       )}
 
+      {/* Feed Posts */}
       <AnimatePresence>
         {posts.length === 0 ? (
           <EmptyState
             icon={MessageSquare}
-            title={userIdFilter ? 'No posts yet' : communityIdFilter ? 'No discussions yet' : 'Your feed is empty'}
+            title={userIdFilter ? 'No posts yet' : 'Your feed is empty'}
             description={
               userIdFilter
                 ? "This user hasn't posted anything yet."
-                : communityIdFilter
-                ? 'Be the first to share an idea, ask a question, or post a project update in this community!'
-                : 'Be the first to post something exciting!'
+                : 'Be the first to share code, ideas, or projects!'
             }
           />
         ) : (
