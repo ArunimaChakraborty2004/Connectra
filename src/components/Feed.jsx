@@ -7,7 +7,7 @@ import Loader from './ui/Loader';
 import EmptyState from './ui/EmptyState';
 import { MessageSquare } from 'lucide-react';
 
-export default function Feed({ session, userIdFilter = null }) {
+export default function Feed({ session, userIdFilter = null, communityIdFilter = null, placeholder }) {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -15,7 +15,7 @@ export default function Feed({ session, userIdFilter = null }) {
     let query = supabase
       .from('posts')
       .select(`
-        id, user_id, content, image_url, code_snippet, code_language, created_at, updated_at, poll_data,
+        id, user_id, content, image_url, code_snippet, code_language, created_at, updated_at, poll_data, community_id,
         profiles(username, avatar_url), likes(count),
         comments(id, user_id, content, created_at, profiles(username, avatar_url))
       `)
@@ -23,6 +23,8 @@ export default function Feed({ session, userIdFilter = null }) {
 
     if (userIdFilter) {
       query = query.eq('user_id', userIdFilter);
+    } else if (communityIdFilter) {
+      query = query.eq('community_id', communityIdFilter);
     }
 
     const { data, error } = await query;
@@ -33,29 +35,39 @@ export default function Feed({ session, userIdFilter = null }) {
 
   useEffect(() => {
     loadFeed();
+    const filterKey = userIdFilter ? `user-${userIdFilter}` : communityIdFilter ? `comm-${communityIdFilter}` : 'all';
     const sub = supabase
-      .channel('feed-channel-' + (userIdFilter || 'all'))
+      .channel('feed-channel-' + filterKey)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, loadFeed)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'likes' }, loadFeed)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, loadFeed)
       .subscribe();
     return () => sub.unsubscribe();
-  }, [userIdFilter]);
+  }, [userIdFilter, communityIdFilter]);
 
   if (loading) return <Loader />;
 
   return (
     <main className="flex flex-col gap-6 w-full max-w-2xl mx-auto">
-      {!userIdFilter && <CreatePost session={session} onPostCreated={loadFeed} />}
+      {!userIdFilter && (
+        <CreatePost
+          session={session}
+          onPostCreated={loadFeed}
+          communityId={communityIdFilter}
+          placeholder={placeholder || (communityIdFilter ? "Start a discussion in this community..." : "What are you working on? Share code, ideas, or questions...")}
+        />
+      )}
 
       <AnimatePresence>
         {posts.length === 0 ? (
           <EmptyState
             icon={MessageSquare}
-            title={userIdFilter ? 'No posts yet' : 'Your feed is empty'}
+            title={userIdFilter ? 'No posts yet' : communityIdFilter ? 'No discussions yet' : 'Your feed is empty'}
             description={
               userIdFilter
                 ? "This user hasn't posted anything yet."
+                : communityIdFilter
+                ? 'Be the first to share an idea, ask a question, or post a project update in this community!'
                 : 'Be the first to post something exciting!'
             }
           />

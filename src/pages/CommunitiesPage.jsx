@@ -132,7 +132,9 @@ export default function CommunitiesPage({ session }) {
                     : <Globe size={14} className="text-muted mt-1" />
                   }
                 </div>
-                <h3 className="font-bold text-main mb-1">{community.name}</h3>
+                <Link to={`/communities/${community.id}`} className="group-hover:text-primary transition-colors">
+                  <h3 className="font-bold text-main mb-1 group-hover:text-primary transition-colors">{community.name}</h3>
+                </Link>
                 <p className="text-sm text-muted line-clamp-2 flex-1 mb-4">{community.description || 'A developer community'}</p>
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-muted flex items-center gap-1">
