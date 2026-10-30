@@ -41,7 +41,7 @@ export default function ProjectsModal({ session, onClose }) {
       if (generated) {
         setDescription(generated.trim());
       }
-    } catch (err) {
+    } catch {
       setDescription(`An innovative open-source project designed to streamline workflows and deliver high performance.`);
     } finally {
       setAiGeneratingDesc(false);
@@ -70,8 +70,8 @@ export default function ProjectsModal({ session, onClose }) {
           const urlParts = new URL(data.github_url).pathname.split('/');
           const username = urlParts[1];
           if (username) setGithubUsername(username);
-        } catch(e) {
-          console.error("Invalid github url");
+        } catch {
+          // ignore
         }
       }
     }
@@ -98,100 +98,93 @@ export default function ProjectsModal({ session, onClose }) {
     if (!githubUsername) return;
     setIsFetchingGithub(true);
     try {
-      const res = await fetch(`https://api.github.com/users/${githubUsername}/repos?sort=updated&per_page=10`);
-      if (!res.ok) throw new Error('User not found');
+      const res = await fetch(`https://api.github.com/users/${githubUsername}/repos?sort=updated&per_page=12`);
+      if (!res.ok) throw new Error("Could not find GitHub user");
       const data = await res.json();
       setGithubRepos(data);
-    } catch (err) {
-      alert("Could not fetch repositories. Check the username.");
-      setGithubRepos([]);
+    } catch {
+      alert("Failed to fetch repositories. Please check the username.");
+    } finally {
+      setIsFetchingGithub(false);
     }
-    setIsFetchingGithub(false);
   };
 
-  const importGithubRepo = async (repo) => {
+  const handleImportGithubRepo = async (repo) => {
     setImportingId(repo.id);
-    await supabase.from('projects').insert({
-      user_id: session.user.id,
-      title: repo.name,
-      description: repo.description || 'No description provided.',
-      repo_url: repo.html_url,
-      demo_url: repo.homepage || ''
-    });
-    setImportingId(null);
-    loadProjects();
-    
-    // Remove from the list so they don't import twice
-    setGithubRepos(prev => prev.filter(r => r.id !== repo.id));
+    try {
+      const { error } = await supabase.from('projects').insert({
+        user_id: session.user.id,
+        title: repo.name,
+        description: repo.description || 'Imported from GitHub',
+        repo_url: repo.html_url,
+        demo_url: repo.homepage || null
+      });
+      if (error) throw error;
+      await loadProjects();
+    } catch {
+      alert("Error importing repo");
+    } finally {
+      setImportingId(null);
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      {/* Backdrop */}
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onClose}
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-      />
-
-      {/* Modal */}
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
       <motion.div 
         initial={{ scale: 0.95, opacity: 0, y: 20 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.95, opacity: 0, y: 20 }}
-        className="relative w-full max-w-2xl glass-panel rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        className="relative w-full max-w-2xl bg-white border border-[#f1e4d3] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-white/10 bg-[#050505]">
+        <div className="flex items-center justify-between p-6 border-b border-[#f1e4d3] bg-[#fffcf7]">
           <div className="flex items-center gap-3">
-            <div className="p-2 glass-panel text-muted rounded-lg">
+            <div className="p-2.5 bg-[#ffedd5] text-[#ea580c] rounded-xl border border-[#fed7aa]">
               <FolderGit2 size={24} />
             </div>
             <div>
-              <h2 className="text-xl font-semibold text-main">My Repositories</h2>
-              <p className="text-sm text-muted">Manage and showcase your projects</p>
+              <h2 className="text-xl font-bold text-[#1c130d]">My Repositories</h2>
+              <p className="text-sm text-[#6b5546]">Manage and showcase your projects</p>
             </div>
           </div>
           <button 
             onClick={onClose}
-            className="p-2 text-[#666] hover:text-main rounded-lg transition-colors"
+            className="p-2 text-[#6b5546] hover:text-[#1c130d] hover:bg-[#faf6f0] rounded-xl transition-colors cursor-pointer"
           >
             <X size={20} />
           </button>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 scrollbar-hide">
+        <div className="flex-1 overflow-y-auto p-6 no-scrollbar bg-[#faf6f0]/50">
           <div className="flex flex-col gap-4">
             {projects.length === 0 ? (
-              <div className="text-center py-12 px-4 border border-dashed border-white/10 rounded-xl bg-surface">
-                <FolderGit2 size={48} className="mx-auto text-gray-600 mb-4" />
-                <h3 className="text-lg font-medium text-main mb-2">No projects yet</h3>
-                <p className="text-gray-400 text-sm">Add your first repository manually or import from GitHub.</p>
+              <div className="text-center py-12 px-4 border border-dashed border-[#f1e4d3] rounded-2xl bg-white">
+                <FolderGit2 size={48} className="mx-auto text-[#ea580c] mb-3 opacity-60" />
+                <h3 className="text-lg font-bold text-[#1c130d] mb-1">No projects yet</h3>
+                <p className="text-[#6b5546] text-sm">Add your first repository manually or import from GitHub.</p>
               </div>
             ) : (
               projects.map(p => (
-                <div key={p.id} className="group p-5 glass-panel rounded-xl hover:border-primary/50 transition-colors">
+                <div key={p.id} className="group p-5 bg-white border border-[#f1e4d3] rounded-2xl hover:border-orange-400 hover:shadow-xs transition-all">
                   <div className="flex justify-between items-start mb-2">
-                    <Link to={`/projects/${p.id}`} onClick={onClose} className="text-lg font-bold text-main hover:text-primary transition-colors cursor-pointer hover:underline block truncate max-w-[70%]">
+                    <Link to={`/projects/${p.id}`} onClick={onClose} className="text-lg font-bold text-[#1c130d] hover:text-[#ea580c] transition-colors cursor-pointer hover:underline block truncate max-w-[70%]">
                       {p.title}
                     </Link>
                     <div className="flex gap-2">
                       {p.repo_url && (
-                        <a href={p.repo_url} target="_blank" rel="noreferrer" className="p-2 bg-surface hover:bg-surface-hover text-gray-300 hover:text-main rounded-lg transition-colors tooltip" title="Repository">
+                        <a href={p.repo_url} target="_blank" rel="noreferrer" className="p-2 bg-[#faf6f0] hover:bg-[#ffedd5] text-[#6b5546] hover:text-[#ea580c] rounded-xl transition-colors border border-[#f1e4d3]" title="Repository">
                           <GitBranch size={16} />
                         </a>
                       )}
                       {p.demo_url && (
-                        <a href={p.demo_url} target="_blank" rel="noreferrer" className="p-2 bg-surface hover:bg-surface-hover text-gray-300 hover:text-main rounded-lg transition-colors tooltip" title="Live Demo">
+                        <a href={p.demo_url} target="_blank" rel="noreferrer" className="p-2 bg-[#faf6f0] hover:bg-[#ffedd5] text-[#6b5546] hover:text-[#ea580c] rounded-xl transition-colors border border-[#f1e4d3]" title="Live Demo">
                           <ExternalLink size={16} />
                         </a>
                       )}
                     </div>
                   </div>
-                  <p className="text-sm text-gray-400">{p.description}</p>
+                  <p className="text-sm text-[#6b5546]">{p.description}</p>
                 </div>
               ))
             )}
@@ -205,30 +198,30 @@ export default function ProjectsModal({ session, onClose }) {
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
                 onSubmit={handleAdd} 
-                className="flex flex-col gap-4 mt-6 p-5 glass-panel rounded-xl overflow-hidden"
+                className="flex flex-col gap-4 mt-6 p-5 bg-white border border-[#f1e4d3] rounded-2xl overflow-hidden shadow-xs"
               >
-                <h4 className="text-sm font-semibold text-primary uppercase tracking-wider mb-2">Add Manual Project</h4>
+                <h4 className="text-xs font-bold text-[#ea580c] uppercase tracking-wider mb-1">Add Manual Project</h4>
                 <input 
                   type="text" 
                   value={title} 
                   onChange={e => setTitle(e.target.value)} 
                   placeholder="Project Title" 
                   required 
-                  className="w-full glass-panel rounded-xl px-4 py-2.5 text-sm text-main focus:border-primary/50 outline-none transition-colors"
+                  className="w-full bg-[#faf6f0] rounded-xl px-4 py-2.5 text-sm text-[#1c130d] border border-[#f1e4d3] focus:border-[#ea580c] focus:bg-white outline-none transition-colors"
                 />
                 <div className="flex flex-col gap-1.5">
                   <div className="flex justify-between items-center">
-                    <span className="text-xs text-muted font-medium">Description</span>
+                    <span className="text-xs text-[#6b5546] font-bold">Description</span>
                     <button
                       type="button"
                       onClick={handleGenerateDescription}
                       disabled={aiGeneratingDesc}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-semibold rounded-lg bg-violet-500/15 hover:bg-violet-500/25 text-violet-300 border border-violet-500/30 transition-all cursor-pointer disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-bold rounded-lg bg-orange-100 hover:bg-orange-200 text-[#ea580c] border border-orange-300 transition-all cursor-pointer disabled:opacity-50"
                     >
                       {aiGeneratingDesc ? (
-                        <RefreshCw size={11} className="animate-spin text-violet-400" />
+                        <RefreshCw size={11} className="animate-spin text-[#ea580c]" />
                       ) : (
-                        <Sparkles size={11} className="text-violet-400" />
+                        <Sparkles size={11} className="text-[#ea580c]" />
                       )}
                       <span>{aiGeneratingDesc ? 'Generating Pitch...' : '✨ AI Pitch'}</span>
                     </button>
@@ -238,22 +231,22 @@ export default function ProjectsModal({ session, onClose }) {
                     onChange={e => setDescription(e.target.value)} 
                     placeholder="Short Description or click 'AI Pitch' to generate..." 
                     rows="2" 
-                    className="w-full glass-panel rounded-xl px-4 py-2.5 text-sm text-main focus:border-primary/50 outline-none transition-colors resize-none"
+                    className="w-full bg-[#faf6f0] rounded-xl px-4 py-2.5 text-sm text-[#1c130d] border border-[#f1e4d3] focus:border-[#ea580c] focus:bg-white outline-none transition-colors resize-none"
                   ></textarea>
                 </div>
                 <div className="flex gap-4">
                   <div className="flex-1 relative">
-                    <GitBranch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
-                    <input type="url" value={repoUrl} onChange={e => setRepoUrl(e.target.value)} placeholder="Repository URL" className="w-full glass-panel rounded-xl pl-10 pr-4 py-2.5 text-sm text-main focus:border-primary/50 outline-none transition-colors" />
+                    <GitBranch className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8d7565]" size={16} />
+                    <input type="url" value={repoUrl} onChange={e => setRepoUrl(e.target.value)} placeholder="Repository URL" className="w-full bg-[#faf6f0] rounded-xl pl-10 pr-4 py-2.5 text-sm text-[#1c130d] border border-[#f1e4d3] focus:border-[#ea580c] outline-none" />
                   </div>
                   <div className="flex-1 relative">
-                    <ExternalLink className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
-                    <input type="url" value={demoUrl} onChange={e => setDemoUrl(e.target.value)} placeholder="Live Demo URL" className="w-full glass-panel rounded-xl pl-10 pr-4 py-2.5 text-sm text-main focus:border-primary/50 outline-none transition-colors" />
+                    <ExternalLink className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8d7565]" size={16} />
+                    <input type="url" value={demoUrl} onChange={e => setDemoUrl(e.target.value)} placeholder="Demo URL" className="w-full bg-[#faf6f0] rounded-xl pl-10 pr-4 py-2.5 text-sm text-[#1c130d] border border-[#f1e4d3] focus:border-[#ea580c] outline-none" />
                   </div>
                 </div>
                 <div className="flex justify-end gap-3 mt-2">
-                  <button type="button" onClick={() => setAddMode('none')} className="px-4 py-2 text-sm font-medium text-gray-400 hover:text-main transition-colors">Cancel</button>
-                  <button type="submit" className="px-6 py-2 bg-gradient-to-r from-primary to-purple-600 text-main text-sm font-semibold rounded-lg shadow-lg hover:shadow-primary/25 transition-all hover:scale-105">Save Project</button>
+                  <button type="button" onClick={() => setAddMode('none')} className="px-4 py-2 text-sm text-[#6b5546] hover:text-[#1c130d] cursor-pointer">Cancel</button>
+                  <button type="submit" className="px-5 py-2 bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white font-bold text-sm rounded-xl hover:brightness-105 shadow-md shadow-orange-500/25 cursor-pointer">Save Project</button>
                 </div>
               </motion.form>
             )}
@@ -264,65 +257,52 @@ export default function ProjectsModal({ session, onClose }) {
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
-                className="flex flex-col gap-4 mt-6 p-5 glass-panel rounded-xl overflow-hidden"
+                className="flex flex-col gap-4 mt-6 p-5 bg-white border border-[#f1e4d3] rounded-2xl overflow-hidden shadow-xs"
               >
-                <div className="flex justify-between items-center mb-2">
-                  <h4 className="text-sm font-semibold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
-                    <GithubIcon size={16} /> Import from GitHub
-                  </h4>
-                  <button onClick={() => setAddMode('none')} className="text-gray-400 hover:text-main"><X size={16}/></button>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-[#ea580c] uppercase tracking-wider">Import from GitHub</h4>
+                  <button onClick={() => setAddMode('none')} className="text-xs text-[#6b5546] hover:text-[#1c130d]">Cancel</button>
                 </div>
                 
-                <form onSubmit={fetchGithubRepos} className="flex gap-3 flex-col">
-                  {currentUserProfile?.github_url ? (
-                    <div className="flex gap-3">
-                      <input 
-                        type="text" 
-                        value={githubUsername} 
-                        disabled 
-                        placeholder="GitHub Username" 
-                        className="flex-1 glass-panel rounded-xl px-4 py-2.5 text-sm text-gray-400 bg-black/50 border-white/10 outline-none cursor-not-allowed"
-                      />
-                      <button 
-                        type="submit" 
-                        disabled={isFetchingGithub || !githubUsername}
-                        className="px-6 py-2.5 bg-white text-black hover:bg-[#e5e5e5] text-sm font-semibold rounded-xl disabled:opacity-50 transition-colors flex items-center gap-2"
-                      >
-                        {isFetchingGithub ? <Loader2 size={16} className="animate-spin" /> : <DownloadCloud size={16} />}
-                        Fetch Repos
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm flex flex-col items-start gap-3">
-                      <p>Please link your GitHub profile in your account settings first to import repositories.</p>
-                      <Link 
-                        to={`/profile/${currentUserProfile?.username}`} 
-                        onClick={onClose} 
-                        className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-white rounded-lg text-xs font-semibold transition-colors"
-                      >
-                        Go to Profile
-                      </Link>
-                    </div>
-                  )}
+                <form onSubmit={fetchGithubRepos} className="flex gap-2">
+                  <input 
+                    type="text" 
+                    value={githubUsername} 
+                    onChange={e => setGithubUsername(e.target.value)} 
+                    placeholder="Enter GitHub Username..." 
+                    className="flex-1 bg-[#faf6f0] border border-[#f1e4d3] rounded-xl px-4 py-2 text-sm text-[#1c130d] focus:border-orange-500 outline-none" 
+                  />
+                  <button type="submit" disabled={isFetchingGithub} className="px-4 py-2 bg-[#ffedd5] hover:bg-[#fed7aa] text-[#9a3412] font-bold text-sm rounded-xl transition-colors flex items-center gap-2 cursor-pointer">
+                    {isFetchingGithub ? <Loader2 size={16} className="animate-spin" /> : "Fetch Repos"}
+                  </button>
                 </form>
 
                 {githubRepos.length > 0 && (
-                  <div className="flex flex-col gap-3 mt-4 max-h-[300px] overflow-y-auto pr-2 scrollbar-hide">
-                    {githubRepos.map(repo => (
-                      <div key={repo.id} className="flex items-center justify-between p-4 glass-panel rounded-xl">
-                        <div>
-                          <h5 className="text-main font-bold text-sm mb-1">{repo.name}</h5>
-                          <p className="text-gray-500 text-xs line-clamp-1">{repo.description || 'No description'}</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2 max-h-60 overflow-y-auto no-scrollbar">
+                    {githubRepos.map(repo => {
+                      const isImported = projects.some(p => p.title.toLowerCase() === repo.name.toLowerCase());
+                      return (
+                        <div key={repo.id} className="p-3 bg-[#faf6f0] border border-[#f1e4d3] rounded-xl flex flex-col justify-between">
+                          <div>
+                            <span className="font-bold text-sm text-[#1c130d] block truncate">{repo.name}</span>
+                            <span className="text-xs text-[#6b5546] line-clamp-2 mt-0.5">{repo.description || "No description"}</span>
+                          </div>
+                          <div className="flex justify-between items-center mt-3 pt-2 border-t border-[#f1e4d3]">
+                            <span className="text-[10px] text-[#8d7565] font-semibold">{repo.language || 'Code'}</span>
+                            <button 
+                              disabled={isImported || importingId === repo.id}
+                              onClick={() => handleImportGithubRepo(repo)}
+                              className={`text-xs px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 transition-colors ${
+                                isImported ? 'bg-emerald-100 text-emerald-800' : 'bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white hover:brightness-105'
+                              }`}
+                            >
+                              {importingId === repo.id ? <Loader2 size={12} className="animate-spin" /> : <DownloadCloud size={12} />}
+                              {isImported ? "Added" : "Import"}
+                            </button>
+                          </div>
                         </div>
-                        <button 
-                          onClick={() => importGithubRepo(repo)}
-                          disabled={importingId === repo.id}
-                          className="px-4 py-1.5 bg-surface-hover hover:bg-white/20 text-main text-xs font-semibold rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap ml-4"
-                        >
-                          {importingId === repo.id ? <Loader2 size={14} className="animate-spin" /> : 'Import'}
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </motion.div>
@@ -330,25 +310,25 @@ export default function ProjectsModal({ session, onClose }) {
           </AnimatePresence>
         </div>
 
-        {/* Footer */}
-        {addMode === 'none' && (
-          <div className="p-6 border-t border-white/10 bg-[#050505] flex gap-4">
-            <button 
-              onClick={() => setAddMode('github')}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-surface hover:bg-surface-hover text-main border border-white/10 rounded-xl font-medium transition-colors"
-            >
-              <GithubIcon size={18} />
-              Import from GitHub
-            </button>
-            <button 
-              onClick={() => setAddMode('manual')}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-white hover:bg-[#e5e5e5] text-black rounded-xl font-semibold transition-colors"
-            >
-              <Plus size={18} />
-              Add Manual Project
-            </button>
-          </div>
-        )}
+        {/* Footer Actions */}
+        <div className="p-4 border-t border-[#f1e4d3] bg-[#fffcf7] flex gap-3">
+          <button 
+            onClick={() => setAddMode(addMode === 'manual' ? 'none' : 'manual')}
+            className={`flex-1 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              addMode === 'manual' ? 'bg-[#ffedd5] text-[#ea580c] border border-orange-300' : 'bg-[#faf6f0] border border-[#f1e4d3] text-[#1c130d] hover:bg-[#ffedd5]'
+            }`}
+          >
+            <Plus size={16} /> Add Manually
+          </button>
+          <button 
+            onClick={() => setAddMode(addMode === 'github' ? 'none' : 'github')}
+            className={`flex-1 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              addMode === 'github' ? 'bg-[#ffedd5] text-[#ea580c] border border-orange-300' : 'bg-[#faf6f0] border border-[#f1e4d3] text-[#1c130d] hover:bg-[#ffedd5]'
+            }`}
+          >
+            <GithubIcon size={16} /> Import from GitHub
+          </button>
+        </div>
       </motion.div>
     </div>
   );

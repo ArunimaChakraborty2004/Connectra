@@ -16,6 +16,9 @@ import {
   Code2,
   Sparkles,
   X,
+  Compass,
+  Plus,
+  Zap,
 } from 'lucide-react';
 
 export default function Sidebar({ profile, stats, onClose }) {
@@ -38,7 +41,7 @@ export default function Sidebar({ profile, stats, onClose }) {
     {
       title: 'EXPLORE',
       items: [
-        { label: 'Feed', path: '/', icon: Users },
+        { label: 'Feed', path: '/', icon: Compass },
         { label: 'Collab Board', path: '/collab', icon: Briefcase, badge: 'HOT' },
         { label: 'Search Devs', path: '/search', icon: Search },
         { label: 'Reels', path: '/reels', icon: Film },
@@ -72,146 +75,105 @@ export default function Sidebar({ profile, stats, onClose }) {
   ];
 
   return (
-    <aside className="sticky top-20 flex flex-col gap-3.5 w-full max-w-[270px]">
-      {/* User Profile Card */}
-      <div
-        className="glass-panel rounded-2xl p-4 flex flex-col gap-3 relative"
-        style={{ backgroundColor: 'var(--surface-color)', borderColor: 'var(--border-color)' }}
-      >
-        {onClose && (
-          <button
-            onClick={onClose}
-            aria-label="Close menu"
-            className="absolute top-3 right-3 p-1.5 rounded-xl transition-colors cursor-pointer lg:hidden"
-            style={{ color: 'var(--text-muted)' }}
-            onMouseEnter={e => {
-              e.currentTarget.style.backgroundColor = 'var(--surface-hover)';
-              e.currentTarget.style.color = 'var(--text-color)';
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.backgroundColor = 'transparent';
-              e.currentTarget.style.color = 'var(--text-muted)';
-            }}
-          >
-            <X size={16} />
-          </button>
-        )}
-        <div className="flex items-center gap-3">
+    <aside className="sticky top-20 flex flex-col gap-3.5 w-full max-w-[240px] select-none">
+      {/* Mobile close button */}
+      {onClose && (
+        <button
+          onClick={onClose}
+          aria-label="Close menu"
+          className="absolute top-0 right-0 p-1.5 rounded-xl text-[#8d7565] hover:text-[#2b1f17] hover:bg-[#fff4e6] lg:hidden cursor-pointer"
+        >
+          <X size={16} />
+        </button>
+      )}
+
+      {/* User Profile Card with Level, Bio, Streak & XP */}
+      <div className="bg-white border border-[#f1e4d3] shadow-xs rounded-2xl p-3.5 flex flex-col gap-2.5">
+        <div className="flex items-center gap-2.5">
           <div className="relative shrink-0">
-            <div
-              className="w-11 h-11 rounded-xl flex items-center justify-center text-base font-bold overflow-hidden"
-              style={{
-                background: 'linear-gradient(135deg, rgba(124,58,237,0.3), rgba(99,102,241,0.2))',
-                border: '1px solid var(--border-color)',
-                color: 'var(--text-color)',
-              }}
-            >
+            <div className="w-10 h-10 rounded-xl overflow-hidden bg-gradient-to-tr from-[#ea580c] via-[#f97316] to-[#fbbf24] p-0.5 flex items-center justify-center text-white font-bold text-sm shadow-2xs">
               {profile?.avatar_url ? (
-                <img
-                  src={profile.avatar_url}
-                  alt={profile.username}
-                  className="w-full h-full object-cover"
-                />
+                <img src={profile.avatar_url} alt={profile.username} className="w-full h-full object-cover rounded-[10px]" />
               ) : (
-                initial
+                <span className="w-full h-full bg-[#faf6f0] rounded-[10px] flex items-center justify-center text-[#ea580c]">{initial}</span>
               )}
             </div>
-            <span
-              className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 rounded-full"
-              style={{ border: '2px solid var(--surface-color)' }}
-              title="Online"
-            />
+            <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-white" title="Online" />
           </div>
 
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <Link
-                to={`/profile/${profile?.username}`}
+                to={`/profile/${profile?.username || 'user'}`}
                 onClick={onClose}
-                className="font-bold text-sm truncate block transition-colors"
-                style={{ color: 'var(--text-color)' }}
-                onMouseEnter={e => e.target.style.color = 'var(--primary-color)'}
-                onMouseLeave={e => e.target.style.color = 'var(--text-color)'}
+                className="font-bold text-xs truncate text-[#2b1f17] hover:text-[#ea580c] transition-colors"
               >
                 {profile?.username || 'Developer'}
               </Link>
-              <span
-                className="text-[9px] font-extrabold uppercase px-1.5 rounded shrink-0"
-                style={{
-                  backgroundColor: 'rgba(99,102,241,0.15)',
-                  color: 'var(--primary-color)',
-                  border: '1px solid rgba(99,102,241,0.25)',
-                  padding: '1px 5px',
-                }}
-              >
+              <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-orange-100 text-[#ea580c] border border-orange-200 shrink-0">
                 LVL {level}
               </span>
             </div>
-            <p className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
+            <p className="text-[10px] text-[#8d7565] truncate">
               {profile?.bio || 'Full-Stack Developer'}
             </p>
           </div>
         </div>
 
-        {/* Mini Stats */}
-        <div
-          className="grid grid-cols-3 gap-1 py-2 px-2.5 rounded-xl text-center"
-          style={{
-            backgroundColor: 'var(--surface-hover)',
-            border: '1px solid var(--border-color)',
-          }}
-        >
+        {/* Mini Stats (Followers, Following, Streak) */}
+        <div className="grid grid-cols-3 gap-1 py-1.5 px-2 rounded-xl bg-[#faf6f0] border border-[#f1e4d3] text-center">
           <div>
-            <span className="block text-xs font-bold" style={{ color: 'var(--text-color)' }}>{followers}</span>
-            <span className="block text-[9px] uppercase font-medium" style={{ color: 'var(--text-muted)' }}>Followers</span>
+            <span className="block text-xs font-bold text-[#2b1f17]">{followers}</span>
+            <span className="block text-[8px] uppercase font-bold text-[#8d7565]">Followers</span>
           </div>
-          <div style={{ borderLeft: '1px solid var(--border-color)', borderRight: '1px solid var(--border-color)' }}>
-            <span className="block text-xs font-bold" style={{ color: 'var(--text-color)' }}>{following}</span>
-            <span className="block text-[9px] uppercase font-medium" style={{ color: 'var(--text-muted)' }}>Following</span>
+          <div className="border-x border-[#f1e4d3]">
+            <span className="block text-xs font-bold text-[#2b1f17]">{following}</span>
+            <span className="block text-[8px] uppercase font-bold text-[#8d7565]">Following</span>
           </div>
           <div>
             <span className="text-xs font-bold text-amber-500 flex items-center justify-center gap-0.5">
               1 <Flame size={10} />
             </span>
-            <span className="block text-[9px] uppercase font-medium" style={{ color: 'var(--text-muted)' }}>Streak</span>
+            <span className="block text-[8px] uppercase font-bold text-[#8d7565]">Streak</span>
           </div>
         </div>
 
         {/* XP Progress Bar */}
         <div>
-          <div className="flex justify-between items-center text-[10px] font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>
+          <div className="flex justify-between items-center text-[9px] font-bold text-[#8d7565] mb-1">
             <span className="flex items-center gap-1">
-              <Code2 size={11} className="text-violet-400" /> Code XP
+              <Code2 size={11} className="text-[#ea580c]" /> Code XP
             </span>
-            <span className="font-mono text-[10px]" style={{ color: 'var(--text-color)' }}>
-              {xp} / {level * 1000}
-            </span>
+            <span className="font-mono text-[#2b1f17]">{xp} / {level * 1000}</span>
           </div>
-          <div
-            className="h-1.5 w-full rounded-full overflow-hidden"
-            style={{ backgroundColor: 'var(--surface-hover)', border: '1px solid var(--border-color)' }}
-          >
+          <div className="h-1.5 w-full rounded-full overflow-hidden bg-[#f1e4d3]">
             <motion.div
               initial={{ width: 0 }}
               animate={{ width: `${xpProgress}%` }}
               transition={{ duration: 0.8, ease: 'easeOut' }}
-              className="h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-500"
+              className="h-full rounded-full bg-gradient-to-r from-[#ea580c] to-[#f97316]"
             />
           </div>
         </div>
       </div>
 
-      {/* Navigation */}
-      <div
-        className="glass-panel rounded-2xl p-2 flex flex-col gap-2.5"
-        style={{ backgroundColor: 'var(--surface-color)', borderColor: 'var(--border-color)' }}
+      {/* + Create Post Button */}
+      <button
+        onClick={() => {
+          document.querySelector('textarea')?.focus();
+          if (onClose) onClose();
+        }}
+        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-[#ea580c] via-[#f97316] to-[#fb923c] hover:brightness-105 text-white font-extrabold text-xs shadow-md shadow-orange-500/25 transition-all cursor-pointer active:scale-98"
       >
+        <Plus size={15} strokeWidth={3} />
+        <span>Create Post</span>
+      </button>
+
+      {/* Navigation Groups (Explore, Collaborate, Personal) */}
+      <div className="bg-white border border-[#f1e4d3] shadow-xs rounded-2xl p-2.5 flex flex-col gap-2.5">
         {navGroups.map((group, gIdx) => (
           <div key={gIdx} className="flex flex-col gap-0.5">
-            <span
-              className="text-[10px] font-bold tracking-wider px-2.5 py-1 uppercase"
-              style={{ color: 'var(--text-muted)' }}
-            >
+            <span className="text-[9px] font-bold tracking-wider px-2 py-0.5 uppercase text-[#8d7565]">
               {group.title}
             </span>
 
@@ -219,40 +181,21 @@ export default function Sidebar({ profile, stats, onClose }) {
               const Icon = item.icon;
               const active = item.path ? isActive(item.path) : false;
 
-              const itemStyle = active
-                ? {
-                    backgroundColor: 'rgba(99,102,241,0.12)',
-                    color: 'var(--primary-color)',
-                    border: '1px solid rgba(99,102,241,0.25)',
-                    fontWeight: 700,
-                  }
-                : {
-                    backgroundColor: 'transparent',
-                    color: 'var(--text-muted)',
-                    border: '1px solid transparent',
-                    fontWeight: 500,
-                  };
-
               const content = (
                 <div
-                  className="flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-all"
-                  style={itemStyle}
+                  className={`flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all ${
+                    active
+                      ? 'bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white font-bold shadow-xs'
+                      : 'text-[#8d7565] hover:text-[#2b1f17] hover:bg-[#fff7ed]'
+                  }`}
                 >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <Icon size={16} />
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Icon size={15} strokeWidth={active ? 2.4 : 1.8} />
                     <span className="truncate">{item.label}</span>
                   </div>
 
                   {item.badge && (
-                    <span
-                      className="text-[9px] font-extrabold px-1.5 rounded"
-                      style={{
-                        backgroundColor: 'rgba(245,158,11,0.15)',
-                        color: '#f59e0b',
-                        border: '1px solid rgba(245,158,11,0.3)',
-                        padding: '1px 5px',
-                      }}
-                    >
+                    <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-amber-100 text-amber-700 border border-amber-200">
                       {item.badge}
                     </span>
                   )}
@@ -268,24 +211,6 @@ export default function Sidebar({ profile, stats, onClose }) {
                       if (onClose) onClose();
                     }}
                     className="w-full text-left cursor-pointer"
-                    onMouseEnter={e => {
-                      if (!active) {
-                        const inner = e.currentTarget.querySelector('div');
-                        if (inner) {
-                          inner.style.backgroundColor = 'var(--surface-hover)';
-                          inner.style.color = 'var(--text-color)';
-                        }
-                      }
-                    }}
-                    onMouseLeave={e => {
-                      if (!active) {
-                        const inner = e.currentTarget.querySelector('div');
-                        if (inner) {
-                          inner.style.backgroundColor = 'transparent';
-                          inner.style.color = 'var(--text-muted)';
-                        }
-                      }
-                    }}
                   >
                     {content}
                   </button>
@@ -298,24 +223,6 @@ export default function Sidebar({ profile, stats, onClose }) {
                   to={item.path}
                   onClick={onClose}
                   className="w-full"
-                  onMouseEnter={e => {
-                    if (!active) {
-                      const inner = e.currentTarget.querySelector('div');
-                      if (inner) {
-                        inner.style.backgroundColor = 'var(--surface-hover)';
-                        inner.style.color = 'var(--text-color)';
-                      }
-                    }
-                  }}
-                  onMouseLeave={e => {
-                    if (!active) {
-                      const inner = e.currentTarget.querySelector('div');
-                      if (inner) {
-                        inner.style.backgroundColor = 'transparent';
-                        inner.style.color = 'var(--text-muted)';
-                      }
-                    }
-                  }}
                 >
                   {content}
                 </Link>
@@ -323,6 +230,17 @@ export default function Sidebar({ profile, stats, onClose }) {
             })}
           </div>
         ))}
+      </div>
+
+      {/* Upgrade to Connectra+ Card */}
+      <div className="p-3 rounded-2xl bg-gradient-to-b from-[#fff7ed] to-[#ffedd5] border border-[#fed7aa] flex flex-col items-center text-center gap-1.5 shadow-xs">
+        <div className="text-xs font-bold text-[#9a3412] flex items-center gap-1.5">
+          <Zap size={13} className="text-[#ea580c]" />
+          <span>Connectra+ Pro</span>
+        </div>
+        <p className="text-[10px] text-[#8d7565] leading-tight">
+          Unlock CTF badges, Repos & exclusive dev clubs.
+        </p>
       </div>
     </aside>
   );
