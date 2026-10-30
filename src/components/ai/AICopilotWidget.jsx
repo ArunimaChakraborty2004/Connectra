@@ -80,13 +80,13 @@ export default function AICopilotWidget({ session }) {
           whileHover={{ scale: 1.08 }}
           whileTap={{ scale: 0.92 }}
           onClick={() => setIsOpen(prev => !prev)}
-          className="relative w-12 h-12 rounded-full bg-gradient-to-tr from-violet-600 to-indigo-600 text-white shadow-xl shadow-violet-500/30 border border-white/20 flex items-center justify-center cursor-pointer transition-all"
+          className="relative w-13 h-13 rounded-2xl bg-gradient-to-tr from-[#ea580c] via-[#f97316] to-[#f59e0b] text-white shadow-xl shadow-orange-500/30 border border-orange-300/40 flex items-center justify-center cursor-pointer transition-all"
           title="Connectra AI Copilot"
         >
-          <Bot size={22} className="text-white" />
-          <span className="absolute top-0 right-0 flex h-3 w-3">
+          <Bot size={24} className="text-white drop-shadow-sm" />
+          <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500 border-2 border-white"></span>
+            <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500 border-2 border-white shadow-xs"></span>
           </span>
         </motion.button>
       </div>
@@ -98,36 +98,36 @@ export default function AICopilotWidget({ session }) {
             initial={{ opacity: 0, y: 30, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 30, scale: 0.95 }}
-            className="fixed bottom-36 lg:bottom-22 right-3 lg:right-6 z-50 w-[94vw] sm:w-[400px] h-[520px] max-h-[75vh] rounded-2xl glass-panel bg-surface/98 backdrop-blur-xl border border-border shadow-2xl flex flex-col overflow-hidden"
+            className="fixed bottom-36 lg:bottom-22 right-3 lg:right-6 z-50 w-[94vw] sm:w-[420px] h-[540px] max-h-[78vh] rounded-3xl bg-white border border-[#f1e4d3] shadow-2xl flex flex-col overflow-hidden"
           >
             {/* Header */}
-            <div className="p-3.5 border-b border-border flex items-center justify-between bg-surface-hover/50">
+            <div className="p-4 border-b border-[#f1e4d3] flex items-center justify-between bg-gradient-to-r from-[#fff7ed] via-[#fffdfa] to-white">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center text-white shadow-md">
-                  <Sparkles size={16} />
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#ea580c] to-[#f97316] flex items-center justify-center text-white shadow-md shadow-orange-500/20">
+                  <Sparkles size={18} />
                 </div>
                 <div>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-sm font-bold text-main">Connectra Copilot</span>
-                    <span className="text-[10px] uppercase font-extrabold px-1.5 py-0.2 rounded bg-violet-500/15 text-violet-500 border border-violet-500/25">
-                      GROQ
+                    <span className="text-sm font-bold text-[#1c130d]">Connectra Copilot</span>
+                    <span className="text-[10px] uppercase font-extrabold px-1.5 py-0.2 rounded-full bg-[#ffedd5] text-[#ea580c] border border-orange-200">
+                      AI CORE
                     </span>
                   </div>
-                  <p className="text-[11px] text-muted">Dev & Cybersecurity Assistant</p>
+                  <p className="text-[11px] text-[#6b5546]">Dev & Cybersecurity Assistant</p>
                 </div>
               </div>
 
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => setMessages([messages[0]])}
-                  className="p-1.5 text-muted hover:text-main rounded-lg hover:bg-white/5 transition-colors text-xs flex items-center gap-1"
+                  className="p-1.5 text-[#6b5546] hover:text-[#1c130d] rounded-xl hover:bg-[#faf6f0] transition-colors text-xs flex items-center gap-1 cursor-pointer"
                   title="Clear conversation"
                 >
                   <RefreshCw size={13} />
                 </button>
                 <button
                   onClick={() => setIsOpen(false)}
-                  className="p-1.5 text-muted hover:text-main rounded-lg hover:bg-white/5 transition-colors"
+                  className="p-1.5 text-[#6b5546] hover:text-[#1c130d] rounded-xl hover:bg-[#faf6f0] transition-colors cursor-pointer"
                 >
                   <X size={18} />
                 </button>
@@ -135,17 +135,17 @@ export default function AICopilotWidget({ session }) {
             </div>
 
             {/* Chat Body */}
-            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 custom-scrollbar text-sm">
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 custom-scrollbar text-sm bg-[#faf6f0]/40">
               {messages.map((m, idx) => (
                 <div
                   key={idx}
                   className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}
                 >
                   <div
-                    className={`max-w-[88%] p-3 rounded-2xl text-xs sm:text-[13px] leading-relaxed relative group ${
+                    className={`max-w-[88%] p-3.5 rounded-2xl text-xs sm:text-[13px] leading-relaxed relative group shadow-2xs ${
                       m.role === 'user'
-                        ? 'bg-primary text-white rounded-br-none'
-                        : 'bg-surface/80 border border-white/10 text-muted rounded-bl-none shadow-sm'
+                        ? 'bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white rounded-br-none font-medium'
+                        : 'bg-white border border-[#f1e4d3] text-[#2b1f17] rounded-bl-none'
                     }`}
                   >
                     <div className="whitespace-pre-wrap select-text">{m.content}</div>
@@ -153,10 +153,10 @@ export default function AICopilotWidget({ session }) {
                     {m.role === 'assistant' && (
                       <button
                         onClick={() => copyToClipboard(m.content, idx)}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity absolute top-2 right-2 p-1 rounded bg-black/50 text-white/70 hover:text-white"
+                        className="opacity-0 group-hover:opacity-100 transition-opacity absolute top-2 right-2 p-1 rounded-lg bg-[#faf6f0] text-[#6b5546] hover:text-[#1c130d] border border-[#f1e4d3]"
                         title="Copy to clipboard"
                       >
-                        {copiedIndex === idx ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+                        {copiedIndex === idx ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
                       </button>
                     )}
                   </div>
@@ -164,9 +164,9 @@ export default function AICopilotWidget({ session }) {
               ))}
 
               {loading && (
-                <div className="flex items-center gap-2 p-3 max-w-[70%] rounded-2xl bg-surface/80 border border-white/10 text-xs text-violet-400">
-                  <RefreshCw size={13} className="animate-spin" />
-                  <span>Thinking with Llama 3...</span>
+                <div className="flex items-center gap-2 p-3 max-w-[70%] rounded-2xl bg-white border border-orange-200 text-xs text-[#ea580c] font-semibold shadow-2xs">
+                  <RefreshCw size={13} className="animate-spin text-[#ea580c]" />
+                  <span>Connectra AI is thinking...</span>
                 </div>
               )}
               <div ref={messagesEndRef} />
@@ -174,8 +174,8 @@ export default function AICopilotWidget({ session }) {
 
             {/* Quick Starters (if conversation is short) */}
             {messages.length <= 2 && (
-              <div className="px-4 pb-2 pt-1 flex flex-col gap-1.5">
-                <span className="text-[10px] uppercase font-bold text-muted tracking-wider">
+              <div className="px-4 pb-2 pt-1 flex flex-col gap-1.5 bg-white border-t border-[#f1e4d3]">
+                <span className="text-[10px] uppercase font-bold text-[#8d7565] tracking-wider">
                   Suggested Prompts
                 </span>
                 <div className="grid grid-cols-2 gap-1.5">
@@ -185,10 +185,10 @@ export default function AICopilotWidget({ session }) {
                       <button
                         key={i}
                         onClick={() => handleSend(qp.text)}
-                        className="p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/5 hover:border-violet-500/30 text-[11px] text-muted hover:text-main text-left transition-colors flex items-start gap-1.5"
+                        className="p-2.5 rounded-xl bg-[#fff7ed] hover:bg-[#ffedd5] border border-orange-200/60 text-[11px] text-[#6b5546] hover:text-[#1c130d] text-left transition-colors flex items-start gap-1.5 cursor-pointer"
                       >
-                        <Icon size={13} className="text-violet-400 shrink-0 mt-0.5" />
-                        <span className="line-clamp-2">{qp.text}</span>
+                        <Icon size={14} className="text-[#ea580c] shrink-0 mt-0.5" />
+                        <span className="line-clamp-2 font-medium">{qp.text}</span>
                       </button>
                     );
                   })}
@@ -202,19 +202,19 @@ export default function AICopilotWidget({ session }) {
                 e.preventDefault();
                 handleSend();
               }}
-              className="p-3 border-t border-border bg-surface-hover/50 flex items-center gap-2"
+              className="p-3 border-t border-[#f1e4d3] bg-white flex items-center gap-2"
             >
               <input
                 type="text"
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 placeholder="Ask about security, bugs, or code..."
-                className="flex-1 bg-surface border border-border rounded-xl px-3.5 py-2 text-xs text-main placeholder-muted outline-none focus:border-violet-500/50 transition-colors"
+                className="flex-1 bg-[#faf6f0] border border-[#f1e4d3] rounded-xl px-3.5 py-2.5 text-xs text-[#1c130d] placeholder-[#8d7565] outline-none focus:border-orange-500 focus:bg-white transition-colors"
               />
               <button
                 type="submit"
                 disabled={!input.trim() || loading}
-                className="p-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 text-white hover:opacity-90 disabled:opacity-40 transition-opacity cursor-pointer"
+                className="p-2.5 rounded-xl bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white hover:opacity-95 disabled:opacity-40 transition-opacity cursor-pointer shadow-sm shadow-orange-500/25"
               >
                 <Send size={15} />
               </button>

@@ -50,11 +50,20 @@ CREATE TABLE IF NOT EXISTS notifications (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
     actor_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
-    type TEXT NOT NULL CHECK (type IN ('connection_request', 'connection_accepted', 'like', 'comment')),
+    type TEXT NOT NULL CHECK (type IN ('follow', 'connection_request', 'connection_accepted', 'like', 'comment')),
     entity_id UUID, -- Can be post_id, comment_id, or connection_id
     is_read BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
+
+-- If notifications table already existed with older constraint, drop and update the check constraint:
+DO $$
+BEGIN
+    ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
+    ALTER TABLE notifications ADD CONSTRAINT notifications_type_check CHECK (type IN ('follow', 'connection_request', 'connection_accepted', 'like', 'comment'));
+EXCEPTION
+    WHEN undefined_table THEN NULL;
+END $$;
 
 -- RLS for notifications
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;

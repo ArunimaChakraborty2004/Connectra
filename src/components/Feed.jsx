@@ -70,6 +70,26 @@ function StoriesRow({ session }) {
 
   const initial = currentUser?.username?.[0]?.toUpperCase() || 'U';
 
+  const handleNextStory = () => {
+    if (!activeStory) return;
+    const allUsers = [currentUser, ...users].filter(Boolean);
+    const currentIndex = allUsers.findIndex(u => u.id === activeStory.user.id);
+    if (currentIndex >= 0 && currentIndex < allUsers.length - 1) {
+      handleOpenUserStory(allUsers[currentIndex + 1]);
+    } else {
+      setActiveStory(null);
+    }
+  };
+
+  const handlePrevStory = () => {
+    if (!activeStory) return;
+    const allUsers = [currentUser, ...users].filter(Boolean);
+    const currentIndex = allUsers.findIndex(u => u.id === activeStory.user.id);
+    if (currentIndex > 0) {
+      handleOpenUserStory(allUsers[currentIndex - 1]);
+    }
+  };
+
   return (
     <>
       <div className="rounded-2xl p-4 bg-white border border-[#f1e4d3] shadow-xs">
@@ -161,31 +181,65 @@ function StoriesRow({ session }) {
         </div>
       </div>
 
-      {/* Story Viewer Modal */}
+      {/* Story Viewer Modal with Progress Bar & Arrow Navigation */}
       <AnimatePresence>
         {activeStory && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+            {/* Left Nav Arrow */}
+            <button
+              onClick={handlePrevStory}
+              className="hidden sm:flex absolute left-6 p-3 rounded-full bg-white/10 hover:bg-white/20 text-white cursor-pointer transition-colors z-20"
+              title="Previous Story"
+            >
+              <ChevronLeft size={24} />
+            </button>
+
+            {/* Right Nav Arrow */}
+            <button
+              onClick={handleNextStory}
+              className="hidden sm:flex absolute right-6 p-3 rounded-full bg-white/10 hover:bg-white/20 text-white cursor-pointer transition-colors z-20"
+              title="Next Story"
+            >
+              <ChevronRight size={24} />
+            </button>
+
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="relative w-full max-w-sm aspect-[9/16] max-h-[85vh] rounded-2xl overflow-hidden bg-black flex flex-col justify-between shadow-2xl border border-white/10"
+              className="relative w-full max-w-sm aspect-[9/16] max-h-[85vh] rounded-3xl overflow-hidden bg-black flex flex-col justify-between shadow-2xl border border-white/15"
             >
+              {/* Top Progress Bar */}
+              <div className="absolute top-2 left-3 right-3 z-20 flex gap-1.5">
+                <div className="h-1 flex-1 bg-white/30 rounded-full overflow-hidden">
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: '100%' }}
+                    transition={{ duration: 7, ease: 'linear' }}
+                    onAnimationComplete={handleNextStory}
+                    className="h-full bg-white rounded-full"
+                  />
+                </div>
+              </div>
+
               {/* Top User Info Bar */}
-              <div className="p-4 bg-gradient-to-b from-black/80 to-transparent flex items-center justify-between z-10">
+              <div className="pt-5 px-4 pb-3 bg-gradient-to-b from-black/90 to-transparent flex items-center justify-between z-10">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-full overflow-hidden border border-white/30 bg-[#ea580c] flex items-center justify-center text-xs font-bold text-white">
+                  <div className="w-8 h-8 rounded-full overflow-hidden border border-white/40 bg-[#ea580c] flex items-center justify-center text-xs font-bold text-white shadow-sm">
                     {activeStory.user.avatar_url ? (
                       <img src={activeStory.user.avatar_url} alt="avatar" className="w-full h-full object-cover" />
                     ) : (
                       activeStory.user.username?.[0]?.toUpperCase() || 'U'
                     )}
                   </div>
-                  <span className="text-sm font-bold text-white">{activeStory.user.username}</span>
+                  <div>
+                    <span className="text-sm font-bold text-white block leading-tight">@{activeStory.user.username}</span>
+                    <span className="text-[10px] text-white/70">Connectra Developer Story</span>
+                  </div>
                 </div>
                 <button
                   onClick={() => setActiveStory(null)}
-                  className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white cursor-pointer"
+                  className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white cursor-pointer transition-colors"
                 >
                   <X size={18} />
                 </button>
@@ -199,18 +253,20 @@ function StoriesRow({ session }) {
                     autoPlay
                     loop
                     playsInline
-                    className="w-full h-full object-cover rounded-xl"
+                    className="w-full h-full object-cover rounded-2xl"
                   />
                 ) : (
-                  <div className="p-6 rounded-2xl bg-gradient-to-br from-[#ea580c]/30 to-[#f97316]/20 border border-orange-500/30 text-white flex flex-col items-center gap-3">
-                    <Film size={36} className="text-[#ea580c]" />
+                  <div className="p-6 rounded-2xl bg-gradient-to-br from-[#ea580c]/30 via-[#f97316]/20 to-amber-500/10 border border-orange-500/30 text-white flex flex-col items-center gap-3">
+                    <div className="w-14 h-14 rounded-2xl bg-white/10 flex items-center justify-center text-[#f97316]">
+                      <Film size={32} />
+                    </div>
                     <p className="text-sm font-semibold leading-relaxed">
                       {activeStory.fallbackText}
                     </p>
                     <Link
                       to={`/profile/${activeStory.user.username}`}
                       onClick={() => setActiveStory(null)}
-                      className="px-4 py-1.5 rounded-full bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white font-bold text-xs mt-2"
+                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white font-bold text-xs mt-2 hover:opacity-95 shadow-md"
                     >
                       View Profile
                     </Link>
@@ -220,7 +276,7 @@ function StoriesRow({ session }) {
 
               {/* Bottom Caption if reel */}
               {activeStory.reel?.caption && (
-                <div className="p-4 bg-gradient-to-t from-black/80 to-transparent z-10 text-white text-xs">
+                <div className="p-4 bg-gradient-to-t from-black/90 to-transparent z-10 text-white text-xs">
                   {activeStory.reel.caption}
                 </div>
               )}

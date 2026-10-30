@@ -16,12 +16,22 @@ export default function Navbar({ onOpenSidebar }) {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.user?.id) return;
 
-        const { count } = await supabase
+        // Unread in-app notifications
+        const { count: notifCount } = await supabase
+          .from('notifications')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', session.user.id)
+          .eq('is_read', false);
+
+        // Pending connection requests
+        const { count: connCount } = await supabase
           .from('connections')
           .select('*', { count: 'exact', head: true })
           .eq('receiver_id', session.user.id)
           .eq('status', 'pending');
-        if (count !== null && count !== undefined) setPendingNotifCount(count || 8);
+
+        const totalUnread = (notifCount || 0) + (connCount || 0);
+        setPendingNotifCount(totalUnread);
 
         const { data: profile } = await supabase
           .from('profiles')
@@ -30,10 +40,14 @@ export default function Navbar({ onOpenSidebar }) {
           .single();
         if (profile) setUserProfile(profile);
       } catch {
-        setPendingNotifCount(8);
+        setPendingNotifCount(0);
       }
     };
     fetchData();
+
+    // Listen for refreshStats custom event or route changes
+    window.addEventListener('refreshStats', fetchData);
+    return () => window.removeEventListener('refreshStats', fetchData);
   }, [location.pathname]);
 
   const handleLogout = async () => {
@@ -56,7 +70,7 @@ export default function Navbar({ onOpenSidebar }) {
       label: 'Notifications',
       action: () => document.dispatchEvent(new CustomEvent('toggleNotifications')),
       icon: Bell,
-      badge: pendingNotifCount > 0 ? pendingNotifCount : 8,
+      badge: pendingNotifCount > 0 ? pendingNotifCount : null,
     },
     { label: 'Messages', path: '/chat', icon: MessageSquare },
   ];
