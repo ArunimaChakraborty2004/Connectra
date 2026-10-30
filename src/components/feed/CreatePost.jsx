@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from '../../lib/toast';
 import { reviewCodeAndSecurity, polishPostContent } from '../../lib/ai';
 
-export default function CreatePost({ session, onPostCreated }) {
+export default function CreatePost({ session, onPostCreated, communityId = null, placeholder = "What are you working on? Share code, ideas, or questions..." }) {
   const [content, setContent] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [codeSnippet, setCodeSnippet] = useState('');
@@ -93,14 +93,19 @@ export default function CreatePost({ session, onPostCreated }) {
       options: pollOptions.filter(o => o.trim()).map(text => ({ text, votes: [] }))
     } : null;
     
-    const { error } = await supabase.from('posts').insert({
+    const postPayload = {
       user_id: session.user.id,
       content,
       image_url: finalImageUrl || null,
       code_snippet: codeSnippet || null,
       code_language: codeLang || null,
       poll_data: pollPayload
-    });
+    };
+    if (communityId) {
+      postPayload.community_id = communityId;
+    }
+
+    const { error } = await supabase.from('posts').insert(postPayload);
     
     setLoading(false);
     
@@ -139,7 +144,7 @@ export default function CreatePost({ session, onPostCreated }) {
         <textarea 
           value={content} 
           onChange={e => setContent(e.target.value)} 
-          placeholder="What are you building today?" 
+          placeholder={placeholder} 
           className="w-full bg-transparent text-main placeholder-[#666] resize-none outline-none text-[15px] min-h-[60px]"
         />
         {content.trim().length > 5 && (

@@ -9,6 +9,7 @@ import ProjectDetails from './pages/ProjectDetails';
 import CodingProfilePage from './pages/CodingProfilePage';
 import PortfolioPage from './pages/PortfolioPage';
 import CommunitiesPage from './pages/CommunitiesPage';
+import CommunityDetailsPage from './pages/CommunityDetailsPage';
 import EventsPage from './pages/EventsPage';
 import ReelsPage from './pages/ReelsPage';
 import ChatPage from './pages/ChatPage';
@@ -106,6 +107,7 @@ function AppInner({ session }) {
           <Route path="/profile/:username/portfolio" element={<PortfolioPage session={session} />} />
           <Route path="/projects/:id" element={<ProjectDetails session={session} />} />
           <Route path="/communities" element={<CommunitiesPage session={session} />} />
+          <Route path="/communities/:id" element={<CommunityDetailsPage session={session} />} />
           <Route path="/events" element={<EventsPage session={session} />} />
           <Route path="/reels" element={<ReelsPage session={session} />} />
           <Route path="/chat" element={<ChatPage session={session} />} />

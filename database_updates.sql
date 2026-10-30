@@ -9,7 +9,8 @@ ADD COLUMN IF NOT EXISTS level INTEGER DEFAULT 1;
 
 -- 2. Add updated_at to posts and comments
 ALTER TABLE posts
-ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
+ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+ADD COLUMN IF NOT EXISTS community_id UUID REFERENCES communities(id) ON DELETE SET NULL;
 
 ALTER TABLE comments
 ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
