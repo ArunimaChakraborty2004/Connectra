@@ -265,12 +265,12 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
                       type="button"
                       onClick={handleGenerateAiBios}
                       disabled={aiBioLoading}
-                      className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all cursor-pointer disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg bg-orange-50 text-[#ea580c] border border-orange-200 hover:bg-orange-100 transition-all cursor-pointer disabled:opacity-50"
                     >
                       {aiBioLoading ? (
-                        <RefreshCw size={12} className="animate-spin" />
+                        <RefreshCw size={12} className="animate-spin text-[#ea580c]" />
                       ) : (
-                        <Sparkles size={12} />
+                        <Sparkles size={12} className="text-[#ea580c]" />
                       )}
                       <span>{aiBioLoading ? 'Generating...' : '✨ AI Bio Crafter (Groq)'}</span>
                     </button>
@@ -282,16 +282,16 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: 'auto' }}
                         exit={{ opacity: 0, height: 0 }}
-                        className="mb-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 flex flex-col gap-3"
+                        className="mb-4 p-4 rounded-xl bg-[#faf6f0] border border-[#f1e4d3] flex flex-col gap-3"
                       >
-                        <div className="flex items-center justify-between pb-1 border-b border-slate-200/60 dark:border-slate-800/60">
-                          <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                            <Wand2 size={13} className="text-indigo-500" /> AI Suggested Bios
+                        <div className="flex items-center justify-between pb-1 border-b border-[#f1e4d3]">
+                          <span className="text-xs font-bold text-[#2b1f17] flex items-center gap-1.5">
+                            <Wand2 size={13} className="text-[#ea580c]" /> AI Suggested Bios
                           </span>
                           <button
                             type="button"
                             onClick={() => setShowAiBioPanel(false)}
-                            className="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
+                            className="text-xs text-[#8d7565] hover:text-[#2b1f17] cursor-pointer"
                           >
                             Close
                           </button>
@@ -299,25 +299,25 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
 
                         {aiBioLoading ? (
                           <div className="flex flex-col gap-2 py-3">
-                            <div className="flex items-center gap-2 text-xs text-indigo-600 dark:text-indigo-400 font-medium">
+                            <div className="flex items-center gap-2 text-xs text-[#ea580c] font-medium">
                               <RefreshCw size={12} className="animate-spin" />
                               Llama 3 is crafting tailored bios based on your tech stack...
                             </div>
-                            <div className="h-3 bg-slate-200 dark:bg-slate-800 rounded animate-pulse w-5/6"></div>
-                            <div className="h-3 bg-slate-200 dark:bg-slate-800 rounded animate-pulse w-3/5"></div>
+                            <div className="h-3 bg-orange-200/50 rounded animate-pulse w-5/6"></div>
+                            <div className="h-3 bg-orange-200/50 rounded animate-pulse w-3/5"></div>
                           </div>
                         ) : (
                           <div className="flex flex-col gap-2.5">
                             {aiBioSuggestions?.map((item, idx) => (
                               <div
                                 key={idx}
-                                className="p-3 rounded-lg bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-600 transition-colors flex flex-col gap-2 text-left shadow-sm"
+                                className="p-3 rounded-lg bg-white border border-[#f1e4d3] hover:border-orange-300 transition-colors flex flex-col gap-2 text-left shadow-2xs"
                               >
                                 <div className="flex items-center justify-between">
-                                  <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                                    {idx === 0 && <Briefcase size={12} className="text-indigo-500" />}
-                                    {idx === 1 && <Rocket size={12} className="text-indigo-500" />}
-                                    {idx === 2 && <Shield size={12} className="text-indigo-500" />}
+                                  <span className="text-[11px] font-bold text-[#2b1f17] uppercase tracking-wider flex items-center gap-1.5">
+                                    {idx === 0 && <Briefcase size={12} className="text-[#ea580c]" />}
+                                    {idx === 1 && <Rocket size={12} className="text-[#ea580c]" />}
+                                    {idx === 2 && <Shield size={12} className="text-[#ea580c]" />}
                                     {item.style}
                                   </span>
                                   <button
@@ -326,12 +326,12 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
                                       setFormData(prev => ({ ...prev, bio: item.bio }));
                                       toast.success(`Applied ${item.style} bio!`);
                                     }}
-                                    className="px-2.5 py-1 rounded text-[11px] font-bold bg-indigo-600 text-white hover:bg-indigo-700 transition-all cursor-pointer"
+                                    className="px-2.5 py-1 rounded text-[11px] font-bold bg-[#ea580c] text-white hover:bg-[#c2410c] transition-all cursor-pointer shadow-xs"
                                   >
                                     Use this
                                   </button>
                                 </div>
-                                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed select-text">
+                                <p className="text-xs text-[#6b5546] leading-relaxed select-text">
                                   {item.bio}
                                 </p>
                               </div>

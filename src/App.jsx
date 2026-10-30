@@ -73,6 +73,9 @@ function AppInner({ session }) {
       }
     };
     loadProfile();
+
+    window.addEventListener('refreshStats', loadProfile);
+    return () => window.removeEventListener('refreshStats', loadProfile);
   }, [session.user.id]);
 
   useEffect(() => {

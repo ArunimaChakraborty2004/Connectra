@@ -6,16 +6,18 @@ import Loader from '../components/ui/Loader';
 import { toast } from '../lib/toast';
 import { Link, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { createNotification } from '../lib/notifications';
 
 export default function SearchPage({ session }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const urlQuery = searchParams.get('q') || '';
+  const urlTab = searchParams.get('tab') || 'all';
   const [query, setQuery] = useState(urlQuery);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
   const [connections, setConnections] = useState({});
-  const [activeFilter, setActiveFilter] = useState('all');
+  const [activeFilter, setActiveFilter] = useState(urlTab);
   const [blockedUserIds, setBlockedUserIds] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem(`blocked_users_${session.user.id}`) || '[]');
@@ -33,6 +35,12 @@ export default function SearchPage({ session }) {
   useEffect(() => {
     setQuery(urlQuery);
   }, [urlQuery]);
+
+  useEffect(() => {
+    if (urlTab && ['all', 'following', 'followers', 'blocked'].includes(urlTab)) {
+      setActiveFilter(urlTab);
+    }
+  }, [urlTab]);
 
   const handleQueryChange = (e) => {
     const val = e.target.value;
@@ -104,6 +112,12 @@ export default function SearchPage({ session }) {
       setFollowingMap(prev => { const n = { ...prev }; delete n[targetId]; return n; });
     } else {
       toast.success('Following developer!');
+      createNotification({
+        userId: targetId,
+        actorId: session.user.id,
+        type: 'follow',
+        entityId: targetId,
+      });
       // Dispatch event to refresh sidebar stats
       window.dispatchEvent(new Event('refreshStats'));
     }

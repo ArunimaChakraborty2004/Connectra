@@ -10,6 +10,8 @@ import Feed from '../components/Feed';
 import EditProfileModal from '../components/profile/EditProfileModal';
 import BadgesPanel from '../components/profile/BadgesPanel';
 import AIReviewPanel from '../components/profile/AIReviewPanel';
+import FollowsModal from '../components/profile/FollowsModal';
+import { createNotification } from '../lib/notifications';
 
 function ProfileRepos({ userId }) {
   const [projects, setProjects] = useState([]);
@@ -82,6 +84,8 @@ export default function ProfilePage({ session }) {
   const [isFollower, setIsFollower] = useState(false);
   const [profileStats, setProfileStats] = useState({ followers: 0, following: 0 });
   const [actionLoading, setActionLoading] = useState(false);
+  const [showFollowsModal, setShowFollowsModal] = useState(false);
+  const [followsModalTab, setFollowsModalTab] = useState('followers');
 
   useEffect(() => {
     const loadData = async () => {
@@ -183,6 +187,12 @@ export default function ProfilePage({ session }) {
         toast.error(error.message);
       } else {
         toast.success(`Following ${profile.username}!`);
+        createNotification({
+          userId: profile.id,
+          actorId: session.user.id,
+          type: 'follow',
+          entityId: profile.id,
+        });
         window.dispatchEvent(new Event('refreshStats'));
       }
     } catch {
@@ -307,12 +317,28 @@ export default function ProfilePage({ session }) {
                     
                     {/* Follower / Following Stats */}
                     <div className="flex items-center gap-5 mt-3 text-sm">
-                      <span className="text-main font-semibold">
-                        {profileStats.followers} <span className="font-normal text-muted">Followers</span>
-                      </span>
-                      <span className="text-main font-semibold">
-                        {profileStats.following} <span className="font-normal text-muted">Following</span>
-                      </span>
+                      <button
+                        onClick={() => {
+                          setFollowsModalTab('followers');
+                          setShowFollowsModal(true);
+                        }}
+                        className="text-main font-semibold hover:text-primary transition-colors cursor-pointer group flex items-center gap-1"
+                      >
+                        <span className="font-bold text-main group-hover:text-primary">{profileStats.followers}</span>
+                        <span className="font-normal text-muted group-hover:underline">Followers</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setFollowsModalTab('following');
+                          setShowFollowsModal(true);
+                        }}
+                        className="text-main font-semibold hover:text-primary transition-colors cursor-pointer group flex items-center gap-1"
+                      >
+                        <span className="font-bold text-main group-hover:text-primary">{profileStats.following}</span>
+                        <span className="font-normal text-muted group-hover:underline">Following</span>
+                      </button>
+
                       <span className="text-main font-semibold">
                         {postCount} <span className="font-normal text-muted">Posts</span>
                       </span>
@@ -416,6 +442,15 @@ export default function ProfilePage({ session }) {
                   setProfile(updatedProfile);
                   if (session.user.id === updatedProfile.id) setCurrentUserProfile(updatedProfile);
                 }} 
+              />
+
+              <FollowsModal
+                isOpen={showFollowsModal}
+                onClose={() => setShowFollowsModal(false)}
+                userId={profile.id}
+                username={profile.username}
+                initialTab={followsModalTab}
+                session={session}
               />
             </>
           )}

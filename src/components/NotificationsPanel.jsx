@@ -40,11 +40,47 @@ export default function NotificationsPanel({ session, isOpen, onClose }) {
     if (isOpen) {
       loadNotifications();
     }
+
+    if (!session?.user?.id) return;
+
+    // Realtime subscription for incoming notifications and connections
+    const channel = supabase
+      .channel(`notifs-${session.user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${session.user.id}`,
+        },
+        () => {
+          loadNotifications();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'connections',
+          filter: `receiver_id=eq.${session.user.id}`,
+        },
+        () => {
+          loadNotifications();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [isOpen, session.user.id]);
 
   const markAllRead = async () => {
     await supabase.from('notifications').update({ is_read: true }).eq('user_id', session.user.id);
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    window.dispatchEvent(new Event('refreshStats'));
   };
 
   const handleAcceptRequest = async (connId) => {
@@ -53,6 +89,7 @@ export default function NotificationsPanel({ session, isOpen, onClose }) {
     else {
       toast.success('Connection accepted!');
       setNotifications(prev => prev.filter(n => n.connection_id !== connId));
+      window.dispatchEvent(new Event('refreshStats'));
     }
   };
 
@@ -61,6 +98,7 @@ export default function NotificationsPanel({ session, isOpen, onClose }) {
     if (error) toast.error('Failed to reject request');
     else {
       setNotifications(prev => prev.filter(n => n.connection_id !== connId));
+      window.dispatchEvent(new Event('refreshStats'));
     }
   };
 
@@ -104,6 +142,7 @@ export default function NotificationsPanel({ session, isOpen, onClose }) {
                 notifications.map((n) => (
                   <div key={n.id} className={`p-4 rounded-2xl border flex gap-3 ${!n.is_read ? 'bg-[#fff7ed] border-orange-200 shadow-2xs' : 'bg-white border-[#f1e4d3]'}`}>
                     <div className="pt-0.5">
+                      {n.type === 'follow' && <UserPlus size={18} className="text-indigo-600" />}
                       {n.type === 'connection_request' && <UserPlus size={18} className="text-blue-500" />}
                       {n.type === 'like' && <Heart size={18} className="text-rose-500" fill="#f43f5e" />}
                       {n.type === 'comment' && <MessageSquare size={18} className="text-[#ea580c]" />}
@@ -111,6 +150,7 @@ export default function NotificationsPanel({ session, isOpen, onClose }) {
                     </div>
                     <div className="flex-1 text-xs text-[#6b5546] leading-relaxed">
                       <span className="font-bold text-[#1c130d] mr-1">{n.profiles?.username || 'Someone'}</span>
+                      {n.type === 'follow' && 'started following you.'}
                       {n.type === 'connection_request' && 'sent you a connection request.'}
                       {n.type === 'like' && 'liked your post.'}
                       {n.type === 'comment' && 'commented on your post.'}

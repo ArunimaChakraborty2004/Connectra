@@ -46,27 +46,27 @@ export default function AIReviewPanel({ profile, repoCount }) {
   };
 
   return (
-    <div className="glass-panel rounded-2xl overflow-hidden">
+    <div className="bg-white border border-[#f1e4d3] rounded-2xl overflow-hidden shadow-xs">
       <button
         onClick={() => { if (!review) generateReview(); else setExpanded(e => !e); }}
         disabled={loading}
-        className="w-full p-5 flex items-center justify-between hover:bg-white/5 transition-colors"
+        className="w-full p-5 flex items-center justify-between hover:bg-[#fffcf7] transition-colors cursor-pointer"
       >
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500/30 to-purple-500/20 flex items-center justify-center">
-            <Sparkles size={20} className="text-violet-400" />
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500/20 to-amber-500/15 border border-orange-200 flex items-center justify-center">
+            <Sparkles size={20} className="text-[#ea580c]" />
           </div>
           <div className="text-left">
-            <p className="text-sm font-bold text-main">AI Profile Review</p>
-            <p className="text-xs text-muted">Get instant AI feedback on your dev profile</p>
+            <p className="text-sm font-bold text-[#2b1f17]">AI Profile Review</p>
+            <p className="text-xs text-[#8d7565]">Get instant AI feedback on your dev profile</p>
           </div>
         </div>
         {loading ? (
-          <RefreshCw size={16} className="text-muted animate-spin" />
+          <RefreshCw size={16} className="text-[#8d7565] animate-spin" />
         ) : review ? (
-          expanded ? <ChevronUp size={16} className="text-muted" /> : <ChevronDown size={16} className="text-muted" />
+          expanded ? <ChevronUp size={16} className="text-[#8d7565]" /> : <ChevronDown size={16} className="text-[#8d7565]" />
         ) : (
-          <span className="text-xs font-bold text-violet-400 bg-violet-500/10 px-2 py-1 rounded-lg">Analyze →</span>
+          <span className="text-xs font-bold text-[#ea580c] bg-orange-500/10 border border-orange-200/60 px-2.5 py-1 rounded-lg">Analyze →</span>
         )}
       </button>
 
@@ -79,8 +79,8 @@ export default function AIReviewPanel({ profile, repoCount }) {
             className="overflow-hidden"
           >
             <div className="p-5 pt-0">
-              <div className="bg-violet-500/10 border border-violet-500/20 rounded-xl p-4">
-                <div className="flex items-center gap-2 text-violet-400 text-sm font-semibold mb-3">
+              <div className="bg-orange-500/5 border border-orange-500/20 rounded-xl p-4">
+                <div className="flex items-center gap-2 text-[#ea580c] text-sm font-semibold mb-3">
                   <Sparkles size={14} className="animate-pulse" />
                   AI is analyzing your profile...
                 </div>
@@ -88,7 +88,7 @@ export default function AIReviewPanel({ profile, repoCount }) {
                   {[90, 70, 80, 55].map((w, i) => (
                     <div
                       key={i}
-                      className="h-3 bg-violet-500/20 rounded animate-pulse"
+                      className="h-3 bg-orange-500/20 rounded animate-pulse"
                       style={{ width: `${w}%`, animationDelay: `${i * 150}ms` }}
                     />
                   ))}
@@ -106,12 +106,12 @@ export default function AIReviewPanel({ profile, repoCount }) {
             className="overflow-hidden"
           >
             <div className="p-5 pt-0">
-              <div className="bg-violet-500/5 border border-violet-500/15 rounded-xl p-4 flex flex-col gap-1">
+              <div className="bg-orange-500/5 border border-orange-500/15 rounded-xl p-4 flex flex-col gap-1">
                 {formatReview(review)}
               </div>
               <button
                 onClick={generateReview}
-                className="mt-3 flex items-center gap-1 text-xs text-muted hover:text-violet-400 transition-colors"
+                className="mt-3 flex items-center gap-1 text-xs text-[#8d7565] hover:text-[#ea580c] transition-colors cursor-pointer"
               >
                 <RefreshCw size={12} /> Regenerate
               </button>

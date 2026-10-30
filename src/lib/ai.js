@@ -2,7 +2,13 @@
 // Docs: https://console.groq.com/docs/quickstart
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const DEFAULT_MODEL = 'llama-3.3-70b-versatile'; // or 'llama-3.1-8b-instant'
+const CANDIDATE_MODELS = [
+  'qwen/qwen3.8-27b',
+  'openai/gpt-oss-120b',
+  'llama-3.3-70b-versatile',
+  'llama-3.1-8b-instant',
+];
+const DEFAULT_MODEL = 'qwen/qwen3.8-27b';
 
 export function getGroqApiKey() {
   const key = import.meta.env.VITE_GROQ_API_KEY;
@@ -13,7 +19,7 @@ export function getGroqApiKey() {
 }
 
 /**
- * Core caller for Groq API
+ * Core caller for Groq API with automatic fallback across working models
  */
 export async function callGroq({
   messages,
@@ -27,29 +33,48 @@ export async function callGroq({
     throw new Error('MISSING_KEY');
   }
 
-  const response = await fetch(GROQ_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature,
-      max_tokens,
-    }),
-  });
+  const modelsToTry = [model, ...CANDIDATE_MODELS.filter(m => m !== model)];
+  let lastError = null;
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(
-      errorData?.error?.message || `Groq API Error (${response.status})`
-    );
+  for (const candidate of modelsToTry) {
+    try {
+      const response = await fetch(GROQ_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: candidate,
+          messages,
+          temperature,
+          max_tokens,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(
+          errorData?.error?.message || `Groq API Error (${response.status})`
+        );
+      }
+
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content;
+      if (content !== undefined && content !== null) {
+        return content;
+      }
+    } catch (err) {
+      lastError = err;
+      // If error is about model not found, try next candidate
+      if (err.message?.includes('model_not_found') || err.message?.includes('does not exist')) {
+        continue;
+      }
+      throw err;
+    }
   }
 
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content || '';
+  throw lastError || new Error('All Groq model candidates failed');
 }
 
 /**

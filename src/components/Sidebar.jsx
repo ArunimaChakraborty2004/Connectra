@@ -122,14 +122,22 @@ export default function Sidebar({ profile, stats, onClose }) {
 
         {/* Mini Stats (Followers, Following, Streak) */}
         <div className="grid grid-cols-3 gap-1 py-1.5 px-2 rounded-xl bg-[#faf6f0] border border-[#f1e4d3] text-center">
-          <div>
-            <span className="block text-xs font-bold text-[#2b1f17]">{followers}</span>
-            <span className="block text-[8px] uppercase font-bold text-[#8d7565]">Followers</span>
-          </div>
-          <div className="border-x border-[#f1e4d3]">
-            <span className="block text-xs font-bold text-[#2b1f17]">{following}</span>
-            <span className="block text-[8px] uppercase font-bold text-[#8d7565]">Following</span>
-          </div>
+          <Link
+            to="/search?tab=followers"
+            className="hover:opacity-80 transition-opacity block group cursor-pointer"
+            title="View Followers"
+          >
+            <span className="block text-xs font-bold text-[#2b1f17] group-hover:text-[#ea580c] transition-colors">{followers}</span>
+            <span className="block text-[8px] uppercase font-bold text-[#8d7565] group-hover:underline">Followers</span>
+          </Link>
+          <Link
+            to="/search?tab=following"
+            className="border-x border-[#f1e4d3] hover:opacity-80 transition-opacity block group cursor-pointer"
+            title="View Following"
+          >
+            <span className="block text-xs font-bold text-[#2b1f17] group-hover:text-[#ea580c] transition-colors">{following}</span>
+            <span className="block text-[8px] uppercase font-bold text-[#8d7565] group-hover:underline">Following</span>
+          </Link>
           <div>
             <span className="text-xs font-bold text-amber-500 flex items-center justify-center gap-0.5">
               1 <Flame size={10} />
