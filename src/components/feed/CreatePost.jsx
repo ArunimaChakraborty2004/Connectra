@@ -4,6 +4,7 @@ import { Image as ImageIcon, Video, Calendar, MoreHorizontal, Send, X, Shield, S
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from '../../lib/toast';
 import { reviewCodeAndSecurity, polishPostContent } from '../../lib/ai';
+import AIAnalysisCard from './AIAnalysisCard';
 
 export default function CreatePost({ session, onPostCreated, placeholder }) {
   const [content, setContent] = useState('');
@@ -213,8 +214,12 @@ export default function CreatePost({ session, onPostCreated, placeholder }) {
               </div>
 
               {showCodeReview && (
-                <div className="p-2.5 rounded-lg bg-orange-50 border border-orange-200 text-xs text-[#8d7565] whitespace-pre-wrap max-h-36 overflow-y-auto">
-                  {codeReviewResult}
+                <div className="mt-2">
+                  <AIAnalysisCard
+                    content={codeReviewResult}
+                    type="security"
+                    onClose={() => setShowCodeReview(false)}
+                  />
                 </div>
               )}
             </div>

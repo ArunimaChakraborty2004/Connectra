@@ -1,4 +1,4 @@
-import { LogOut, Search, Menu, Bell, Home, Compass, Users, MessageSquare } from 'lucide-react';
+import { LogOut, Search, Menu, Bell, Home, Compass, Users, MessageSquare, Sun, Moon } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
@@ -9,6 +9,43 @@ export default function Navbar({ onOpenSidebar }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [pendingNotifCount, setPendingNotifCount] = useState(8);
   const [userProfile, setUserProfile] = useState(null);
+
+  // Global Dark Mode state management
+  const [isDark, setIsDark] = useState(() => {
+    try {
+      const saved = localStorage.getItem('connectra_global_theme');
+      if (saved) return saved === 'dark';
+      return document.documentElement.classList.contains('dark');
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+      document.body.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      document.body.classList.remove('dark');
+    }
+  }, [isDark]);
+
+  const toggleGlobalTheme = () => {
+    setIsDark(prev => {
+      const next = !prev;
+      localStorage.setItem('connectra_global_theme', next ? 'dark' : 'light');
+      if (next) {
+        document.documentElement.classList.add('dark');
+        document.body.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+        document.body.classList.remove('dark');
+      }
+      return next;
+    });
+  };
+
 
   useEffect(() => {
     const fetchData = async () => {
@@ -195,6 +232,19 @@ export default function Navbar({ onOpenSidebar }) {
               </svg>
             </Link>
 
+            {/* Global Dark / Light Mode Toggle Button */}
+            <button
+              onClick={toggleGlobalTheme}
+              className="p-2 rounded-xl text-[#8d7565] hover:text-[#2b1f17] hover:bg-[#fff4e6] transition-colors cursor-pointer"
+              title={isDark ? 'Switch to Warm Cream Light' : 'Switch to Cyber Dark Mode'}
+            >
+              {isDark ? (
+                <Sun size={18} className="text-amber-400" />
+              ) : (
+                <Moon size={18} className="text-[#ea580c]" />
+              )}
+            </button>
+
             {/* Logout button */}
             <button
               onClick={handleLogout}
@@ -206,6 +256,7 @@ export default function Navbar({ onOpenSidebar }) {
           </div>
         </div>
       </div>
+
     </header>
   );
 }

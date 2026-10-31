@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Heart, MessageSquare, Share2, Trash2, Edit2, Bookmark, MoreHorizontal } from 'lucide-react';
+import { Heart, MessageSquare, Share2, Trash2, Edit2, Bookmark, MoreHorizontal, Sparkles, Shield, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from '../../lib/toast';
 import { Link } from 'react-router-dom';
+import { explainCodeSnippet, reviewCodeAndSecurity } from '../../lib/ai';
+import AIAnalysisCard from './AIAnalysisCard';
 
 export default function PostCard({ post, session, onUpdate }) {
   const [showComments, setShowComments] = useState(false);
@@ -17,6 +19,54 @@ export default function PostCard({ post, session, onUpdate }) {
     post.poll_data?.options?.some((o) => o.votes?.includes(session.user.id)) || false
   );
   const [localLiked, setLocalLiked] = useState(false);
+  
+  // AI snippet analysis state
+  const [aiAnalysis, setAiAnalysis] = useState(null);
+  const [aiAnalysisLoading, setAiAnalysisLoading] = useState(false);
+  const [aiAnalysisType, setAiAnalysisType] = useState(null); // 'explain' | 'security'
+
+  const handleExplainCode = async () => {
+    if (aiAnalysisType === 'explain' && aiAnalysis) {
+      setAiAnalysis(null);
+      setAiAnalysisType(null);
+      return;
+    }
+    setAiAnalysisLoading(true);
+    setAiAnalysisType('explain');
+    try {
+      const explanation = await explainCodeSnippet({
+        code: post.code_snippet,
+        language: post.code_language || 'javascript',
+      });
+      setAiAnalysis(explanation);
+    } catch {
+      toast.error('AI explanation failed');
+    } finally {
+      setAiAnalysisLoading(false);
+    }
+  };
+
+  const handleSecurityCheck = async () => {
+    if (aiAnalysisType === 'security' && aiAnalysis) {
+      setAiAnalysis(null);
+      setAiAnalysisType(null);
+      return;
+    }
+    setAiAnalysisLoading(true);
+    setAiAnalysisType('security');
+    try {
+      const review = await reviewCodeAndSecurity({
+        code: post.code_snippet,
+        language: post.code_language || 'javascript',
+      });
+      setAiAnalysis(review);
+    } catch {
+      toast.error('AI security scan failed');
+    } finally {
+      setAiAnalysisLoading(false);
+    }
+  };
+
 
   const isOwner = session.user.id === post.user_id;
   const isEdited = post.updated_at && post.updated_at !== post.created_at;
@@ -286,14 +336,58 @@ export default function PostCard({ post, session, onUpdate }) {
       {/* Code Snippet */}
       {post.code_snippet && (
         <div className="rounded-xl overflow-hidden border border-[#f1e4d3] bg-[#2b1f17] shadow-2xs">
-          <div className="px-3 py-1.5 bg-[#3d2c20] border-b border-[#4f382a] text-[11px] font-mono text-[#fcd34d]">
-            {post.code_language || 'code'}
+          <div className="px-3 py-1.5 bg-[#3d2c20] border-b border-[#4f382a] text-[11px] font-mono text-[#fcd34d] flex items-center justify-between">
+            <span>{post.code_language || 'code'}</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleExplainCode}
+                disabled={aiAnalysisLoading}
+                className="flex items-center gap-1 text-[11px] font-sans font-bold px-2 py-0.5 rounded-md bg-[#ea580c]/20 hover:bg-[#ea580c]/30 text-orange-300 border border-orange-500/30 transition-all cursor-pointer"
+                title="Explain this code with AI"
+              >
+                {aiAnalysisLoading && aiAnalysisType === 'explain' ? (
+                  <Loader2 size={11} className="animate-spin text-orange-400" />
+                ) : (
+                  <Sparkles size={11} className="text-orange-400" />
+                )}
+                AI Explain
+              </button>
+              <button
+                type="button"
+                onClick={handleSecurityCheck}
+                disabled={aiAnalysisLoading}
+                className="flex items-center gap-1 text-[11px] font-sans font-bold px-2 py-0.5 rounded-md bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 transition-all cursor-pointer"
+                title="Audit code for security issues"
+              >
+                {aiAnalysisLoading && aiAnalysisType === 'security' ? (
+                  <Loader2 size={11} className="animate-spin text-emerald-400" />
+                ) : (
+                  <Shield size={11} className="text-emerald-400" />
+                )}
+                AI Security
+              </button>
+            </div>
           </div>
           <pre className="p-3 text-xs font-mono text-amber-300 overflow-x-auto">
             <code>{post.code_snippet}</code>
           </pre>
+
+          {/* AI Analysis Dropdown Card */}
+          <AnimatePresence>
+            {aiAnalysis && (
+              <div className="p-3 pt-0">
+                <AIAnalysisCard
+                  content={aiAnalysis}
+                  type={aiAnalysisType}
+                  onClose={() => { setAiAnalysis(null); setAiAnalysisType(null); }}
+                />
+              </div>
+            )}
+          </AnimatePresence>
         </div>
       )}
+
 
       {/* Footer / Interaction Row */}
       <div className="flex items-center justify-between pt-1 text-xs text-[#8d7565]">

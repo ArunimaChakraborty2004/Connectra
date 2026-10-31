@@ -37,18 +37,16 @@ export default function Dashboard({ session }) {
       const { count: acceptedConnectionsCount } = await supabase
         .from('connections').select('*', { count: 'exact', head: true })
         .or(`requester_id.eq.${session.user.id},receiver_id.eq.${session.user.id}`)
-        .eq('status', 'accepted');
-
-      const netConns = acceptedConnectionsCount || 0;
       setStats({
-        followers: (followersCount || 0) + netConns,
-        following: (followingCount || 0) + netConns,
-        connections: netConns,
+        followers: followersCount || 0,
+        following: followingCount || 0,
+        connections: acceptedConnectionsCount || 0,
       });
     } catch {
       setStats({ followers: 0, following: 0, connections: 0 });
     }
   };
+
 
   useEffect(() => {
     loadData();
