@@ -265,10 +265,52 @@ export default function AICopilotWidget({ session }) {
     setTimeout(() => setCopiedIndex(null), 2000);
   };
 
-  // Render markdown with code block syntax highlighting & copy buttons
+  // Render inline formatting (bold, inline code)
+  const renderInline = (text) => {
+    if (!text) return null;
+
+    // Split on inline code `...`
+    const codeParts = text.split(/(`[^`]+`)/g);
+
+    return codeParts.map((cPart, cIdx) => {
+      if (cPart.startsWith('`') && cPart.endsWith('`') && cPart.length > 2) {
+        return (
+          <code
+            key={cIdx}
+            className={`px-1.5 py-0.5 mx-0.5 rounded font-mono text-[11px] border ${
+              isDark
+                ? 'bg-black/50 text-amber-300 border-amber-500/20'
+                : 'bg-orange-50 text-orange-700 border-orange-200'
+            }`}
+          >
+            {cPart.slice(1, -1)}
+          </code>
+        );
+      }
+
+      // Split on **bold**
+      const boldParts = cPart.split(/(\*\*.*?\*\*)/g);
+      return boldParts.map((bPart, bIdx) => {
+        if (bPart.startsWith('**') && bPart.endsWith('**') && bPart.length > 4) {
+          return (
+            <strong
+              key={`${cIdx}-${bIdx}`}
+              className={isDark ? 'text-orange-400 font-bold' : 'text-[#ea580c] font-bold'}
+            >
+              {bPart.slice(2, -2)}
+            </strong>
+          );
+        }
+        return bPart;
+      });
+    });
+  };
+
+  // Render markdown with code block syntax highlighting, headers, bullets, and copy buttons
   const renderFormattedContent = (content) => {
     if (!content) return null;
 
+    // Split on fenced code blocks
     const parts = content.split(/(```[\s\S]*?```)/g);
 
     return parts.map((part, i) => {
@@ -311,21 +353,90 @@ export default function AICopilotWidget({ session }) {
         );
       }
 
-      // Format bold markdown (**text**)
-      const boldParts = part.split(/(\*\*.*?\*\*)/g);
+      // Process normal text line-by-line to parse markdown headings, bullets, and paragraphs
+      const lines = part.split('\n');
+
       return (
-        <span key={i}>
-          {boldParts.map((bp, j) => {
-            if (bp.startsWith('**') && bp.endsWith('**')) {
+        <div key={i} className="space-y-1">
+          {lines.map((line, lineIdx) => {
+            const trimmed = line.trim();
+            if (!trimmed) {
+              return <div key={lineIdx} className="h-1.5" />;
+            }
+
+            // Headings (# , ## , ### , #### , etc.)
+            const headerMatch = trimmed.match(/^(#{1,6})\s+(.*)$/);
+            if (headerMatch) {
+              const level = headerMatch[1].length;
+              const titleText = headerMatch[2];
+
+              if (level <= 2) {
+                return (
+                  <h3
+                    key={lineIdx}
+                    className={`font-extrabold text-sm mt-3 mb-1.5 flex items-center gap-2 ${
+                      isDark ? 'text-orange-400' : 'text-orange-600'
+                    }`}
+                  >
+                    <span className="w-1.5 h-3.5 rounded-full bg-gradient-to-b from-orange-400 to-amber-500 inline-block" />
+                    {renderInline(titleText)}
+                  </h3>
+                );
+              }
+
               return (
-                <strong key={j} className={isDark ? 'text-orange-300 font-bold' : 'text-[#ea580c] font-bold'}>
-                  {bp.slice(2, -2)}
-                </strong>
+                <h4
+                  key={lineIdx}
+                  className={`font-bold text-[13px] mt-2.5 mb-1 flex items-center gap-1.5 ${
+                    isDark ? 'text-orange-300' : 'text-orange-600'
+                  }`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-orange-500 inline-block shrink-0" />
+                  {renderInline(titleText)}
+                </h4>
               );
             }
-            return bp;
+
+            // Bullet points (* , - , • )
+            const bulletMatch = trimmed.match(/^[*•-]\s+(.*)$/);
+            if (bulletMatch) {
+              return (
+                <div key={lineIdx} className="flex items-start gap-2 my-1 pl-1 leading-relaxed">
+                  <span
+                    className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${
+                      isDark ? 'bg-orange-400' : 'bg-orange-500'
+                    }`}
+                  />
+                  <div className="flex-1">{renderInline(bulletMatch[1])}</div>
+                </div>
+              );
+            }
+
+            // Numbered lists (1. , 2. , etc.)
+            const numberedMatch = trimmed.match(/^(\d+\.)\s+(.*)$/);
+            if (numberedMatch) {
+              return (
+                <div key={lineIdx} className="flex items-start gap-2 my-1 pl-1 leading-relaxed">
+                  <span
+                    className={`font-mono font-bold text-[11px] shrink-0 ${
+                      isDark ? 'text-orange-400' : 'text-orange-600'
+                    }`}
+                  >
+                    {numberedMatch[1]}
+                  </span>
+                  <div className="flex-1">{renderInline(numberedMatch[2])}</div>
+                </div>
+              );
+            }
+
+            // Normal paragraph line
+            return (
+              <p key={lineIdx} className="leading-relaxed">
+                {renderInline(line)}
+              </p>
+            );
           })}
-        </span>
+        </div>
       );
     });
   };
