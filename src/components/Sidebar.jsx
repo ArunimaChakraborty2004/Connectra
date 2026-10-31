@@ -22,7 +22,7 @@ import {
   Plus,
   Zap,
 } from 'lucide-react';
-import { calculateUserStreak, calculateGamificationStats } from '../utils/streakHelper';
+import { calculateUserStreak } from '../utils/streakHelper';
 
 export default function Sidebar({ profile, stats: initialStats, onClose }) {
   const location = useLocation();
@@ -33,15 +33,9 @@ export default function Sidebar({ profile, stats: initialStats, onClose }) {
     following: initialStats?.following ?? 0,
   }));
 
-  const [gamified, setGamified] = useState(() =>
-    calculateGamificationStats({
-      baseXp: profile?.xp,
-      baseLevel: profile?.level,
-      streak: calculateUserStreak(profile?.id),
-    })
-  );
+  const [streak, setStreak] = useState(() => calculateUserStreak(profile?.id));
 
-  // Fetch or sync counts and dynamic gamification stats
+  // Fetch or sync counts and streak
   useEffect(() => {
     if (!profile?.id) return;
 
@@ -51,12 +45,10 @@ export default function Sidebar({ profile, stats: initialStats, onClose }) {
           { count: followersCount },
           { count: followingCount },
           { data: userPosts },
-          { count: reposCount }
         ] = await Promise.all([
           supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', profile.id),
           supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', profile.id),
           supabase.from('posts').select('created_at').eq('user_id', profile.id).order('created_at', { ascending: false }).limit(30),
-          supabase.from('projects').select('*', { count: 'exact', head: true }).eq('user_id', profile.id),
         ]);
 
         const fCount = followersCount ?? initialStats?.followers ?? 0;
@@ -69,31 +61,17 @@ export default function Sidebar({ profile, stats: initialStats, onClose }) {
 
         const postDates = (userPosts || []).map(p => p.created_at);
         const computedStreak = calculateUserStreak(profile.id, postDates);
-
-        const stats = calculateGamificationStats({
-          baseXp: profile.xp || 0,
-          baseLevel: profile.level || 1,
-          postCount: userPosts?.length || 0,
-          repoCount: reposCount || 0,
-          followerCount: fCount,
-          streak: computedStreak,
-        });
-
-        setGamified(stats);
+        setStreak(computedStreak);
       } catch (err) {
         console.warn('Error fetching sidebar stats:', err);
       }
     };
 
     fetchCountsAndActivity();
-  }, [profile?.id, profile?.xp, profile?.level, initialStats?.followers, initialStats?.following]);
+  }, [profile?.id, initialStats?.followers, initialStats?.following]);
 
-  const level = gamified.level;
-  const xp = gamified.totalXp;
-  const streak = gamified.streak;
   const followers = liveStats.followers;
   const following = liveStats.following;
-  const xpProgress = gamified.xpProgress;
 
 
   const isActive = (path) => {
@@ -152,7 +130,7 @@ export default function Sidebar({ profile, stats: initialStats, onClose }) {
         </button>
       )}
 
-      {/* User Profile Card with Level, Bio, Streak & XP */}
+      {/* User Profile Card */}
       <div className="bg-white border border-[#f1e4d3] shadow-xs rounded-2xl p-3.5 flex flex-col gap-2.5">
         <div className="flex items-center gap-2.5">
           <div className="relative shrink-0">
@@ -167,19 +145,14 @@ export default function Sidebar({ profile, stats: initialStats, onClose }) {
           </div>
 
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <Link
-                to={`/profile/${profile?.username || 'user'}`}
-                onClick={onClose}
-                className="font-bold text-xs truncate text-[#2b1f17] hover:text-[#ea580c] transition-colors"
-              >
-                {profile?.username || 'Developer'}
-              </Link>
-              <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-orange-100 text-[#ea580c] border border-orange-200 shrink-0">
-                LVL {level}
-              </span>
-            </div>
-            <p className="text-[10px] text-[#8d7565] truncate">
+            <Link
+              to={`/profile/${profile?.username || 'user'}`}
+              onClick={onClose}
+              className="font-bold text-xs truncate text-[#2b1f17] hover:text-[#ea580c] transition-colors block"
+            >
+              {profile?.username || 'Developer'}
+            </Link>
+            <p className="text-[10px] text-[#8d7565] truncate mt-0.5">
               {profile?.bio || 'Full-Stack Developer'}
             </p>
           </div>
@@ -208,24 +181,6 @@ export default function Sidebar({ profile, stats: initialStats, onClose }) {
               {streak} <Flame size={11} className="text-orange-500 fill-orange-500" />
             </span>
             <span className="block text-[8px] uppercase font-bold text-[#8d7565]">Streak</span>
-          </div>
-        </div>
-
-        {/* XP Progress Bar */}
-        <div>
-          <div className="flex justify-between items-center text-[9px] font-bold text-[#8d7565] mb-1">
-            <span className="flex items-center gap-1">
-              <Code2 size={11} className="text-[#ea580c]" /> Code XP
-            </span>
-            <span className="font-mono text-[#2b1f17]">{xp} / {gamified.nextLevelXp}</span>
-          </div>
-          <div className="h-1.5 w-full rounded-full overflow-hidden bg-[#f1e4d3]">
-            <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: `${xpProgress}%` }}
-              transition={{ duration: 0.8, ease: 'easeOut' }}
-              className="h-full rounded-full bg-gradient-to-r from-[#ea580c] to-[#f97316]"
-            />
           </div>
         </div>
       </div>

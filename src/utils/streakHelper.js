@@ -64,37 +64,3 @@ export function calculateUserStreak(userId, postDates = []) {
 
   return Math.max(1, savedStreak);
 }
-
-/**
- * Calculates XP and Level dynamically based on contributions
- */
-export function calculateGamificationStats({
-  baseXp = 0,
-  baseLevel = 1,
-  postCount = 0,
-  repoCount = 0,
-  followerCount = 0,
-  streak = 1,
-}) {
-  // Activity XP Multipliers
-  const xpFromPosts = postCount * 120;
-  const xpFromRepos = repoCount * 200;
-  const xpFromFollowers = followerCount * 40;
-  const xpFromStreak = (streak - 1) * 35;
-
-  const totalXp = Math.max(baseXp, (baseXp || 0) + xpFromPosts + xpFromRepos + xpFromFollowers + xpFromStreak);
-
-  // 500 XP per level
-  const computedLevel = Math.max(baseLevel || 1, Math.floor(totalXp / 500) + 1);
-  const xpInCurrentLevel = totalXp % 500;
-  const xpForNextLevel = 500;
-  const xpProgress = Math.min(100, Math.max(8, Math.round((xpInCurrentLevel / xpForNextLevel) * 100)));
-
-  return {
-    totalXp,
-    level: computedLevel,
-    xpProgress,
-    nextLevelXp: computedLevel * 500,
-    streak,
-  };
-}

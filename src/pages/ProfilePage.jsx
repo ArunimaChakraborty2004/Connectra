@@ -12,7 +12,7 @@ import BadgesPanel from '../components/profile/BadgesPanel';
 import AIReviewPanel from '../components/profile/AIReviewPanel';
 import FollowsModal from '../components/profile/FollowsModal';
 import { createNotification } from '../lib/notifications';
-import { calculateUserStreak, calculateGamificationStats } from '../utils/streakHelper';
+import { calculateUserStreak } from '../utils/streakHelper';
 
 function ProfileRepos({ userId }) {
   const [projects, setProjects] = useState([]);
@@ -83,7 +83,6 @@ export default function ProfilePage({ session }) {
   const [totalLikes, setTotalLikes] = useState(0);
   const [connectionsCount, setConnectionsCount] = useState(0);
   const [streak, setStreak] = useState(1);
-  const [gamifiedStats, setGamifiedStats] = useState(null);
 
   const [isFollowing, setIsFollowing] = useState(false);
   const [isFollower, setIsFollower] = useState(false);
@@ -197,17 +196,6 @@ export default function ProfilePage({ session }) {
         const postDates = (userPosts || []).map(p => p.created_at);
         const computedStreak = calculateUserStreak(targetProfile.id, postDates);
         setStreak(computedStreak);
-
-        // Real gamified stats (Level, XP)
-        const gStats = calculateGamificationStats({
-          baseXp: targetProfile.xp || 0,
-          baseLevel: targetProfile.level || 1,
-          postCount: pCount || 0,
-          repoCount: count || 0,
-          followerCount: targetFollowersCount || 0,
-          streak: computedStreak,
-        });
-        setGamifiedStats(gStats);
       }
       setLoading(false);
     };
@@ -359,15 +347,10 @@ export default function ProfilePage({ session }) {
                   <div>
                     <div className="flex flex-wrap items-center gap-2.5">
                       <h1 className="text-2xl font-bold text-main">{profile.username}</h1>
-                      <div className="flex items-center gap-2">
-                        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-primary/10 text-primary border border-primary/20">
-                          LVL {gamifiedStats?.level || profile.level || 1}
-                        </span>
-                        <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-orange-500/10 text-orange-500 border border-orange-500/20 flex items-center gap-1">
-                          <Flame size={12} className="fill-orange-500 text-orange-500" />
-                          {streak}d Streak
-                        </span>
-                      </div>
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-orange-500/10 text-orange-500 border border-orange-500/20 flex items-center gap-1">
+                        <Flame size={12} className="fill-orange-500 text-orange-500" />
+                        {streak}d Streak
+                      </span>
                     </div>
                     <p className="text-muted mt-1 text-[15px]">{profile.bio || 'No bio provided.'}</p>
                     
