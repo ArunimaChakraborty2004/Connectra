@@ -5,13 +5,14 @@ import Sidebar from '../components/Sidebar';
 import Loader from '../components/ui/Loader';
 import EmptyState from '../components/ui/EmptyState';
 import { toast } from '../lib/toast';
-import { Settings, MapPin, Link as LinkIcon, Code2, Briefcase, Grid, FileText, FolderGit2, GitBranch, ExternalLink, MessageCircle, Trophy, CheckCircle2, Clock, UserPlus, UserCheck, UserMinus } from 'lucide-react';
+import { Settings, MapPin, Link as LinkIcon, Code2, Briefcase, Grid, FileText, FolderGit2, GitBranch, ExternalLink, MessageCircle, Trophy, CheckCircle2, Clock, UserPlus, UserCheck, UserMinus, Flame } from 'lucide-react';
 import Feed from '../components/Feed';
 import EditProfileModal from '../components/profile/EditProfileModal';
 import BadgesPanel from '../components/profile/BadgesPanel';
 import AIReviewPanel from '../components/profile/AIReviewPanel';
 import FollowsModal from '../components/profile/FollowsModal';
 import { createNotification } from '../lib/notifications';
+import { calculateUserStreak, calculateGamificationStats } from '../utils/streakHelper';
 
 function ProfileRepos({ userId }) {
   const [projects, setProjects] = useState([]);
@@ -78,7 +79,11 @@ export default function ProfilePage({ session }) {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('posts');
   const [repoCount, setRepoCount] = useState(0);
-  const [postCount, setPostCount] = useState(0); // 'posts' or 'repos'
+  const [postCount, setPostCount] = useState(0);
+  const [totalLikes, setTotalLikes] = useState(0);
+  const [connectionsCount, setConnectionsCount] = useState(0);
+  const [streak, setStreak] = useState(1);
+  const [gamifiedStats, setGamifiedStats] = useState(null);
 
   const [isFollowing, setIsFollowing] = useState(false);
   const [isFollower, setIsFollower] = useState(false);
@@ -160,9 +165,49 @@ export default function ProfilePage({ session }) {
         // Load repo count for badges
         const { count } = await supabase.from('projects').select('*', { count: 'exact', head: true }).eq('user_id', targetProfile.id);
         setRepoCount(count || 0);
-        // Load post count for badges
-        const { count: pCount } = await supabase.from('posts').select('*', { count: 'exact', head: true }).eq('user_id', targetProfile.id);
+
+        // Load posts for badges, streak, and likes
+        const { data: userPosts, count: pCount } = await supabase
+          .from('posts')
+          .select('id, created_at', { count: 'exact' })
+          .eq('user_id', targetProfile.id);
         setPostCount(pCount || 0);
+
+        // Real likes on user's posts
+        let likesSum = 0;
+        if (userPosts && userPosts.length > 0) {
+          const postIds = userPosts.map(p => p.id);
+          const { count: lCount } = await supabase
+            .from('likes')
+            .select('*', { count: 'exact', head: true })
+            .in('post_id', postIds);
+          likesSum = lCount || 0;
+        }
+        setTotalLikes(likesSum);
+
+        // Real connections count
+        const { count: cCount } = await supabase
+          .from('connections')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'accepted')
+          .or(`requester_id.eq.${targetProfile.id},receiver_id.eq.${targetProfile.id}`);
+        setConnectionsCount(cCount || 0);
+
+        // Real dynamic streak
+        const postDates = (userPosts || []).map(p => p.created_at);
+        const computedStreak = calculateUserStreak(targetProfile.id, postDates);
+        setStreak(computedStreak);
+
+        // Real gamified stats (Level, XP)
+        const gStats = calculateGamificationStats({
+          baseXp: targetProfile.xp || 0,
+          baseLevel: targetProfile.level || 1,
+          postCount: pCount || 0,
+          repoCount: count || 0,
+          followerCount: targetFollowersCount || 0,
+          streak: computedStreak,
+        });
+        setGamifiedStats(gStats);
       }
       setLoading(false);
     };
@@ -312,11 +357,22 @@ export default function ProfilePage({ session }) {
                   </div>
                   
                   <div>
-                    <h1 className="text-2xl font-bold text-main">{profile.username}</h1>
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <h1 className="text-2xl font-bold text-main">{profile.username}</h1>
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-primary/10 text-primary border border-primary/20">
+                          LVL {gamifiedStats?.level || profile.level || 1}
+                        </span>
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-orange-500/10 text-orange-500 border border-orange-500/20 flex items-center gap-1">
+                          <Flame size={12} className="fill-orange-500 text-orange-500" />
+                          {streak}d Streak
+                        </span>
+                      </div>
+                    </div>
                     <p className="text-muted mt-1 text-[15px]">{profile.bio || 'No bio provided.'}</p>
                     
                     {/* Follower / Following Stats */}
-                    <div className="flex items-center gap-5 mt-3 text-sm">
+                    <div className="flex flex-wrap items-center gap-5 mt-3 text-sm">
                       <button
                         onClick={() => {
                           setFollowsModalTab('followers');
@@ -341,6 +397,15 @@ export default function ProfilePage({ session }) {
 
                       <span className="text-main font-semibold">
                         {postCount} <span className="font-normal text-muted">Posts</span>
+                      </span>
+
+                      <span className="text-main font-semibold">
+                        {connectionsCount} <span className="font-normal text-muted">Connections</span>
+                      </span>
+
+                      <span className="text-main font-semibold flex items-center gap-1">
+                        <Flame size={14} className="text-orange-500 fill-orange-500" />
+                        {streak} <span className="font-normal text-muted">Day Streak</span>
                       </span>
                     </div>
                   </div>
@@ -427,7 +492,7 @@ export default function ProfilePage({ session }) {
                 <ProfileRepos userId={profile.id} />
               ) : (
                 <div className="flex flex-col gap-4">
-                  <BadgesPanel stats={{ postCount, repoCount, totalLikes: 0, connections: 0, streak: 1, githubUrl: profile.github_url }} />
+                  <BadgesPanel stats={{ postCount, repoCount, totalLikes, connections: connectionsCount, streak, githubUrl: profile.github_url }} />
                   {session.user.id === profile.id && (
                     <AIReviewPanel profile={profile} repoCount={repoCount} />
                   )}

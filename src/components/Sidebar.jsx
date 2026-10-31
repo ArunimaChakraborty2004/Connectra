@@ -22,6 +22,7 @@ import {
   Plus,
   Zap,
 } from 'lucide-react';
+import { calculateUserStreak, calculateGamificationStats } from '../utils/streakHelper';
 
 export default function Sidebar({ profile, stats: initialStats, onClose }) {
   const location = useLocation();
@@ -32,46 +33,67 @@ export default function Sidebar({ profile, stats: initialStats, onClose }) {
     following: initialStats?.following ?? 0,
   }));
 
-  // Fetch or sync counts
-  useEffect(() => {
-    // If parent passed valid non-zero stats, use them
-    if (initialStats && (initialStats.followers > 0 || initialStats.following > 0)) {
-      setLiveStats(initialStats);
-      return;
-    }
+  const [gamified, setGamified] = useState(() =>
+    calculateGamificationStats({
+      baseXp: profile?.xp,
+      baseLevel: profile?.level,
+      streak: calculateUserStreak(profile?.id),
+    })
+  );
 
+  // Fetch or sync counts and dynamic gamification stats
+  useEffect(() => {
     if (!profile?.id) return;
 
-    const fetchCounts = async () => {
+    const fetchCountsAndActivity = async () => {
       try {
-        const { count: followersCount } = await supabase
-          .from('follows')
-          .select('*', { count: 'exact', head: true })
-          .eq('following_id', profile.id);
+        const [
+          { count: followersCount },
+          { count: followingCount },
+          { data: userPosts },
+          { count: reposCount }
+        ] = await Promise.all([
+          supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', profile.id),
+          supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', profile.id),
+          supabase.from('posts').select('created_at').eq('user_id', profile.id).order('created_at', { ascending: false }).limit(30),
+          supabase.from('projects').select('*', { count: 'exact', head: true }).eq('user_id', profile.id),
+        ]);
 
-        const { count: followingCount } = await supabase
-          .from('follows')
-          .select('*', { count: 'exact', head: true })
-          .eq('follower_id', profile.id);
+        const fCount = followersCount ?? initialStats?.followers ?? 0;
+        const ingCount = followingCount ?? initialStats?.following ?? 0;
 
         setLiveStats({
-          followers: followersCount || 0,
-          following: followingCount || 0,
+          followers: fCount,
+          following: ingCount,
         });
 
+        const postDates = (userPosts || []).map(p => p.created_at);
+        const computedStreak = calculateUserStreak(profile.id, postDates);
+
+        const stats = calculateGamificationStats({
+          baseXp: profile.xp || 0,
+          baseLevel: profile.level || 1,
+          postCount: userPosts?.length || 0,
+          repoCount: reposCount || 0,
+          followerCount: fCount,
+          streak: computedStreak,
+        });
+
+        setGamified(stats);
       } catch (err) {
         console.warn('Error fetching sidebar stats:', err);
       }
     };
 
-    fetchCounts();
-  }, [profile?.id, initialStats?.followers, initialStats?.following]);
+    fetchCountsAndActivity();
+  }, [profile?.id, profile?.xp, profile?.level, initialStats?.followers, initialStats?.following]);
 
-  const level = profile?.level || 1;
-  const xp = profile?.xp || 0;
+  const level = gamified.level;
+  const xp = gamified.totalXp;
+  const streak = gamified.streak;
   const followers = liveStats.followers;
   const following = liveStats.following;
-  const xpProgress = Math.min((xp / (level * 1000)) * 100, 100) || 12;
+  const xpProgress = gamified.xpProgress;
 
 
   const isActive = (path) => {
@@ -181,9 +203,9 @@ export default function Sidebar({ profile, stats: initialStats, onClose }) {
             <span className="block text-xs font-bold text-[#2b1f17] group-hover:text-[#ea580c] transition-colors">{following}</span>
             <span className="block text-[8px] uppercase font-bold text-[#8d7565] group-hover:underline">Following</span>
           </Link>
-          <div>
+          <div title={`${streak}-day active coding streak`}>
             <span className="text-xs font-bold text-amber-500 flex items-center justify-center gap-0.5">
-              1 <Flame size={10} />
+              {streak} <Flame size={11} className="text-orange-500 fill-orange-500" />
             </span>
             <span className="block text-[8px] uppercase font-bold text-[#8d7565]">Streak</span>
           </div>
@@ -195,7 +217,7 @@ export default function Sidebar({ profile, stats: initialStats, onClose }) {
             <span className="flex items-center gap-1">
               <Code2 size={11} className="text-[#ea580c]" /> Code XP
             </span>
-            <span className="font-mono text-[#2b1f17]">{xp} / {level * 1000}</span>
+            <span className="font-mono text-[#2b1f17]">{xp} / {gamified.nextLevelXp}</span>
           </div>
           <div className="h-1.5 w-full rounded-full overflow-hidden bg-[#f1e4d3]">
             <motion.div
