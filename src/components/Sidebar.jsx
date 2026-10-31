@@ -22,6 +22,7 @@ import {
   Plus,
   Zap,
 } from 'lucide-react';
+import { calculateUserStreak } from '../utils/streakHelper';
 
 export default function Sidebar({ profile, stats: initialStats, onClose }) {
   const location = useLocation();
@@ -32,46 +33,45 @@ export default function Sidebar({ profile, stats: initialStats, onClose }) {
     following: initialStats?.following ?? 0,
   }));
 
-  // Fetch or sync counts
-  useEffect(() => {
-    // If parent passed valid non-zero stats, use them
-    if (initialStats && (initialStats.followers > 0 || initialStats.following > 0)) {
-      setLiveStats(initialStats);
-      return;
-    }
+  const [streak, setStreak] = useState(() => calculateUserStreak(profile?.id));
 
+  // Fetch or sync counts and streak
+  useEffect(() => {
     if (!profile?.id) return;
 
-    const fetchCounts = async () => {
+    const fetchCountsAndActivity = async () => {
       try {
-        const { count: followersCount } = await supabase
-          .from('follows')
-          .select('*', { count: 'exact', head: true })
-          .eq('following_id', profile.id);
+        const [
+          { count: followersCount },
+          { count: followingCount },
+          { data: userPosts },
+        ] = await Promise.all([
+          supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', profile.id),
+          supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', profile.id),
+          supabase.from('posts').select('created_at').eq('user_id', profile.id).order('created_at', { ascending: false }).limit(30),
+        ]);
 
-        const { count: followingCount } = await supabase
-          .from('follows')
-          .select('*', { count: 'exact', head: true })
-          .eq('follower_id', profile.id);
+        const fCount = followersCount ?? initialStats?.followers ?? 0;
+        const ingCount = followingCount ?? initialStats?.following ?? 0;
 
         setLiveStats({
-          followers: followersCount || 0,
-          following: followingCount || 0,
+          followers: fCount,
+          following: ingCount,
         });
 
+        const postDates = (userPosts || []).map(p => p.created_at);
+        const computedStreak = calculateUserStreak(profile.id, postDates);
+        setStreak(computedStreak);
       } catch (err) {
         console.warn('Error fetching sidebar stats:', err);
       }
     };
 
-    fetchCounts();
+    fetchCountsAndActivity();
   }, [profile?.id, initialStats?.followers, initialStats?.following]);
 
-  const level = profile?.level || 1;
-  const xp = profile?.xp || 0;
   const followers = liveStats.followers;
   const following = liveStats.following;
-  const xpProgress = Math.min((xp / (level * 1000)) * 100, 100) || 12;
 
 
   const isActive = (path) => {
@@ -130,7 +130,7 @@ export default function Sidebar({ profile, stats: initialStats, onClose }) {
         </button>
       )}
 
-      {/* User Profile Card with Level, Bio, Streak & XP */}
+      {/* User Profile Card */}
       <div className="bg-white border border-[#f1e4d3] shadow-xs rounded-2xl p-3.5 flex flex-col gap-2.5">
         <div className="flex items-center gap-2.5">
           <div className="relative shrink-0">
@@ -145,19 +145,14 @@ export default function Sidebar({ profile, stats: initialStats, onClose }) {
           </div>
 
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <Link
-                to={`/profile/${profile?.username || 'user'}`}
-                onClick={onClose}
-                className="font-bold text-xs truncate text-[#2b1f17] hover:text-[#ea580c] transition-colors"
-              >
-                {profile?.username || 'Developer'}
-              </Link>
-              <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-orange-100 text-[#ea580c] border border-orange-200 shrink-0">
-                LVL {level}
-              </span>
-            </div>
-            <p className="text-[10px] text-[#8d7565] truncate">
+            <Link
+              to={`/profile/${profile?.username || 'user'}`}
+              onClick={onClose}
+              className="font-bold text-xs truncate text-[#2b1f17] hover:text-[#ea580c] transition-colors block"
+            >
+              {profile?.username || 'Developer'}
+            </Link>
+            <p className="text-[10px] text-[#8d7565] truncate mt-0.5">
               {profile?.bio || 'Full-Stack Developer'}
             </p>
           </div>
@@ -181,29 +176,11 @@ export default function Sidebar({ profile, stats: initialStats, onClose }) {
             <span className="block text-xs font-bold text-[#2b1f17] group-hover:text-[#ea580c] transition-colors">{following}</span>
             <span className="block text-[8px] uppercase font-bold text-[#8d7565] group-hover:underline">Following</span>
           </Link>
-          <div>
+          <div title={`${streak}-day active coding streak`}>
             <span className="text-xs font-bold text-amber-500 flex items-center justify-center gap-0.5">
-              1 <Flame size={10} />
+              {streak} <Flame size={11} className="text-orange-500 fill-orange-500" />
             </span>
             <span className="block text-[8px] uppercase font-bold text-[#8d7565]">Streak</span>
-          </div>
-        </div>
-
-        {/* XP Progress Bar */}
-        <div>
-          <div className="flex justify-between items-center text-[9px] font-bold text-[#8d7565] mb-1">
-            <span className="flex items-center gap-1">
-              <Code2 size={11} className="text-[#ea580c]" /> Code XP
-            </span>
-            <span className="font-mono text-[#2b1f17]">{xp} / {level * 1000}</span>
-          </div>
-          <div className="h-1.5 w-full rounded-full overflow-hidden bg-[#f1e4d3]">
-            <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: `${xpProgress}%` }}
-              transition={{ duration: 0.8, ease: 'easeOut' }}
-              className="h-full rounded-full bg-gradient-to-r from-[#ea580c] to-[#f97316]"
-            />
           </div>
         </div>
       </div>
