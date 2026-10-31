@@ -234,7 +234,7 @@ export default function ChatPage({ session }) {
   const loadGroupMessages = async (groupId) => {
     setLoadingMessages(true);
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('chat_group_messages')
         .select(`
           id, group_id, sender_id, content, is_announcement, attachment_url, attachment_name, attachment_type, created_at,
@@ -242,9 +242,22 @@ export default function ChatPage({ session }) {
         `)
         .eq('group_id', groupId)
         .order('created_at', { ascending: true });
+      if (error) throw error;
       setMessages(data || []);
     } catch (err) {
-      console.warn('loadGroupMessages error:', err);
+      if (err?.message?.includes('attachment_') || err?.message?.includes('column')) {
+        const { data } = await supabase
+          .from('chat_group_messages')
+          .select(`
+            id, group_id, sender_id, content, is_announcement, created_at,
+            sender:profiles!chat_group_messages_sender_id_fkey(username, avatar_url)
+          `)
+          .eq('group_id', groupId)
+          .order('created_at', { ascending: true });
+        setMessages(data || []);
+      } else {
+        console.warn('loadGroupMessages error:', err);
+      }
     } finally {
       setLoadingMessages(false);
     }
@@ -429,25 +442,56 @@ export default function ChatPage({ session }) {
       }
 
       if (selectedGroup) {
-        const { data, error } = await supabase
-          .from('chat_group_messages')
-          .insert({
-            group_id: selectedGroup.id,
-            sender_id: myId,
-            content: text || (attachmentName ? `Shared attachment: ${attachmentName}` : ''),
-            is_announcement: Boolean(isAnnouncementMsg && groupAdminRole),
-            attachment_url: attachmentUrl,
-            attachment_name: attachmentName,
-            attachment_type: attachmentType,
-          })
-          .select(`
-            id, group_id, sender_id, content, is_announcement, attachment_url, attachment_name, attachment_type, created_at,
-            sender:profiles!chat_group_messages_sender_id_fkey(username, avatar_url)
-          `)
-          .single();
+        let sentData = null;
+        const fullPayload = {
+          group_id: selectedGroup.id,
+          sender_id: myId,
+          content: text || (attachmentName ? `Shared attachment: ${attachmentName}` : ''),
+          is_announcement: Boolean(isAnnouncementMsg && groupAdminRole),
+          attachment_url: attachmentUrl,
+          attachment_name: attachmentName,
+          attachment_type: attachmentType,
+        };
 
-        if (error) throw error;
-        setMessages(prev => [...prev, data]);
+        try {
+          const { data, error } = await supabase
+            .from('chat_group_messages')
+            .insert(fullPayload)
+            .select(`
+              id, group_id, sender_id, content, is_announcement, attachment_url, attachment_name, attachment_type, created_at,
+              sender:profiles!chat_group_messages_sender_id_fkey(username, avatar_url)
+            `)
+            .single();
+
+          if (error) throw error;
+          sentData = data;
+        } catch (insertErr) {
+          // Fallback if attachment columns are not in schema cache
+          if (insertErr?.message?.includes('attachment_') || insertErr?.message?.includes('column')) {
+            const fallbackContent = attachmentUrl 
+              ? `${text ? text + ' ' : ''}[Attachment: ${attachmentName || 'file'}](${attachmentUrl})`
+              : text;
+            const { data, error } = await supabase
+              .from('chat_group_messages')
+              .insert({
+                group_id: selectedGroup.id,
+                sender_id: myId,
+                content: fallbackContent,
+                is_announcement: Boolean(isAnnouncementMsg && groupAdminRole),
+              })
+              .select(`
+                id, group_id, sender_id, content, is_announcement, created_at,
+                sender:profiles!chat_group_messages_sender_id_fkey(username, avatar_url)
+              `)
+              .single();
+            if (error) throw error;
+            sentData = data;
+          } else {
+            throw insertErr;
+          }
+        }
+
+        setMessages(prev => [...prev, sentData]);
 
         // Send notifications to other group members
         groupMembers.forEach(mem => {
@@ -461,21 +505,48 @@ export default function ChatPage({ session }) {
           }
         });
       } else if (selectedUser) {
-        const { data, error } = await supabase
-          .from('messages')
-          .insert({
-            sender_id: myId,
-            receiver_id: selectedUser.id,
-            content: text || (attachmentName ? `Shared attachment: ${attachmentName}` : ''),
-            attachment_url: attachmentUrl,
-            attachment_name: attachmentName,
-            attachment_type: attachmentType,
-          })
-          .select()
-          .single();
+        let sentData = null;
+        const fullPayload = {
+          sender_id: myId,
+          receiver_id: selectedUser.id,
+          content: text || (attachmentName ? `Shared attachment: ${attachmentName}` : ''),
+          attachment_url: attachmentUrl,
+          attachment_name: attachmentName,
+          attachment_type: attachmentType,
+        };
 
-        if (error) throw error;
-        setMessages(prev => [...prev, data]);
+        try {
+          const { data, error } = await supabase
+            .from('messages')
+            .insert(fullPayload)
+            .select()
+            .single();
+
+          if (error) throw error;
+          sentData = data;
+        } catch (insertErr) {
+          // Fallback if attachment columns are not in schema cache
+          if (insertErr?.message?.includes('attachment_') || insertErr?.message?.includes('column')) {
+            const fallbackContent = attachmentUrl
+              ? `${text ? text + ' ' : ''}[Attachment: ${attachmentName || 'file'}](${attachmentUrl})`
+              : text;
+            const { data, error } = await supabase
+              .from('messages')
+              .insert({
+                sender_id: myId,
+                receiver_id: selectedUser.id,
+                content: fallbackContent,
+              })
+              .select()
+              .single();
+            if (error) throw error;
+            sentData = data;
+          } else {
+            throw insertErr;
+          }
+        }
+
+        setMessages(prev => [...prev, sentData]);
 
         createNotification({
           userId: selectedUser.id,
