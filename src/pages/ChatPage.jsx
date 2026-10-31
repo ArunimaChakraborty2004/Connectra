@@ -31,7 +31,7 @@ import {
   LogOut,
   Bell,
 } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from '../lib/toast';
 import Loader from '../components/ui/Loader';
 import { createNotification } from '../lib/notifications';
@@ -79,6 +79,38 @@ export default function ChatPage({ session }) {
   const inputRef = useRef(null);
   const myId = session?.user?.id;
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  // Initialize from URL parameters if provided (e.g. /chat?user=UUID or /chat?group=UUID)
+  useEffect(() => {
+    const targetUserId = searchParams.get('user');
+    const targetGroupId = searchParams.get('group');
+
+    if (targetUserId) {
+      setActiveTab('direct');
+      setSelectedGroup(null);
+      // Fetch user profile if not in conversations
+      supabase
+        .from('profiles')
+        .select('id, username, avatar_url')
+        .eq('id', targetUserId)
+        .single()
+        .then(({ data }) => {
+          if (data) startChat(data);
+        });
+    } else if (targetGroupId) {
+      setActiveTab('groups');
+      setSelectedUser(null);
+      supabase
+        .from('chat_groups')
+        .select('*')
+        .eq('id', targetGroupId)
+        .single()
+        .then(({ data }) => {
+          if (data) setSelectedGroup(data);
+        });
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     loadConversations();
@@ -90,26 +122,36 @@ export default function ChatPage({ session }) {
     if (!selectedUser || selectedGroup) return;
     loadDirectMessages(selectedUser.id);
 
+    // Channel identifier sorted so both users share identical channel topic or unique listener
+    const channelName = `chat-direct-${[myId, selectedUser.id].sort().join('-')}`;
     const channel = supabase
-      .channel(`chat-direct-${myId}-${selectedUser.id}`)
+      .channel(channelName)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
           table: 'messages',
-          filter: `receiver_id=eq.${myId}`,
         },
         payload => {
-          if (payload.new.sender_id === selectedUser.id) {
-            setMessages(prev => [...prev, payload.new]);
+          const newMsg = payload.new;
+          // Check if this message belongs to the active conversation between myId and selectedUser.id
+          const isRelevant = 
+            (newMsg.sender_id === selectedUser.id && newMsg.receiver_id === myId) ||
+            (newMsg.sender_id === myId && newMsg.receiver_id === selectedUser.id);
+
+          if (isRelevant) {
+            setMessages(prev => {
+              if (prev.some(m => m.id === newMsg.id)) return prev;
+              return [...prev, newMsg];
+            });
           }
         }
       )
       .subscribe();
 
     return () => supabase.removeChannel(channel);
-  }, [selectedUser?.id]);
+  }, [selectedUser?.id, selectedGroup]);
 
   // Load Group Messages (Fixed Dependency so no flickering / infinite re-render loop occurs)
   useEffect(() => {
@@ -204,8 +246,8 @@ export default function ChatPage({ session }) {
 
       setGroups(formatted);
 
-      // Auto-select first group if none selected
-      if (!selectedGroup && !selectedUser && formatted.length > 0) {
+      // Auto-select first group if none selected and activeTab is groups
+      if (!selectedGroup && !selectedUser && activeTab === 'groups' && formatted.length > 0) {
         setSelectedGroup(formatted[0]);
       }
     } catch (err) {
@@ -546,18 +588,27 @@ export default function ChatPage({ session }) {
           }
         }
 
-        setMessages(prev => [...prev, sentData]);
-
-        createNotification({
-          userId: selectedUser.id,
-          actorId: myId,
-          type: 'comment',
-          entityId: data.id,
+        setMessages(prev => {
+          if (prev.some(m => m.id === sentData.id)) return prev;
+          return [...prev, sentData];
         });
 
-        setConversations(prev =>
-          prev.map(c => (c.id === selectedUser.id ? { ...c, lastMessage: text } : c))
-        );
+        if (sentData?.id) {
+          createNotification({
+            userId: selectedUser.id,
+            actorId: myId,
+            type: 'comment',
+            entityId: sentData.id,
+          });
+        }
+
+        setConversations(prev => {
+          const exists = prev.some(c => c.id === selectedUser.id);
+          if (!exists) {
+            return [{ ...selectedUser, lastMessage: text }, ...prev];
+          }
+          return prev.map(c => (c.id === selectedUser.id ? { ...c, lastMessage: text } : c));
+        });
       }
 
       setNewMessage('');
