@@ -33,49 +33,77 @@ export default function Rightbar({ profile }) {
   useEffect(() => {
     const loadDatabaseData = async () => {
       try {
-        // 1. Fetch Trending Hashtags extracted from actual posts in database
+        // 1. Fetch Trending Topics calculated directly from real database posts & profiles
         const { data: postsData } = await supabase
           .from('posts')
-          .select('content')
+          .select('content, code_language')
           .order('created_at', { ascending: false })
           .limit(100);
 
-        if (postsData) {
-          const tagCounts = {};
-          postsData.forEach((p) => {
-            if (p.content) {
-              const matches = p.content.match(/#\w+/g);
-              if (matches) {
-                matches.forEach((tag) => {
-                  const cleaned = tag.replace('#', '');
-                  tagCounts[cleaned] = (tagCounts[cleaned] || 0) + 1;
-                });
-              }
-            }
-          });
+        const { data: profilesTech } = await supabase
+          .from('profiles')
+          .select('tech_stack')
+          .limit(50);
 
-          const sortedTags = Object.entries(tagCounts)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 5)
-            .map(([tag, count], idx) => ({
-              tag,
-              posts: `${count * 12 + count} posts`,
-              category: idx % 2 === 0 ? 'Dev' : 'Tech',
+        const tagCounts = {};
+        const tagCategories = {};
+
+        // Extract #hashtags from real post content
+        (postsData || []).forEach((p) => {
+          if (p.content) {
+            const matches = p.content.match(/#\w+/g);
+            if (matches) {
+              matches.forEach((rawTag) => {
+                const cleaned = rawTag.replace('#', '').trim();
+                if (cleaned.length > 1) {
+                  const key = cleaned.toLowerCase();
+                  tagCounts[key] = (tagCounts[key] || 0) + 1;
+                  tagCategories[key] = tagCategories[key] || cleaned;
+                }
+              });
+            }
+          }
+
+          // Count programming languages shared in code snippets
+          if (p.code_language && p.code_language.trim()) {
+            const lang = p.code_language.trim();
+            const key = lang.toLowerCase();
+            tagCounts[key] = (tagCounts[key] || 0) + 1;
+            tagCategories[key] = tagCategories[key] || lang;
+          }
+        });
+
+        // Also aggregate trending tech stacks from active developer profiles
+        (profilesTech || []).forEach((prof) => {
+          if (prof.tech_stack) {
+            const techs = prof.tech_stack.split(/[,\s/]+/).map(t => t.trim()).filter(Boolean);
+            techs.forEach((t) => {
+              if (t.length > 2) {
+                const key = t.toLowerCase();
+                tagCounts[key] = (tagCounts[key] || 0) + 1;
+                tagCategories[key] = tagCategories[key] || t;
+              }
+            });
+          }
+        });
+
+        const sortedTags = Object.entries(tagCounts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5)
+          .map(([key, count], idx) => {
+            const displayTag = tagCategories[key] || key;
+            return {
+              tag: displayTag,
+              count,
+              posts: `${count} ${count === 1 ? 'post' : 'posts'}`,
+              category: idx % 2 === 0 ? 'Trending' : 'Dev Topic',
               spark: getSparkPath(idx),
               color: getSparkColor(idx),
-            }));
+            };
+          });
 
-          // If no posts have tags yet, extract top keywords or provide real post count
-          if (sortedTags.length > 0) {
-            setTrendingTags(sortedTags);
-          } else {
-            setTrendingTags([
-              { tag: 'Connectra', category: 'Platform', posts: `${postsData.length || 1} posts`, spark: getSparkPath(0), color: '#ea580c' },
-              { tag: 'FullStack', category: 'Dev', posts: '12 posts', spark: getSparkPath(1), color: '#f97316' },
-              { tag: 'Security', category: 'SecOps', posts: '8 posts', spark: getSparkPath(2), color: '#f59e0b' },
-            ]);
-          }
-        }
+        setTrendingTags(sortedTags);
+
 
         // 2. Fetch Real Communities from 'communities' table
         const { data: commsData } = await supabase
@@ -237,37 +265,44 @@ export default function Rightbar({ profile }) {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          {trendingTags.map((item, idx) => (
-            <div
-              key={item.tag}
-              onClick={() => navigate(`/search?q=${encodeURIComponent(item.tag)}`)}
-              className="flex items-center justify-between group cursor-pointer p-1.5 rounded-xl hover:bg-[#fff7ed] transition-colors"
-            >
-              <div className="flex items-start gap-2.5">
-                <span className="text-xs font-bold text-[#8d7565] w-2.5">{idx + 1}</span>
-                <div className="flex flex-col">
-                  <span className="text-xs font-bold text-[#2b1f17] group-hover:text-[#ea580c] transition-colors">
-                    #{item.tag}
-                  </span>
-                  <span className="text-[10px] text-[#8d7565]">
-                    {item.category} · {item.posts}
-                  </span>
-                </div>
-              </div>
-
-              {/* Sparkline */}
-              <svg width="55" height="18" className="overflow-visible shrink-0">
-                <path
-                  d={item.spark}
-                  fill="none"
-                  stroke={item.color}
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                />
-              </svg>
+          {trendingTags.length === 0 ? (
+            <div className="py-4 text-center text-xs text-[#8d7565]">
+              No trending topics yet.<br />Include hashtags in your posts to trend!
             </div>
-          ))}
+          ) : (
+            trendingTags.map((item, idx) => (
+              <div
+                key={item.tag}
+                onClick={() => navigate(`/search?q=${encodeURIComponent(item.tag)}`)}
+                className="flex items-center justify-between group cursor-pointer p-1.5 rounded-xl hover:bg-[#fff7ed] transition-colors"
+              >
+                <div className="flex items-start gap-2.5">
+                  <span className="text-xs font-bold text-[#8d7565] w-2.5">{idx + 1}</span>
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-[#2b1f17] group-hover:text-[#ea580c] transition-colors">
+                      #{item.tag}
+                    </span>
+                    <span className="text-[10px] text-[#8d7565]">
+                      {item.category} · {item.posts}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Sparkline */}
+                <svg width="55" height="18" className="overflow-visible shrink-0">
+                  <path
+                    d={item.spark}
+                    fill="none"
+                    stroke={item.color}
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </div>
+            ))
+          )}
         </div>
+
       </div>
 
       {/* 3. Communities (Real Database Table) */}

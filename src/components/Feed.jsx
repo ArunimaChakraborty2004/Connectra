@@ -103,18 +103,18 @@ function StoriesRow({ session }) {
           </button>
         </div>
 
-        <div className="flex items-center gap-4 overflow-x-auto no-scrollbar pb-1">
-          {/* + Add Story Button (Opens Reel/Story Creator modal directly) */}
+        <div className="flex items-start gap-4 overflow-x-auto no-scrollbar pb-1 pt-1">
+          {/* + Add Story Button */}
           <button
             onClick={() => setShowCreateStory(true)}
-            className="flex flex-col items-center gap-1.5 shrink-0 cursor-pointer group text-left"
+            className="flex flex-col items-center gap-1.5 shrink-0 cursor-pointer group text-center w-16"
           >
             <div className="w-14 h-14 rounded-full bg-[#fff7ed] border border-[#fed7aa] flex items-center justify-center text-orange-600 group-hover:scale-105 group-hover:border-orange-500 transition-all shadow-2xs">
               <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-[#ea580c] to-[#f97316] flex items-center justify-center text-white shadow-xs">
                 <Plus size={20} strokeWidth={2.8} />
               </div>
             </div>
-            <span className="text-[11px] font-bold text-[#8d7565] group-hover:text-[#ea580c] transition-colors">
+            <span className="text-[11px] font-bold text-[#8d7565] group-hover:text-[#ea580c] transition-colors truncate w-full block">
               Add Story
             </span>
           </button>
@@ -123,10 +123,10 @@ function StoriesRow({ session }) {
           {currentUser && (
             <button
               onClick={() => handleOpenUserStory(currentUser)}
-              className="flex flex-col items-center gap-1.5 shrink-0 cursor-pointer group"
+              className="flex flex-col items-center gap-1.5 shrink-0 cursor-pointer group text-center w-16"
             >
-              <div className="p-0.5 rounded-full bg-gradient-to-tr from-[#ea580c] via-[#f97316] to-[#facc15] group-hover:scale-105 transition-all shadow-2xs">
-                <div className="w-13 h-13 rounded-full overflow-hidden p-0.5 bg-white">
+              <div className="w-14 h-14 rounded-full p-0.5 bg-gradient-to-tr from-[#ea580c] via-[#f97316] to-[#facc15] group-hover:scale-105 transition-all shadow-2xs flex items-center justify-center">
+                <div className="w-full h-full rounded-full overflow-hidden p-0.5 bg-white flex items-center justify-center">
                   {currentUser.avatar_url ? (
                     <img
                       src={currentUser.avatar_url}
@@ -140,7 +140,7 @@ function StoriesRow({ session }) {
                   )}
                 </div>
               </div>
-              <span className="text-[11px] font-semibold text-[#8d7565] group-hover:text-[#2b1f17] transition-colors truncate max-w-[62px] text-center">
+              <span className="text-[11px] font-semibold text-[#8d7565] group-hover:text-[#2b1f17] transition-colors truncate w-full block">
                 Your Story
               </span>
             </button>
@@ -155,10 +155,10 @@ function StoriesRow({ session }) {
               <button
                 key={user.id}
                 onClick={() => handleOpenUserStory(user)}
-                className="flex flex-col items-center gap-1.5 shrink-0 cursor-pointer group"
+                className="flex flex-col items-center gap-1.5 shrink-0 cursor-pointer group text-center w-16"
               >
-                <div className={`p-0.5 rounded-full ${hasReel ? 'bg-gradient-to-tr from-[#ea580c] via-[#f97316] to-[#facc15] shadow-xs' : 'bg-[#fed7aa]'} group-hover:scale-105 transition-all shadow-2xs`}>
-                  <div className="w-13 h-13 rounded-full overflow-hidden p-0.5 bg-white">
+                <div className={`w-14 h-14 rounded-full p-0.5 ${hasReel ? 'bg-gradient-to-tr from-[#ea580c] via-[#f97316] to-[#facc15] shadow-xs' : 'bg-[#fed7aa]'} group-hover:scale-105 transition-all shadow-2xs flex items-center justify-center`}>
+                  <div className="w-full h-full rounded-full overflow-hidden p-0.5 bg-white flex items-center justify-center">
                     {user.avatar_url ? (
                       <img
                         src={user.avatar_url}
@@ -172,13 +172,14 @@ function StoriesRow({ session }) {
                     )}
                   </div>
                 </div>
-                <span className="text-[11px] font-semibold text-[#8d7565] group-hover:text-[#2b1f17] transition-colors truncate max-w-[62px] text-center">
+                <span className="text-[11px] font-semibold text-[#8d7565] group-hover:text-[#2b1f17] transition-colors truncate w-full block">
                   {user.username}
                 </span>
               </button>
             );
           })}
         </div>
+
       </div>
 
       {/* Story Viewer Modal with Progress Bar & Arrow Navigation */}

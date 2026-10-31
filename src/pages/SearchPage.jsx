@@ -68,7 +68,7 @@ export default function SearchPage({ session }) {
   const [followingMap, setFollowingMap] = useState({}); // userIds I follow
   const [followersMap, setFollowersMap] = useState({}); // userIds who follow me
 
-  // Load all follow relationships for current user (who I follow and who follows me)
+  // Load all follow relationships for current user
   const loadFollows = async () => {
     try {
       // 1. People I am following
@@ -95,6 +95,8 @@ export default function SearchPage({ session }) {
       console.warn('Error loading follows:', err);
     }
   };
+
+
 
   useEffect(() => {
     loadFollows();
@@ -275,11 +277,12 @@ export default function SearchPage({ session }) {
       <div className="max-w-[1400px] mx-auto px-6 py-8 flex flex-col lg:flex-row gap-8 relative items-start justify-center z-10">
         <div className="hidden lg:block w-full max-w-[300px] shrink-0">
           {profile ? (
-            <Sidebar profile={profile} stats={{ followers: 0, following: 0 }} />
+            <Sidebar profile={profile} stats={{ followers: followersCount, following: followingCount }} />
           ) : (
             <Loader />
           )}
         </div>
+
 
         <div className="flex-1 w-full max-w-2xl">
           {/* Search Header */}

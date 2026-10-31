@@ -241,20 +241,27 @@ Keep it concise and ready to paste into GitHub.`;
  * Connectra Copilot Chat (for the floating assistant)
  */
 export async function chatWithCopilot({ messages, context = {} }) {
-  const systemPrompt = `You are Connectra Copilot, an ultra-smart, friendly AI dev assistant built into Connectra (a developer collaboration and social platform).
-You specialize in:
-- Full-stack web development (React, Vite, Node, Supabase, Tailwind, TypeScript)
-- Cybersecurity & Secure Coding (OWASP Top 10, Auth, JWTs, XSS, CSRF, input sanitization, bug bounties)
-- Developer career advice and project collaboration tips
+  const systemPrompt = `You are Connectra Copilot — a Staff-level Software Engineer, Tech Lead, and Application Security (AppSec) Expert built directly into Connectra.
 
-Context about current user:
-${context.username ? `- User: @${context.username}` : ''}
-${context.techStack ? `- Tech Stack: ${context.techStack}` : ''}
+Your persona:
+- Sharp, inspiring, pragmatic, and technically authoritative.
+- You write production-grade code that follows best practices (clean architecture, strict typing, proper error boundaries, and defensive security).
+- You speak developer-to-developer: avoid robotic fluff, generic corporate boilerplate, and superficial overviews.
 
-Style:
-- Be concise, helpful, and technically precise.
-- Use code blocks with language tags when showing code.
-- If asked about security, always emphasize secure-by-default architecture.`;
+User Context:
+${context.username ? `- Current User: @${context.username}` : ''}
+${context.techStack ? `- User Stack: ${context.techStack}` : ''}
+
+Response Guidelines:
+1. 🎯 **Direct Solution First**: Give the direct answer or solution immediately in the first 1-2 sentences.
+2. 💻 **Production-Ready Code**:
+   - Always wrap code in fenced markdown with language identifiers (e.g. \`\`\`javascript, \`\`\`sql, \`\`\`typescript, \`\`\`bash).
+   - Code must be realistic, clean, and include brief inline comments explaining non-trivial lines.
+3. 🛡️ **AppSec & Robustness Note**:
+   - Point out relevant edge cases (e.g., token revocation, race conditions, OWASP Top 10 vulnerabilities, Supabase RLS bypass risks).
+4. 🚀 **Formatting**:
+   - Use bold headers, concise bullet points, and high-signal formatting so it's effortless to scan.
+   - If asked for an idea or architecture, provide an actionable blueprint with concrete tools and libraries.`;
 
   try {
     return await callGroq({
@@ -262,12 +269,14 @@ Style:
         { role: 'system', content: systemPrompt },
         ...messages,
       ],
-      temperature: 0.7,
+      temperature: 0.5,
+      max_tokens: 1500,
     });
   } catch (err) {
     return `Hello! I'm your Connectra Copilot. 🚀\n\nIt looks like your \`VITE_GROQ_API_KEY\` is not set yet in \`.env\`. Grab a free key in 30 seconds at [console.groq.com](https://console.groq.com/keys) and paste it into your \`.env\` file to activate instant ultra-fast responses!`;
   }
 }
+
 
 /**
  * Profile review (backwards compatible with AIReviewPanel.jsx)
@@ -303,3 +312,83 @@ Instructions:
     return `🌟 **Profile Snapshot**\n${profile.username} has a solid foundation in ${profile.tech_stack || 'web development'}.\n\n💡 **Strengths**\n- Clear portfolio focus with ${repoCount || 0} repositories.\n\n🛡️ **Cybersecurity & Architecture Posture**\n- Demonstrates modern modular structure.\n\n📈 **Growth Areas**\n- Expand automated test coverage and link CTF/security badges.\n\n🚀 **Verdict**\nGreat trajectory for open-source and team collaborations!`;
   }
 }
+
+/**
+ * Explain code snippet inline for post readers
+ */
+export async function explainCodeSnippet({ code, language = 'javascript' }) {
+  const prompt = `You are a friendly senior engineer explaining this snippet to developers:
+Language: ${language}
+\`\`\`${language}
+${code}
+\`\`\`
+
+Give:
+1. 💡 **What it does** (1-2 sentences in simple terms)
+2. ⚡ **Key concepts / tricks used**
+3. ⚠️ **Potential edge cases or caveats**
+
+Keep it concise, high-signal, and easy to read.`;
+
+  try {
+    return await callGroq({
+      messages: [
+        { role: 'system', content: 'You are an insightful technical educator.' },
+        { role: 'user', content: prompt },
+      ],
+      temperature: 0.4,
+    });
+  } catch (err) {
+    return `💡 **What it does**: This code snippet implements logic in ${language}.\n\n⚡ **Key Highlight**: Modular and concise structure.\n\n⚠️ **Tip**: Ensure runtime edge cases and error bounds are validated.`;
+  }
+}
+
+/**
+ * AI Teammate Matchmaker for Projects
+ */
+export async function matchTeammatesForProject({ project, candidates }) {
+  const prompt = `You are an AI technical recruiter and engineering manager.
+Evaluate these candidate profiles for the following project:
+
+Project: "${project.title}"
+Description: "${project.description || 'Modern software development project'}"
+Tech Stack: "${project.tech_stack || 'General Software Engineering'}"
+
+Candidates:
+${candidates.map((c, i) => `${i + 1}. [ID: ${c.id}] @${c.username} | Stack: ${c.tech_stack || 'Full Stack'} | Bio: ${c.bio || 'Developer'}`).join('\n')}
+
+For each candidate, score their compatibility from 0 to 100, suggest their best role (e.g. Frontend Lead, Backend Architect, Security Auditor, DevOps, Full-Stack Dev), and give a 1-sentence reason.
+
+Return ONLY a valid JSON array of objects with keys:
+- "userId" (string)
+- "score" (number 0-100)
+- "role" (string)
+- "reason" (string)
+
+Strictly valid JSON:
+[
+  {"userId": "...", "score": 92, "role": "Full-Stack Dev", "reason": "..."}
+]`;
+
+  try {
+    const raw = await callGroq({
+      messages: [
+        { role: 'system', content: 'You output strictly valid JSON with no markdown wrapping.' },
+        { role: 'user', content: prompt },
+      ],
+      temperature: 0.3,
+    });
+
+    const cleaned = raw.replace(/```json/g, '').replace(/```/g, '').trim();
+    return JSON.parse(cleaned);
+  } catch (err) {
+    // Graceful fallback matching
+    return candidates.slice(0, 3).map((c, idx) => ({
+      userId: c.id,
+      score: 85 - idx * 5,
+      role: 'Core Contributor',
+      reason: `Matches project domain with relevant experience in ${c.tech_stack || 'web technologies'}.`,
+    }));
+  }
+}
+

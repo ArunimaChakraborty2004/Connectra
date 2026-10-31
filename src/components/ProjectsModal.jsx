@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, FolderGit2, ExternalLink, GitBranch, Plus, Code2 as GithubIcon, DownloadCloud, Loader2, Sparkles, RefreshCw } from 'lucide-react';
+import { X, FolderGit2, ExternalLink, GitBranch, Plus, Code2 as GithubIcon, DownloadCloud, Loader2, Sparkles, RefreshCw, CheckCircle2, ShieldAlert, Lock, UserCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { callGroq } from '../lib/ai';
 
@@ -57,6 +57,17 @@ export default function ProjectsModal({ session, onClose }) {
     if (data) setProjects(data);
   };
 
+  const extractGithubUsername = (url) => {
+    if (!url) return '';
+    try {
+      const parsed = new URL(url.startsWith('http') ? url : `https://${url}`);
+      const parts = parsed.pathname.split('/').filter(Boolean);
+      return parts[0] || '';
+    } catch {
+      return '';
+    }
+  };
+
   const loadUserProfile = async () => {
     const { data } = await supabase
       .from('profiles')
@@ -66,13 +77,8 @@ export default function ProjectsModal({ session, onClose }) {
     if (data) {
       setCurrentUserProfile(data);
       if (data.github_url) {
-        try {
-          const urlParts = new URL(data.github_url).pathname.split('/');
-          const username = urlParts[1];
-          if (username) setGithubUsername(username);
-        } catch {
-          // ignore
-        }
+        const username = extractGithubUsername(data.github_url);
+        if (username) setGithubUsername(username);
       }
     }
   };
@@ -94,16 +100,23 @@ export default function ProjectsModal({ session, onClose }) {
   };
 
   const fetchGithubRepos = async (e) => {
-    e.preventDefault();
-    if (!githubUsername) return;
+    if (e && e.preventDefault) e.preventDefault();
+    
+    // Determine the verified username
+    const verifiedUsername = extractGithubUsername(currentUserProfile?.github_url) || githubUsername;
+    if (!verifiedUsername) {
+      alert("Please link your GitHub profile first.");
+      return;
+    }
+    
     setIsFetchingGithub(true);
     try {
-      const res = await fetch(`https://api.github.com/users/${githubUsername}/repos?sort=updated&per_page=12`);
+      const res = await fetch(`https://api.github.com/users/${verifiedUsername}/repos?sort=updated&per_page=12`);
       if (!res.ok) throw new Error("Could not find GitHub user");
       const data = await res.json();
       setGithubRepos(data);
     } catch {
-      alert("Failed to fetch repositories. Please check the username.");
+      alert("Failed to fetch repositories. Please make sure the linked account exists.");
     } finally {
       setIsFetchingGithub(false);
     }
@@ -260,22 +273,74 @@ export default function ProjectsModal({ session, onClose }) {
                 className="flex flex-col gap-4 mt-6 p-5 bg-white border border-[#f1e4d3] rounded-2xl overflow-hidden shadow-xs"
               >
                 <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-[#ea580c] uppercase tracking-wider">Import from GitHub</h4>
-                  <button onClick={() => setAddMode('none')} className="text-xs text-[#6b5546] hover:text-[#1c130d]">Cancel</button>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-xs font-bold text-[#ea580c] uppercase tracking-wider">Import from GitHub</h4>
+                    <span className="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <Lock size={10} /> Authenticated User Only
+                    </span>
+                  </div>
+                  <button onClick={() => setAddMode('none')} className="text-xs text-[#6b5546] hover:text-[#1c130d] cursor-pointer">Cancel</button>
                 </div>
-                
-                <form onSubmit={fetchGithubRepos} className="flex gap-2">
-                  <input 
-                    type="text" 
-                    value={githubUsername} 
-                    onChange={e => setGithubUsername(e.target.value)} 
-                    placeholder="Enter GitHub Username..." 
-                    className="flex-1 bg-[#faf6f0] border border-[#f1e4d3] rounded-xl px-4 py-2 text-sm text-[#1c130d] focus:border-orange-500 outline-none" 
-                  />
-                  <button type="submit" disabled={isFetchingGithub} className="px-4 py-2 bg-[#ffedd5] hover:bg-[#fed7aa] text-[#9a3412] font-bold text-sm rounded-xl transition-colors flex items-center gap-2 cursor-pointer">
-                    {isFetchingGithub ? <Loader2 size={16} className="animate-spin" /> : "Fetch Repos"}
-                  </button>
-                </form>
+
+                {/* Security Verification & Account Card */}
+                {currentUserProfile?.github_url ? (
+                  <div className="flex flex-col gap-3">
+                    <div className="p-3.5 bg-[#faf6f0] border border-[#f1e4d3] rounded-xl flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-600 font-bold">
+                          <CheckCircle2 size={18} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-[#1c130d]">Linked Account:</span>
+                            <span className="text-xs font-bold text-[#ea580c] bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
+                              @{extractGithubUsername(currentUserProfile.github_url) || githubUsername}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-[#6b5546] mt-0.5">
+                            Verified to your account ({currentUserProfile.full_name || currentUserProfile.username || session.user.email})
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={fetchGithubRepos}
+                        disabled={isFetchingGithub}
+                        className="px-4 py-2 bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white hover:brightness-105 font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                      >
+                        {isFetchingGithub ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                        {isFetchingGithub ? "Fetching..." : "Fetch My Repos"}
+                      </button>
+                    </div>
+
+                    <div className="flex items-start gap-2 p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-900 text-[11px] leading-relaxed">
+                      <Lock size={14} className="shrink-0 text-amber-700 mt-0.5" />
+                      <span>
+                        <strong>Security & Privacy Guard:</strong> For privacy protection, arbitrary username lookups are disabled. You can only import repositories from your own verified account. Only public repositories can be fetched via GitHub API. Private repositories remain completely protected and never exposed.
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 bg-orange-50/70 border border-orange-200 rounded-xl flex flex-col gap-3 text-center">
+                    <div className="flex items-center justify-center gap-2 text-amber-800 font-bold text-sm">
+                      <ShieldAlert size={18} className="text-[#ea580c]" />
+                      No GitHub Account Linked Yet
+                    </div>
+                    <p className="text-xs text-[#6b5546] max-w-md mx-auto">
+                      To prevent unauthorized access or claiming other users' repositories, you must first link and verify your GitHub account in your Profile.
+                    </p>
+                    <div className="flex justify-center mt-1">
+                      <Link
+                        to={`/profile/${currentUserProfile?.username || session.user.id}`}
+                        onClick={onClose}
+                        className="px-4 py-2 bg-[#ea580c] text-white font-bold text-xs rounded-xl hover:bg-[#c2410c] transition-colors inline-flex items-center gap-1.5 shadow-sm"
+                      >
+                        <UserCheck size={14} /> Link GitHub in Profile Settings
+                      </Link>
+                    </div>
+                  </div>
+                )}
 
                 {githubRepos.length > 0 && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2 max-h-60 overflow-y-auto no-scrollbar">

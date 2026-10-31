@@ -1,5 +1,7 @@
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Link, useLocation } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
 import {
   Users,
   User,
@@ -21,15 +23,56 @@ import {
   Zap,
 } from 'lucide-react';
 
-export default function Sidebar({ profile, stats, onClose }) {
+export default function Sidebar({ profile, stats: initialStats, onClose }) {
   const location = useLocation();
   const initial = profile?.username ? profile.username[0].toUpperCase() : 'U';
 
+  const [liveStats, setLiveStats] = useState(() => ({
+    followers: initialStats?.followers ?? 0,
+    following: initialStats?.following ?? 0,
+  }));
+
+  // Fetch or sync counts
+  useEffect(() => {
+    // If parent passed valid non-zero stats, use them
+    if (initialStats && (initialStats.followers > 0 || initialStats.following > 0)) {
+      setLiveStats(initialStats);
+      return;
+    }
+
+    if (!profile?.id) return;
+
+    const fetchCounts = async () => {
+      try {
+        const { count: followersCount } = await supabase
+          .from('follows')
+          .select('*', { count: 'exact', head: true })
+          .eq('following_id', profile.id);
+
+        const { count: followingCount } = await supabase
+          .from('follows')
+          .select('*', { count: 'exact', head: true })
+          .eq('follower_id', profile.id);
+
+        setLiveStats({
+          followers: followersCount || 0,
+          following: followingCount || 0,
+        });
+
+      } catch (err) {
+        console.warn('Error fetching sidebar stats:', err);
+      }
+    };
+
+    fetchCounts();
+  }, [profile?.id, initialStats?.followers, initialStats?.following]);
+
   const level = profile?.level || 1;
   const xp = profile?.xp || 0;
-  const followers = stats?.followers || 0;
-  const following = stats?.following || 0;
+  const followers = liveStats.followers;
+  const following = liveStats.following;
   const xpProgress = Math.min((xp / (level * 1000)) * 100, 100) || 12;
+
 
   const isActive = (path) => {
     if (path === '/' && location.pathname === '/') return true;
