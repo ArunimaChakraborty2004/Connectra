@@ -1,15 +1,28 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Heart, MessageSquare, Share2, Trash2, Edit2, Bookmark, MoreHorizontal, Sparkles, Shield, Loader2 } from 'lucide-react';
+import { Heart, MessageSquare, Share2, Trash2, Edit2, Bookmark, MoreHorizontal, Sparkles, Shield, Loader2, Eye, EyeOff, MessageCircleOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from '../../lib/toast';
 import { Link } from 'react-router-dom';
 import { explainCodeSnippet, reviewCodeAndSecurity } from '../../lib/ai';
 import AIAnalysisCard from './AIAnalysisCard';
+import { createNotification } from '../../lib/notifications';
 
-export default function PostCard({ post, session, onUpdate }) {
-  const [showComments, setShowComments] = useState(false);
+export default function PostCard({ post, session, onUpdate, isHighlighted = false, autoOpenComments = false }) {
+  const [showComments, setShowComments] = useState(autoOpenComments);
+
+  useEffect(() => {
+    if (autoOpenComments) {
+      setShowComments(true);
+    }
+  }, [autoOpenComments]);
   const [commentText, setCommentText] = useState('');
+  const [comments, setComments] = useState(post.comments || []);
+
+  useEffect(() => {
+    setComments(post.comments || []);
+  }, [post.comments]);
+
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(post.content);
   const [isBookmarked, setIsBookmarked] = useState(false);
@@ -18,7 +31,90 @@ export default function PostCard({ post, session, onUpdate }) {
   const [hasVoted, setHasVoted] = useState(
     post.poll_data?.options?.some((o) => o.votes?.includes(session.user.id)) || false
   );
-  const [localLiked, setLocalLiked] = useState(false);
+  const [isLiked, setIsLiked] = useState(() => Boolean(post.user_has_liked));
+  const [likeCount, setLikeCount] = useState(() => post.likes?.[0]?.count ?? post.likes_count ?? 0);
+  const [isLiking, setIsLiking] = useState(false);
+
+  // Synchronize like state when post prop updates from database
+  useEffect(() => {
+    if (post.user_has_liked !== undefined) {
+      setIsLiked(Boolean(post.user_has_liked));
+    }
+    const freshLikes = post.likes?.[0]?.count ?? post.likes_count;
+    if (freshLikes !== undefined) {
+      setLikeCount(freshLikes);
+    }
+  }, [post.user_has_liked, post.likes, post.likes_count]);
+
+  // Fallback initial check if user_has_liked wasn't pre-computed
+  useEffect(() => {
+    if (post.user_has_liked === undefined && session?.user?.id && post.id) {
+      supabase
+        .from('likes')
+        .select('id')
+        .eq('post_id', post.id)
+        .eq('user_id', session.user.id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) setIsLiked(true);
+        });
+    }
+  }, [post.id, session?.user?.id, post.user_has_liked]);
+
+  // Post privacy / display controls
+  const [hideLikes, setHideLikes] = useState(() => {
+    if (post.hide_likes !== undefined && post.hide_likes !== null) return Boolean(post.hide_likes);
+    return localStorage.getItem(`post_hide_likes_${post.id}`) === 'true';
+  });
+
+  const [commentsDisabled, setCommentsDisabled] = useState(() => {
+    if (post.comments_disabled !== undefined && post.comments_disabled !== null) return Boolean(post.comments_disabled);
+    return localStorage.getItem(`post_disable_comments_${post.id}`) === 'true';
+  });
+
+  const [hideCommentCount, setHideCommentCount] = useState(() => {
+    if (post.hide_comment_count !== undefined && post.hide_comment_count !== null) return Boolean(post.hide_comment_count);
+    return localStorage.getItem(`post_hide_comment_count_${post.id}`) === 'true';
+  });
+
+  const handleToggleHideLikes = async () => {
+    const newVal = !hideLikes;
+    setHideLikes(newVal);
+    localStorage.setItem(`post_hide_likes_${post.id}`, String(newVal));
+    toast.success(newVal ? 'Like count hidden for this post' : 'Like count visible');
+    setShowMenu(false);
+    try {
+      await supabase.from('posts').update({ hide_likes: newVal }).eq('id', post.id);
+    } catch (e) {
+      // Ignored if column not in schema cache
+    }
+  };
+
+  const handleToggleDisableComments = async () => {
+    const newVal = !commentsDisabled;
+    setCommentsDisabled(newVal);
+    localStorage.setItem(`post_disable_comments_${post.id}`, String(newVal));
+    toast.success(newVal ? 'Commenting turned off' : 'Commenting turned on');
+    setShowMenu(false);
+    try {
+      await supabase.from('posts').update({ comments_disabled: newVal }).eq('id', post.id);
+    } catch (e) {
+      // Ignored if column not in schema cache
+    }
+  };
+
+  const handleToggleHideCommentCount = async () => {
+    const newVal = !hideCommentCount;
+    setHideCommentCount(newVal);
+    localStorage.setItem(`post_hide_comment_count_${post.id}`, String(newVal));
+    toast.success(newVal ? 'Comment count hidden' : 'Comment count visible');
+    setShowMenu(false);
+    try {
+      await supabase.from('posts').update({ hide_comment_count: newVal }).eq('id', post.id);
+    } catch (e) {
+      // Ignored if column not in schema cache
+    }
+  };
   
   // AI snippet analysis state
   const [aiAnalysis, setAiAnalysis] = useState(null);
@@ -67,44 +163,119 @@ export default function PostCard({ post, session, onUpdate }) {
     }
   };
 
-
-  const isOwner = session.user.id === post.user_id;
+  const isOwner = session?.user?.id === post.user_id;
   const isEdited = post.updated_at && post.updated_at !== post.created_at;
-  const likeCount = (post.likes?.[0]?.count || 0) + (localLiked ? 1 : 0);
-  const commentCount = post.comments?.length || 0;
 
   const timeAgo = (dateStr) => {
+    if (!dateStr) return '';
     const diff = (Date.now() - new Date(dateStr)) / 1000;
     if (diff < 60) return 'just now';
-    if (diff < 3600) return `${Math.floor(diff / 60)}h`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m`;
     if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
     return `${Math.floor(diff / 86400)}d`;
   };
 
   const handleLike = async () => {
-    setLocalLiked((l) => !l);
-    const { data: existing } = await supabase
-      .from('likes')
-      .select('id')
-      .eq('post_id', post.id)
-      .eq('user_id', session.user.id)
-      .single();
-    if (existing) {
-      await supabase.from('likes').delete().eq('id', existing.id);
-    } else {
-      await supabase.from('likes').insert({ post_id: post.id, user_id: session.user.id });
+    if (!session?.user?.id || isLiking) return;
+    setIsLiking(true);
+
+    const prevLiked = isLiked;
+    const prevCount = likeCount;
+
+    // Optimistic toggle
+    const nextLiked = !prevLiked;
+    const nextCount = nextLiked ? prevCount + 1 : Math.max(0, prevCount - 1);
+    setIsLiked(nextLiked);
+    setLikeCount(nextCount);
+
+    try {
+      if (nextLiked) {
+        const { error } = await supabase
+          .from('likes')
+          .insert({ post_id: post.id, user_id: session.user.id });
+
+        if (error) {
+          if (error.code !== '23505') {
+            setIsLiked(prevLiked);
+            setLikeCount(prevCount);
+            toast.error('Failed to like post');
+            return;
+          }
+        } else if (post.user_id && post.user_id !== session.user.id) {
+          createNotification({
+            userId: post.user_id,
+            actorId: session.user.id,
+            type: 'like',
+            entityId: post.id,
+          });
+        }
+      } else {
+        const { error } = await supabase
+          .from('likes')
+          .delete()
+          .eq('post_id', post.id)
+          .eq('user_id', session.user.id);
+
+        if (error) {
+          setIsLiked(prevLiked);
+          setLikeCount(prevCount);
+          toast.error('Failed to unlike post');
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn('Like toggle error:', err);
+      setIsLiked(prevLiked);
+      setLikeCount(prevCount);
+    } finally {
+      setIsLiking(false);
     }
   };
 
   const handleAddComment = async () => {
-    if (!commentText.trim()) return;
-    const { error } = await supabase.from('comments').insert({
+    if (!commentText.trim() || commentsDisabled) return;
+    const text = commentText.trim();
+    setCommentText('');
+
+    // Optimistic comment addition
+    const tempId = `temp-${Date.now()}`;
+    const newCommentObj = {
+      id: tempId,
       post_id: post.id,
       user_id: session.user.id,
-      content: commentText,
-    });
-    if (error) toast.error('Failed to add comment');
-    else setCommentText('');
+      content: text,
+      created_at: new Date().toISOString(),
+      profiles: {
+        username: session.user.user_metadata?.username || session.user.email?.split('@')[0] || 'User',
+        avatar_url: session.user.user_metadata?.avatar_url || null,
+      },
+    };
+    setComments(prev => [...prev, newCommentObj]);
+
+    const { data, error } = await supabase
+      .from('comments')
+      .insert({
+        post_id: post.id,
+        user_id: session.user.id,
+        content: text,
+      })
+      .select('id, post_id, user_id, content, created_at, profiles(username, avatar_url)')
+      .single();
+
+    if (error) {
+      toast.error('Failed to add comment');
+      setComments(prev => prev.filter(c => c.id !== tempId));
+    } else if (data) {
+      setComments(prev => prev.map(c => c.id === tempId ? data : c));
+      if (post.user_id && post.user_id !== session.user.id) {
+        createNotification({
+          userId: post.user_id,
+          actorId: session.user.id,
+          type: 'comment',
+          entityId: post.id,
+        });
+      }
+    }
   };
 
   const handleDeletePost = async () => {
@@ -131,8 +302,16 @@ export default function PostCard({ post, session, onUpdate }) {
   };
 
   const handleDeleteComment = async (commentId) => {
+    if (!confirm('Remove this comment?')) return;
+    setComments(prev => prev.filter(c => c.id !== commentId));
+    toast.success('Comment removed');
     const { error } = await supabase.from('comments').delete().eq('id', commentId);
-    if (error) toast.error('Failed to delete comment');
+    if (error) {
+      toast.error('Failed to remove comment');
+      if (onUpdate) onUpdate();
+    } else {
+      if (onUpdate) onUpdate();
+    }
   };
 
   const handleShare = async () => {
@@ -184,7 +363,14 @@ export default function PostCard({ post, session, onUpdate }) {
   const initial = authorName[0]?.toUpperCase() || 'U';
 
   return (
-    <div className="rounded-2xl p-4 bg-white border border-[#f1e4d3] shadow-xs flex flex-col gap-3 hover:border-[#e6ceb5] transition-all">
+    <div
+      id={`post-${post.id}`}
+      className={`rounded-2xl p-4 bg-white border transition-all duration-500 flex flex-col gap-3 ${
+        isHighlighted
+          ? 'border-[#ea580c] ring-4 ring-[#ea580c]/25 shadow-xl bg-orange-50/20'
+          : 'border-[#f1e4d3] shadow-xs hover:border-[#e6ceb5]'
+      }`}
+    >
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -208,12 +394,6 @@ export default function PostCard({ post, session, onUpdate }) {
               {authorName}
             </Link>
 
-            {/* Orange verified checkmark badge */}
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="shrink-0">
-              <circle cx="12" cy="12" r="12" fill="#ea580c" />
-              <path d="M7.5 12l3 3 6-6" stroke="white" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-
             <span className="text-xs text-[#8d7565]">{authorHandle}</span>
             <span className="text-xs text-[#8d7565]">·</span>
             <span className="text-xs text-[#8d7565]">{timeAgo(post.created_at)}</span>
@@ -235,21 +415,44 @@ export default function PostCard({ post, session, onUpdate }) {
             <MoreHorizontal size={18} />
           </button>
           {showMenu && (
-            <div className="absolute right-0 top-7 w-36 rounded-xl bg-white border border-[#f1e4d3] shadow-md py-1 z-20">
+            <div className="absolute right-0 top-7 w-52 rounded-xl bg-white border border-[#f1e4d3] shadow-xl py-1 z-20">
               {isOwner && (
                 <>
                   <button
                     onClick={() => { setIsEditing(!isEditing); setShowMenu(false); }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-[#8d7565] hover:text-[#2b1f17] hover:bg-[#fff7ed] transition-colors text-left cursor-pointer"
                   >
-                    <Edit2 size={13} /> Edit
+                    <Edit2 size={13} /> Edit Post
                   </button>
+                  <button
+                    onClick={handleToggleHideLikes}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-[#8d7565] hover:text-[#2b1f17] hover:bg-[#fff7ed] transition-colors text-left cursor-pointer"
+                  >
+                    {hideLikes ? <Eye size={13} /> : <EyeOff size={13} />}
+                    {hideLikes ? 'Unhide like count' : 'Hide like count'}
+                  </button>
+                  <button
+                    onClick={handleToggleHideCommentCount}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-[#8d7565] hover:text-[#2b1f17] hover:bg-[#fff7ed] transition-colors text-left cursor-pointer"
+                  >
+                    {hideCommentCount ? <MessageSquare size={13} /> : <EyeOff size={13} />}
+                    {hideCommentCount ? 'Unhide comment count' : 'Hide comment count'}
+                  </button>
+                  <button
+                    onClick={handleToggleDisableComments}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-[#8d7565] hover:text-[#2b1f17] hover:bg-[#fff7ed] transition-colors text-left cursor-pointer"
+                  >
+                    {commentsDisabled ? <MessageSquare size={13} /> : <MessageCircleOff size={13} />}
+                    {commentsDisabled ? 'Turn on commenting' : 'Turn off commenting'}
+                  </button>
+                  <div className="border-t border-[#f1e4d3] my-1" />
                   <button
                     onClick={() => { handleDeletePost(); setShowMenu(false); }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 transition-colors text-left cursor-pointer"
                   >
-                    <Trash2 size={13} /> Delete
+                    <Trash2 size={13} /> Delete Post
                   </button>
+                  <div className="border-t border-[#f1e4d3] my-1" />
                 </>
               )}
               <button
@@ -395,13 +598,14 @@ export default function PostCard({ post, session, onUpdate }) {
           {/* Like button in Orange */}
           <button
             onClick={handleLike}
+            disabled={isLiking}
             className={`flex items-center gap-1.5 transition-colors cursor-pointer ${
-              localLiked ? 'text-[#ea580c]' : 'hover:text-[#ea580c]'
+              isLiked ? 'text-[#ea580c]' : 'hover:text-[#ea580c]'
             }`}
           >
-            <Heart size={16} fill={localLiked ? 'currentColor' : 'none'} />
+            <Heart size={16} fill={isLiked ? 'currentColor' : 'none'} />
             <span className="font-bold">
-              {likeCount > 0 ? (likeCount >= 1000 ? `${(likeCount / 1000).toFixed(1)}K` : likeCount) : '1.2K'}
+              {hideLikes ? (isLiked ? 'Liked' : 'Like') : likeCount}
             </span>
           </button>
 
@@ -411,7 +615,9 @@ export default function PostCard({ post, session, onUpdate }) {
             className="flex items-center gap-1.5 hover:text-[#ea580c] transition-colors cursor-pointer"
           >
             <MessageSquare size={16} />
-            <span className="font-bold">{commentCount > 0 ? commentCount : '128'}</span>
+            <span className="font-bold">
+              {hideCommentCount ? 'Comments' : comments.length}
+            </span>
           </button>
 
           {/* Share */}
@@ -420,7 +626,7 @@ export default function PostCard({ post, session, onUpdate }) {
             className="flex items-center gap-1.5 hover:text-[#ea580c] transition-colors cursor-pointer"
           >
             <Share2 size={16} />
-            <span className="font-bold">96</span>
+            <span className="font-medium">Share</span>
           </button>
         </div>
 
@@ -445,39 +651,74 @@ export default function PostCard({ post, session, onUpdate }) {
             className="overflow-hidden"
           >
             <div className="pt-3 border-t border-[#f1e4d3] flex flex-col gap-2.5">
-              {post.comments?.map((c) => (
-                <div key={c.id} className="flex gap-2.5 text-xs">
-                  <div className="w-7 h-7 rounded-full bg-gradient-to-r from-[#ea580c] to-[#f97316] flex items-center justify-center font-bold text-white shrink-0 shadow-2xs">
-                    {c.profiles?.avatar_url ? (
-                      <img src={c.profiles.avatar_url} alt="Avatar" className="w-full h-full rounded-full object-cover" />
-                    ) : (
-                      c.profiles?.username?.[0]?.toUpperCase() || 'U'
-                    )}
-                  </div>
-                  <div className="flex-1 bg-[#faf6f0] p-2.5 rounded-xl border border-[#f1e4d3]">
-                    <span className="font-bold text-[#2b1f17] mr-1.5">{c.profiles?.username}</span>
-                    <span className="text-[#8d7565]">{c.content}</span>
-                  </div>
-                </div>
-              ))}
+              {comments.length === 0 ? (
+                <p className="text-xs text-[#8d7565] italic py-1">No comments yet. Start the discussion!</p>
+              ) : (
+                comments.map((c) => {
+                  const canDelete = isOwner || c.user_id === session?.user?.id || session?.user?.user_metadata?.is_admin;
+                  return (
+                    <div key={c.id} className="flex gap-2.5 text-xs group">
+                      <Link to={`/profile/${c.profiles?.username || ''}`} className="shrink-0">
+                        <div className="w-7 h-7 rounded-full bg-gradient-to-r from-[#ea580c] to-[#f97316] flex items-center justify-center font-bold text-white shrink-0 shadow-2xs overflow-hidden">
+                          {c.profiles?.avatar_url ? (
+                            <img src={c.profiles.avatar_url} alt="Avatar" className="w-full h-full rounded-full object-cover" />
+                          ) : (
+                            c.profiles?.username?.[0]?.toUpperCase() || 'U'
+                          )}
+                        </div>
+                      </Link>
+                      <div className="flex-1 bg-[#faf6f0] p-2.5 rounded-xl border border-[#f1e4d3] relative">
+                        <div className="flex items-center justify-between gap-2 mb-0.5">
+                          <Link to={`/profile/${c.profiles?.username || ''}`} className="font-bold text-[#2b1f17] hover:text-[#ea580c]">
+                            @{c.profiles?.username || 'user'}
+                          </Link>
+                          <div className="flex items-center gap-2">
+                            {c.created_at && (
+                              <span className="text-[10px] text-[#8d7565]">{timeAgo(c.created_at)}</span>
+                            )}
+                            {canDelete && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteComment(c.id)}
+                                title={isOwner ? "Remove comment (Post Author / Admin)" : "Delete your comment"}
+                                className="text-stone-400 hover:text-rose-600 transition-colors p-0.5 rounded cursor-pointer"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <span className="text-[#2b1f17] break-words">{c.content}</span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
 
-              {/* Add comment input */}
-              <div className="flex items-center gap-2 mt-1">
-                <input
-                  type="text"
-                  value={commentText}
-                  onChange={(e) => setCommentText(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleAddComment()}
-                  placeholder="Write a comment..."
-                  className="flex-1 bg-[#faf6f0] border border-[#f1e4d3] rounded-full px-4 py-2 text-xs text-[#2b1f17] outline-none focus:border-orange-500 focus:bg-white"
-                />
-                <button
-                  onClick={handleAddComment}
-                  className="px-4 py-2 rounded-full bg-gradient-to-r from-[#ea580c] to-[#f97316] hover:brightness-105 text-white text-xs font-bold cursor-pointer shadow-xs"
-                >
-                  Reply
-                </button>
-              </div>
+              {/* Add comment input OR disabled message */}
+              {commentsDisabled ? (
+                <div className="p-2.5 bg-orange-50/60 border border-orange-200/60 rounded-xl text-center text-xs text-[#8d7565] font-medium">
+                  🔒 Commenting has been turned off for this post by author.
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 mt-1">
+                  <input
+                    type="text"
+                    value={commentText}
+                    onChange={(e) => setCommentText(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddComment()}
+                    placeholder="Write a comment..."
+                    className="flex-1 bg-[#faf6f0] border border-[#f1e4d3] rounded-full px-4 py-2 text-xs text-[#2b1f17] outline-none focus:border-orange-500 focus:bg-white"
+                  />
+                  <button
+                    onClick={handleAddComment}
+                    disabled={!commentText.trim()}
+                    className="px-4 py-2 rounded-full bg-gradient-to-r from-[#ea580c] to-[#f97316] hover:brightness-105 disabled:opacity-40 text-white text-xs font-bold cursor-pointer shadow-xs transition-all"
+                  >
+                    Reply
+                  </button>
+                </div>
+              )}
             </div>
           </motion.div>
         )}

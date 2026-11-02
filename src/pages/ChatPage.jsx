@@ -30,11 +30,19 @@ import {
   Copy,
   LogOut,
   Bell,
+  Smile,
 } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from '../lib/toast';
 import Loader from '../components/ui/Loader';
 import { createNotification } from '../lib/notifications';
+
+const QUICK_REACTIONS = ['👍', '❤️', '🔥', '😂', '🚀', '💡', '🎉'];
+const CHAT_EMOJIS = [
+  '😀', '😂', '🤣', '😍', '😎', '🤔', '🥳', '🚀',
+  '🔥', '💡', '💯', '💻', '⚡', '👀', '🤝', '👍',
+  '👎', '❤️', '🎉', '👏', '🙌', '✨', '☕', '🐛'
+];
 
 export default function ChatPage({ session }) {
   const [conversations, setConversations] = useState([]);
@@ -51,6 +59,54 @@ export default function ChatPage({ session }) {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
   const [loadingConvos, setLoadingConvos] = useState(true);
+
+  // Emojis & message reactions
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [messageReactions, setMessageReactions] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('connectra_msg_reactions') || '{}');
+    } catch {
+      return {};
+    }
+  });
+
+  const handleToggleReaction = (msgId, emoji) => {
+    if (!myId) return;
+    setMessageReactions(prev => {
+      const current = prev[msgId] || {};
+      const userList = current[emoji] || [];
+      const hasReacted = userList.includes(myId);
+
+      let newUserList;
+      if (hasReacted) {
+        newUserList = userList.filter(id => id !== myId);
+      } else {
+        newUserList = [...userList, myId];
+      }
+
+      const updated = { ...current };
+      if (newUserList.length === 0) {
+        delete updated[emoji];
+      } else {
+        updated[emoji] = newUserList;
+      }
+
+      const next = { ...prev, [msgId]: updated };
+      try {
+        localStorage.setItem('connectra_msg_reactions', JSON.stringify(next));
+      } catch (e) {
+        console.warn('Reaction storage save failed:', e);
+      }
+      return next;
+    });
+  };
+
+  const handleInsertEmoji = (emoji) => {
+    setNewMessage(prev => prev + emoji);
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  };
 
   // Attachment states (Teams style)
   const [attachmentFile, setAttachmentFile] = useState(null);
@@ -83,8 +139,8 @@ export default function ChatPage({ session }) {
 
   // Initialize from URL parameters if provided (e.g. /chat?user=UUID or /chat?group=UUID)
   useEffect(() => {
-    const targetUserId = searchParams.get('user');
-    const targetGroupId = searchParams.get('group');
+    const targetUserId = searchParams.get('user') || searchParams.get('userId');
+    const targetGroupId = searchParams.get('group') || searchParams.get('groupId');
 
     if (targetUserId) {
       setActiveTab('direct');
@@ -1188,12 +1244,14 @@ export default function ChatPage({ session }) {
                         );
                       }
 
+                      const hasReactions = messageReactions[msg.id] && Object.keys(messageReactions[msg.id]).length > 0;
+
                       return (
                         <motion.div
                           key={msg.id}
                           initial={{ opacity: 0, y: 6 }}
                           animate={{ opacity: 1, y: 0 }}
-                          className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
+                          className={`flex flex-col group/msg relative ${isMe ? 'items-end' : 'items-start'}`}
                         >
                           {/* Sender name for group messages */}
                           {selectedGroup && !isMe && msg.sender?.username && (
@@ -1202,53 +1260,105 @@ export default function ChatPage({ session }) {
                             </span>
                           )}
 
-                          <div
-                            className={`max-w-[78%] px-4 py-2.5 rounded-2xl text-xs sm:text-[13px] leading-relaxed relative shadow-2xs ${
-                              isMe
-                                ? 'bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white rounded-br-none font-medium'
-                                : 'bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 border border-[#f1e4d3] dark:border-[#2b1c13] rounded-bl-none'
-                            }`}
-                          >
-                            {/* Message Attachment Preview */}
-                            {msg.attachment_url && (
-                              <div className="mb-2 rounded-xl overflow-hidden border border-white/20">
-                                {msg.attachment_type === 'image' ? (
-                                  <a href={msg.attachment_url} target="_blank" rel="noreferrer">
-                                    <img
-                                      src={msg.attachment_url}
-                                      alt="attachment"
-                                      className="max-h-48 w-full object-cover rounded-lg hover:scale-101 transition-transform"
-                                    />
-                                  </a>
-                                ) : (
-                                  <a
-                                    href={msg.attachment_url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    download={msg.attachment_name || 'file'}
-                                    className={`flex items-center gap-2 p-2 rounded-lg font-mono text-xs ${
-                                      isMe ? 'bg-black/20 text-white' : 'bg-stone-100 dark:bg-stone-700 text-stone-800 dark:text-stone-100'
-                                    }`}
-                                  >
-                                    <FileText size={16} />
-                                    <span className="truncate max-w-[180px]">{msg.attachment_name || 'Download Attachment'}</span>
-                                    <ExternalLink size={12} className="ml-auto opacity-75" />
-                                  </a>
-                                )}
-                              </div>
-                            )}
-
-                            <p className="whitespace-pre-wrap">{msg.content}</p>
-                            <p
-                              className={`text-[9px] mt-1 text-right ${
-                                isMe ? 'text-white/70' : 'text-stone-400'
+                          <div className="relative max-w-[82%]">
+                            {/* Floating hover reaction bar */}
+                            <div
+                              className={`absolute -top-3.5 z-20 opacity-0 group-hover/msg:opacity-100 transition-opacity bg-white dark:bg-stone-800 border border-[#f1e4d3] dark:border-stone-700 shadow-md rounded-full px-1.5 py-0.5 flex items-center gap-0.5 ${
+                                isMe ? 'right-2' : 'left-2'
                               }`}
                             >
-                              {new Date(msg.created_at).toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit',
+                              {QUICK_REACTIONS.map(emoji => {
+                                const hasReacted = messageReactions[msg.id]?.[emoji]?.includes(myId);
+                                return (
+                                  <button
+                                    key={emoji}
+                                    type="button"
+                                    onClick={() => handleToggleReaction(msg.id, emoji)}
+                                    className={`px-1 py-0.5 text-xs rounded-full hover:scale-125 transition-transform cursor-pointer ${
+                                      hasReacted ? 'bg-orange-100 dark:bg-orange-950/80 scale-110' : ''
+                                    }`}
+                                    title={`React ${emoji}`}
+                                  >
+                                    {emoji}
+                                  </button>
+                                );
                               })}
-                            </p>
+                            </div>
+
+                            <div
+                              className={`px-4 py-2.5 rounded-2xl text-xs sm:text-[13px] leading-relaxed relative shadow-2xs ${
+                                isMe
+                                  ? 'bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white rounded-br-none font-medium'
+                                  : 'bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 border border-[#f1e4d3] dark:border-[#2b1c13] rounded-bl-none'
+                              }`}
+                            >
+                              {/* Message Attachment Preview */}
+                              {msg.attachment_url && (
+                                <div className="mb-2 rounded-xl overflow-hidden border border-white/20">
+                                  {msg.attachment_type === 'image' ? (
+                                    <a href={msg.attachment_url} target="_blank" rel="noreferrer">
+                                      <img
+                                        src={msg.attachment_url}
+                                        alt="attachment"
+                                        className="max-h-48 w-full object-cover rounded-lg hover:scale-101 transition-transform"
+                                      />
+                                    </a>
+                                  ) : (
+                                    <a
+                                      href={msg.attachment_url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      download={msg.attachment_name || 'file'}
+                                      className={`flex items-center gap-2 p-2 rounded-lg font-mono text-xs ${
+                                        isMe ? 'bg-black/20 text-white' : 'bg-stone-100 dark:bg-stone-700 text-stone-800 dark:text-stone-100'
+                                      }`}
+                                    >
+                                      <FileText size={16} />
+                                      <span className="truncate max-w-[180px]">{msg.attachment_name || 'Download Attachment'}</span>
+                                      <ExternalLink size={12} className="ml-auto opacity-75" />
+                                    </a>
+                                  )}
+                                </div>
+                              )}
+
+                              <p className="whitespace-pre-wrap">{msg.content}</p>
+                              <p
+                                className={`text-[9px] mt-1 text-right ${
+                                  isMe ? 'text-white/70' : 'text-stone-400'
+                                }`}
+                              >
+                                {new Date(msg.created_at).toLocaleTimeString([], {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </p>
+                            </div>
+
+                            {/* Message Reaction Badges Row */}
+                            {hasReactions && (
+                              <div className={`flex flex-wrap gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                                {Object.entries(messageReactions[msg.id]).map(([emoji, userIds]) => {
+                                  if (!userIds || userIds.length === 0) return null;
+                                  const isMine = userIds.includes(myId);
+                                  return (
+                                    <button
+                                      key={emoji}
+                                      type="button"
+                                      onClick={() => handleToggleReaction(msg.id, emoji)}
+                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer shadow-2xs ${
+                                        isMine
+                                          ? 'bg-orange-500/15 border-orange-500/40 text-[#ea580c]'
+                                          : 'bg-white dark:bg-stone-800 border-stone-200 dark:border-stone-700 text-stone-700 dark:text-stone-300 hover:border-orange-400'
+                                      }`}
+                                      title={isMine ? `You reacted ${emoji} (click to undo)` : `Click to react ${emoji}`}
+                                    >
+                                      <span>{emoji}</span>
+                                      <span className="text-[10px]">{userIds.length}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
                         </motion.div>
                       );
@@ -1298,6 +1408,41 @@ export default function ChatPage({ session }) {
                   </div>
                 )}
 
+                {/* Emoji Picker Popover */}
+                <AnimatePresence>
+                  {showEmojiPicker && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                      className="p-3 bg-white dark:bg-stone-800 border border-[#f1e4d3] dark:border-stone-700 rounded-2xl shadow-xl flex flex-col gap-2 max-w-sm"
+                    >
+                      <div className="flex items-center justify-between pb-1 border-b border-[#f1e4d3]/60 dark:border-stone-700/60">
+                        <span className="text-[11px] font-bold text-stone-700 dark:text-stone-300">Quick Emojis</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowEmojiPicker(false)}
+                          className="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 cursor-pointer"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-8 gap-1.5 text-lg">
+                        {CHAT_EMOJIS.map(e => (
+                          <button
+                            key={e}
+                            type="button"
+                            onClick={() => handleInsertEmoji(e)}
+                            className="p-1 rounded-lg hover:bg-orange-50 dark:hover:bg-stone-700/60 hover:scale-120 transition-all cursor-pointer text-center"
+                          >
+                            {e}
+                          </button>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
                 <div className="flex items-center gap-2">
                   {/* File Attachment Input (hidden) */}
                   <input
@@ -1313,6 +1458,20 @@ export default function ChatPage({ session }) {
                     title="Attach document, image, or code file"
                   >
                     <Paperclip size={16} />
+                  </button>
+
+                  {/* Emoji Picker Button */}
+                  <button
+                    type="button"
+                    onClick={() => setShowEmojiPicker(v => !v)}
+                    className={`p-2.5 rounded-xl border transition-colors cursor-pointer ${
+                      showEmojiPicker
+                        ? 'border-orange-500 bg-orange-50 dark:bg-orange-950/40 text-orange-600'
+                        : 'border-[#f1e4d3] dark:border-[#2b1c13] hover:border-orange-500 text-stone-500 hover:text-orange-600'
+                    }`}
+                    title="Insert emoji"
+                  >
+                    <Smile size={16} />
                   </button>
 
                   <input

@@ -195,12 +195,18 @@ export default function Navbar({ onOpenSidebar }) {
         <div className="flex items-center gap-3">
           {/* Search bar */}
           <form onSubmit={handleSearch} className="relative hidden md:block">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#a89284]" size={15} />
+            <button
+              type="submit"
+              className="absolute left-2 top-1/2 -translate-y-1/2 text-[#a89284] hover:text-[#ea580c] p-1.5 rounded-full transition-colors cursor-pointer"
+              title="Search Connectra"
+            >
+              <Search size={15} />
+            </button>
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search Connectra"
+              placeholder="Search Connectra..."
               className="w-48 lg:w-60 bg-[#faf6f0] border border-[#f1e4d3] rounded-full pl-9 pr-12 py-2.5 text-xs text-[#2b1f17] placeholder-[#a89284] outline-none focus:border-orange-500 focus:bg-white focus:ring-2 focus:ring-orange-200 transition-all"
             />
             <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#fffdfa] border border-[#f1e4d3] text-[#8d7565]">

@@ -12,7 +12,7 @@ export default function Dashboard({ session }) {
   const loadData = async () => {
     const { data: profileData, error } = await supabase
       .from('profiles')
-      .select('id, username, bio, tech_stack, github_url, xp, level, avatar_url')
+      .select('id, username, full_name, bio, tech_stack, github_url, xp, level, avatar_url')
       .eq('id', session.user.id)
       .single();
 

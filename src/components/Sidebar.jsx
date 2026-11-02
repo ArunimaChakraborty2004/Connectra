@@ -8,7 +8,6 @@ import {
   FolderGit2,
   Search,
   Bell,
-  Flame,
   MessageSquare,
   Briefcase,
   Settings,
@@ -22,7 +21,6 @@ import {
   Plus,
   Zap,
 } from 'lucide-react';
-import { calculateUserStreak } from '../utils/streakHelper';
 
 export default function Sidebar({ profile, stats: initialStats, onClose }) {
   const location = useLocation();
@@ -33,9 +31,7 @@ export default function Sidebar({ profile, stats: initialStats, onClose }) {
     following: initialStats?.following ?? 0,
   }));
 
-  const [streak, setStreak] = useState(() => calculateUserStreak(profile?.id));
-
-  // Fetch or sync counts and streak
+  // Fetch or sync counts
   useEffect(() => {
     if (!profile?.id) return;
 
@@ -44,11 +40,9 @@ export default function Sidebar({ profile, stats: initialStats, onClose }) {
         const [
           { count: followersCount },
           { count: followingCount },
-          { data: userPosts },
         ] = await Promise.all([
           supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', profile.id),
           supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', profile.id),
-          supabase.from('posts').select('created_at').eq('user_id', profile.id).order('created_at', { ascending: false }).limit(30),
         ]);
 
         const fCount = followersCount ?? initialStats?.followers ?? 0;
@@ -58,10 +52,6 @@ export default function Sidebar({ profile, stats: initialStats, onClose }) {
           followers: fCount,
           following: ingCount,
         });
-
-        const postDates = (userPosts || []).map(p => p.created_at);
-        const computedStreak = calculateUserStreak(profile.id, postDates);
-        setStreak(computedStreak);
       } catch (err) {
         console.warn('Error fetching sidebar stats:', err);
       }
@@ -150,16 +140,16 @@ export default function Sidebar({ profile, stats: initialStats, onClose }) {
               onClick={onClose}
               className="font-bold text-xs truncate text-[#2b1f17] hover:text-[#ea580c] transition-colors block"
             >
-              {profile?.username || 'Developer'}
+              {profile?.full_name || profile?.username || 'Developer'}
             </Link>
             <p className="text-[10px] text-[#8d7565] truncate mt-0.5">
-              {profile?.bio || 'Full-Stack Developer'}
+              {profile?.full_name ? `@${profile.username}` : (profile?.bio || 'Full-Stack Developer')}
             </p>
           </div>
         </div>
 
-        {/* Mini Stats (Followers, Following, Streak) */}
-        <div className="grid grid-cols-3 gap-1 py-1.5 px-2 rounded-xl bg-[#faf6f0] border border-[#f1e4d3] text-center">
+        {/* Mini Stats (Followers, Following) */}
+        <div className="grid grid-cols-2 gap-1 py-1.5 px-2 rounded-xl bg-[#faf6f0] border border-[#f1e4d3] text-center">
           <Link
             to="/search?tab=followers"
             className="hover:opacity-80 transition-opacity block group cursor-pointer"
@@ -170,18 +160,12 @@ export default function Sidebar({ profile, stats: initialStats, onClose }) {
           </Link>
           <Link
             to="/search?tab=following"
-            className="border-x border-[#f1e4d3] hover:opacity-80 transition-opacity block group cursor-pointer"
+            className="border-l border-[#f1e4d3] hover:opacity-80 transition-opacity block group cursor-pointer"
             title="View Following"
           >
             <span className="block text-xs font-bold text-[#2b1f17] group-hover:text-[#ea580c] transition-colors">{following}</span>
             <span className="block text-[8px] uppercase font-bold text-[#8d7565] group-hover:underline">Following</span>
           </Link>
-          <div title={`${streak}-day active coding streak`}>
-            <span className="text-xs font-bold text-amber-500 flex items-center justify-center gap-0.5">
-              {streak} <Flame size={11} className="text-orange-500 fill-orange-500" />
-            </span>
-            <span className="block text-[8px] uppercase font-bold text-[#8d7565]">Streak</span>
-          </div>
         </div>
       </div>
 

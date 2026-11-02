@@ -34,12 +34,12 @@ const BADGES = [
     check: ({ repoCount }) => repoCount >= 3,
   },
   {
-    id: 'streak_master',
-    icon: '🔥',
-    label: 'Streak Master',
-    desc: '7-day activity streak',
-    color: 'from-orange-500/20 to-red-500/10 border-orange-500/30',
-    check: ({ streak }) => streak >= 7,
+    id: 'prolific_creator',
+    icon: '⚡',
+    label: 'Prolific Creator',
+    desc: 'Published 5+ posts',
+    color: 'from-orange-500/20 to-amber-500/10 border-orange-500/30',
+    check: ({ postCount }) => (postCount || 0) >= 5,
   },
   {
     id: 'github_verified',
