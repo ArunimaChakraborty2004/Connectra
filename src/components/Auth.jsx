@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Mail, Lock, User, AlertCircle, CheckCircle2,
-  Key, ArrowRight, Eye, EyeOff, Sparkles, Cpu
+  Key, ArrowRight, Eye, EyeOff, Sparkles, Cpu, Loader2, XCircle
 } from 'lucide-react';
 
 export default function Auth() {
@@ -15,8 +15,95 @@ export default function Auth() {
   const [status, setStatus] = useState({ type: '', msg: '' });
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [usernameStatus, setUsernameStatus] = useState({
+    checking: false,
+    available: null,
+    message: '',
+  });
 
-  /* ── Auth logic (unchanged) ── */
+  // Debounced real-time username uniqueness check during Sign Up
+  useEffect(() => {
+    if (isLogin || isResetPassword) return;
+    const raw = username;
+    if (!raw || !raw.trim()) {
+      setUsernameStatus({ checking: false, available: null, message: '' });
+      return;
+    }
+
+    const clean = raw.trim().toLowerCase().replace(/\s+/g, '_');
+
+    if (clean.length < 3) {
+      setUsernameStatus({
+        checking: false,
+        available: false,
+        message: 'Handle must be at least 3 characters.',
+      });
+      return;
+    }
+
+    if (clean.length > 30) {
+      setUsernameStatus({
+        checking: false,
+        available: false,
+        message: 'Handle cannot exceed 30 characters.',
+      });
+      return;
+    }
+
+    if (!/^[a-zA-Z0-9_]+$/.test(clean)) {
+      setUsernameStatus({
+        checking: false,
+        available: false,
+        message: 'Only letters, numbers, and underscores allowed.',
+      });
+      return;
+    }
+
+    let isMounted = true;
+    setUsernameStatus(prev => ({ ...prev, checking: true, message: 'Checking availability...' }));
+
+    const timer = setTimeout(async () => {
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, username')
+          .ilike('username', clean)
+          .maybeSingle();
+
+        if (!isMounted) return;
+
+        if (error) {
+          setUsernameStatus({ checking: false, available: true, message: '' });
+          return;
+        }
+
+        if (data) {
+          setUsernameStatus({
+            checking: false,
+            available: false,
+            message: `@${clean} is already taken. Please choose another.`,
+          });
+        } else {
+          setUsernameStatus({
+            checking: false,
+            available: true,
+            message: `@${clean} is available!`,
+          });
+        }
+      } catch (err) {
+        if (isMounted) {
+          setUsernameStatus({ checking: false, available: true, message: '' });
+        }
+      }
+    }, 350);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [username, isLogin, isResetPassword]);
+
+  /* ── Auth logic ── */
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -44,7 +131,38 @@ export default function Auth() {
       }
     } else {
       if (!username.trim()) { setStatus({ type: 'error', msg: 'Username is required.' }); setLoading(false); return; }
-      const u = username.trim();
+      const u = username.trim().toLowerCase().replace(/\s+/g, '_');
+
+      if (usernameStatus.checking) {
+        setStatus({ type: 'error', msg: 'Verifying username availability, please wait a moment...' });
+        setLoading(false);
+        return;
+      }
+
+      if (usernameStatus.available === false) {
+        setStatus({ type: 'error', msg: usernameStatus.message || `@${u} is already taken.` });
+        setLoading(false);
+        return;
+      }
+
+      // Explicit database uniqueness check before signing up
+      const { data: existing } = await supabase
+        .from('profiles')
+        .select('id')
+        .ilike('username', u)
+        .maybeSingle();
+
+      if (existing) {
+        setStatus({ type: 'error', msg: `Username @${u} is already taken. Please choose another.` });
+        setUsernameStatus({
+          checking: false,
+          available: false,
+          message: `@${u} is already taken. Please choose another.`,
+        });
+        setLoading(false);
+        return;
+      }
+
       const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { username: u, full_name: u } } });
       if (error) { setStatus({ type: 'error', msg: error.message }); }
       else if (data.user) {
@@ -435,7 +553,14 @@ export default function Auth() {
                       {!isLogin && !isResetPassword && (
                         <motion.div key="u" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.22 }}>
                           <div>
-                            <label className="block text-[11px] font-bold text-[#6b4226] mb-1.5 ml-1">Developer Handle</label>
+                            <div className="flex items-center justify-between mb-1.5 ml-1">
+                              <label className="block text-[11px] font-bold text-[#6b4226]">Developer Handle</label>
+                              {usernameStatus.checking && (
+                                <span className="text-[10px] text-[#ea580c] font-medium flex items-center gap-1">
+                                  <Loader2 size={10} className="animate-spin" /> Checking...
+                                </span>
+                              )}
+                            </div>
                             <div className="relative group">
                               <User className="absolute left-4 top-1/2 -translate-y-1/2 text-[#b0886a] group-focus-within:text-[#ea580c] transition-colors pointer-events-none" size={15} />
                               <input
@@ -444,9 +569,39 @@ export default function Auth() {
                                 value={username}
                                 onChange={e => setUsername(e.target.value)}
                                 placeholder="e.g. dev_coder99"
-                                className="w-full bg-[#fcf5eb] border-2 border-[#d9ba9b] hover:border-[#b8860b] focus:border-[#ea580c] rounded-2xl py-3 pl-10 pr-4 text-sm text-[#2e1708] placeholder-[#b0886a] focus:outline-none focus:bg-white transition-all font-medium shadow-inner"
+                                className={`w-full bg-[#fcf5eb] border-2 rounded-2xl py-3 pl-10 pr-10 text-sm text-[#2e1708] placeholder-[#b0886a] focus:outline-none transition-all font-medium shadow-inner ${
+                                  usernameStatus.checking
+                                    ? 'border-amber-400 focus:border-[#ea580c]'
+                                    : usernameStatus.available === false
+                                    ? 'border-red-500 focus:border-red-600 bg-red-50/40'
+                                    : usernameStatus.available === true
+                                    ? 'border-emerald-600 focus:border-emerald-700 bg-emerald-50/40'
+                                    : 'border-[#d9ba9b] hover:border-[#b8860b] focus:border-[#ea580c]'
+                                }`}
                               />
+                              <div className="absolute right-3.5 top-1/2 -translate-y-1/2 flex items-center pointer-events-none">
+                                {usernameStatus.checking ? (
+                                  <Loader2 size={15} className="text-[#ea580c] animate-spin" />
+                                ) : usernameStatus.available === false ? (
+                                  <XCircle size={15} className="text-red-500" />
+                                ) : usernameStatus.available === true ? (
+                                  <CheckCircle2 size={15} className="text-emerald-600" />
+                                ) : null}
+                              </div>
                             </div>
+                            {usernameStatus.message && (
+                              <p className={`text-[11px] font-semibold mt-1 ml-1 flex items-center gap-1.5 ${
+                                usernameStatus.checking
+                                  ? 'text-[#ea580c]'
+                                  : usernameStatus.available === false
+                                  ? 'text-red-600'
+                                  : 'text-emerald-700'
+                              }`}>
+                                {usernameStatus.available === false && <AlertCircle size={11} className="shrink-0" />}
+                                {usernameStatus.available === true && <CheckCircle2 size={11} className="shrink-0" />}
+                                <span>{usernameStatus.message}</span>
+                              </p>
+                            )}
                           </div>
                         </motion.div>
                       )}
@@ -520,8 +675,8 @@ export default function Auth() {
                       whileHover={{ scale: 1.015 }}
                       whileTap={{ scale: 0.985 }}
                       type="submit"
-                      disabled={loading}
-                      className="mt-1 w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl font-bold text-sm text-white cursor-pointer disabled:opacity-55 transition-all shadow-md"
+                      disabled={loading || (!isLogin && !isResetPassword && (usernameStatus.checking || usernameStatus.available === false))}
+                      className="mt-1 w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl font-bold text-sm text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-md"
                       style={{
                         background: 'linear-gradient(135deg, #a73205 0%, #ea580c 50%, #f97316 100%)',
                         boxShadow: '0 4px 18px rgba(167,50,5,0.38), inset 0 1px 1px rgba(255,255,255,0.3)',

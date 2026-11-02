@@ -6,7 +6,7 @@ import PostCard from './feed/PostCard';
 import Loader from './ui/Loader';
 import EmptyState from './ui/EmptyState';
 import { MessageSquare, Plus, X, ChevronLeft, ChevronRight, Play, Film } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams, useParams } from 'react-router-dom';
 import CreateReel from './reels/CreateReel';
 
 function StoriesRow({ session }) {
@@ -301,6 +301,11 @@ function StoriesRow({ session }) {
 export default function Feed({ session, userIdFilter = null, communityIdFilter = null, placeholder }) {
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [searchParams] = useSearchParams();
+  const routeParams = useParams();
+  const targetPostId = searchParams.get('postId') || routeParams.id;
+  const autoOpenComments = searchParams.get('comments') === 'open';
+  const [highlightedPostId, setHighlightedPostId] = useState(null);
 
   const loadFeed = async () => {
     try {
@@ -325,13 +330,17 @@ export default function Feed({ session, userIdFilter = null, communityIdFilter =
         const postIds = postsData.map((p) => p.id);
 
         const [{ data: likesData }, { data: commentsData }] = await Promise.all([
-          supabase.from('likes').select('id, post_id').in('post_id', postIds),
+          supabase.from('likes').select('id, post_id, user_id').in('post_id', postIds),
           supabase.from('comments').select('id, post_id, user_id, content, created_at, profiles(username, avatar_url)').in('post_id', postIds).order('created_at', { ascending: true })
         ]);
 
         const likesCountMap = {};
+        const userLikedMap = {};
         (likesData || []).forEach((l) => {
           likesCountMap[l.post_id] = (likesCountMap[l.post_id] || 0) + 1;
+          if (session?.user?.id && l.user_id === session.user.id) {
+            userLikedMap[l.post_id] = true;
+          }
         });
 
         const commentsGroupMap = {};
@@ -343,6 +352,8 @@ export default function Feed({ session, userIdFilter = null, communityIdFilter =
         const formattedPosts = postsData.map((p) => ({
           ...p,
           likes: [{ count: likesCountMap[p.id] || 0 }],
+          likes_count: likesCountMap[p.id] || 0,
+          user_has_liked: Boolean(userLikedMap[p.id]),
           comments: commentsGroupMap[p.id] || [],
         }));
 
@@ -368,6 +379,72 @@ export default function Feed({ session, userIdFilter = null, communityIdFilter =
       .subscribe();
     return () => sub.unsubscribe();
   }, [userIdFilter]);
+
+  // Handle post redirection from notifications (scroll to post, highlight, open comments)
+  useEffect(() => {
+    if (!targetPostId) return;
+
+    let isMounted = true;
+
+    const handleTargetPost = async () => {
+      // If the post is not in current posts list and feed is finished loading, fetch it specifically
+      const exists = posts.some((p) => p.id === targetPostId);
+      if (!exists && !loading) {
+        try {
+          const { data: pData } = await supabase
+            .from('posts')
+            .select(`
+              id, user_id, content, image_url, code_snippet, code_language, created_at, updated_at,
+              profiles(username, avatar_url)
+            `)
+            .eq('id', targetPostId)
+            .single();
+
+          if (pData && isMounted) {
+            const [{ data: likesData }, { data: commentsData }] = await Promise.all([
+              supabase.from('likes').select('id, post_id, user_id').eq('post_id', targetPostId),
+              supabase
+                .from('comments')
+                .select('id, post_id, user_id, content, created_at, profiles(username, avatar_url)')
+                .eq('post_id', targetPostId)
+                .order('created_at', { ascending: true }),
+            ]);
+
+            const formatted = {
+              ...pData,
+              likes: [{ count: likesData?.length || 0 }],
+              likes_count: likesData?.length || 0,
+              user_has_liked: Boolean(likesData?.some(l => session?.user?.id && l.user_id === session.user.id)),
+              comments: commentsData || [],
+            };
+
+            setPosts((prev) => {
+              if (prev.some((p) => p.id === targetPostId)) return prev;
+              return [formatted, ...prev];
+            });
+          }
+        } catch (err) {
+          console.warn('Target post fetch failed:', err);
+        }
+      }
+
+      setHighlightedPostId(targetPostId);
+
+      // Scroll into view smoothly
+      setTimeout(() => {
+        const el = document.getElementById(`post-${targetPostId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 400);
+    };
+
+    handleTargetPost();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [targetPostId, loading, posts.length]);
 
   if (loading) return <Loader />;
 
@@ -407,7 +484,13 @@ export default function Feed({ session, userIdFilter = null, communityIdFilter =
               exit={{ opacity: 0, scale: 0.97 }}
               transition={{ duration: 0.2, delay: i * 0.04 }}
             >
-              <PostCard post={post} session={session} onUpdate={loadFeed} />
+              <PostCard
+                post={post}
+                session={session}
+                onUpdate={loadFeed}
+                isHighlighted={post.id === highlightedPostId}
+                autoOpenComments={post.id === highlightedPostId && autoOpenComments}
+              />
             </motion.div>
           ))
         )}

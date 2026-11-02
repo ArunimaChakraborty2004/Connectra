@@ -2,14 +2,22 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import Sidebar from '../components/Sidebar';
 import Loader from '../components/ui/Loader';
-import { Moon, Sun, Settings as SettingsIcon, User, Bell, Lock, ShieldCheck } from 'lucide-react';
+import { Moon, Sun, Settings as SettingsIcon, User, Bell, Lock, ShieldCheck, Loader2, CheckCircle2, AlertCircle, XCircle } from 'lucide-react';
 import { useTheme } from '../lib/ThemeContext';
 import { toast } from '../lib/toast';
 
 export default function SettingsPage({ session }) {
   const [profile, setProfile] = useState(null);
+  const [fullName, setFullName] = useState('');
+  const [username, setUsername] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [usernameStatus, setUsernameStatus] = useState({
+    checking: false,
+    available: null,
+    message: '',
+    isCurrent: true,
+  });
   const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
@@ -18,26 +26,207 @@ export default function SettingsPage({ session }) {
       const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
       if (data) {
         setProfile(data);
+        setFullName(data.full_name || '');
+        setUsername(data.username || '');
         setIsPrivate(data.is_private !== undefined ? Boolean(data.is_private) : localPrivate);
+        setUsernameStatus({
+          checking: false,
+          available: true,
+          message: 'This is your current handle.',
+          isCurrent: true,
+        });
       } else {
         setProfile({ id: session.user.id, username: 'User' });
+        setUsername('User');
         setIsPrivate(localPrivate);
+        setUsernameStatus({
+          checking: false,
+          available: true,
+          message: 'This is your current handle.',
+          isCurrent: true,
+        });
       }
     };
     loadProfile();
   }, [session.user.id]);
 
+  // Debounced real-time username uniqueness check
+  useEffect(() => {
+    if (!profile) return;
+    const raw = username;
+    if (!raw || !raw.trim()) {
+      setUsernameStatus({
+        checking: false,
+        available: false,
+        message: 'Username cannot be empty.',
+        isCurrent: false,
+      });
+      return;
+    }
+
+    const clean = raw.trim().toLowerCase().replace(/\s+/g, '_');
+
+    if (profile?.username && clean === profile.username.toLowerCase()) {
+      setUsernameStatus({
+        checking: false,
+        available: true,
+        message: 'This is your current handle.',
+        isCurrent: true,
+      });
+      return;
+    }
+
+    if (clean.length < 3) {
+      setUsernameStatus({
+        checking: false,
+        available: false,
+        message: 'Username must be at least 3 characters.',
+        isCurrent: false,
+      });
+      return;
+    }
+
+    if (clean.length > 30) {
+      setUsernameStatus({
+        checking: false,
+        available: false,
+        message: 'Username cannot exceed 30 characters.',
+        isCurrent: false,
+      });
+      return;
+    }
+
+    if (!/^[a-zA-Z0-9_]+$/.test(clean)) {
+      setUsernameStatus({
+        checking: false,
+        available: false,
+        message: 'Only letters, numbers, and underscores are allowed.',
+        isCurrent: false,
+      });
+      return;
+    }
+
+    let isMounted = true;
+    setUsernameStatus(prev => ({ ...prev, checking: true, message: 'Checking availability...' }));
+
+    const timer = setTimeout(async () => {
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, username')
+          .ilike('username', clean)
+          .neq('id', session.user.id)
+          .maybeSingle();
+
+        if (!isMounted) return;
+
+        if (error) {
+          console.warn('Username query error:', error);
+          setUsernameStatus({
+            checking: false,
+            available: true,
+            message: '',
+            isCurrent: false,
+          });
+          return;
+        }
+
+        if (data) {
+          setUsernameStatus({
+            checking: false,
+            available: false,
+            message: `@${clean} is already taken by another user.`,
+            isCurrent: false,
+          });
+        } else {
+          setUsernameStatus({
+            checking: false,
+            available: true,
+            message: `@${clean} is available!`,
+            isCurrent: false,
+          });
+        }
+      } catch (err) {
+        if (isMounted) {
+          setUsernameStatus({
+            checking: false,
+            available: true,
+            message: '',
+            isCurrent: false,
+          });
+        }
+      }
+    }, 350);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [username, profile?.username, session.user.id]);
+
   const handleSave = async () => {
     setSaving(true);
     localStorage.setItem(`connectra_private_${session.user.id}`, String(isPrivate));
     try {
-      await supabase
+      const cleanUsername = username.trim().toLowerCase().replace(/\s+/g, '_');
+      if (!cleanUsername) {
+        toast.error('Username cannot be empty.');
+        setSaving(false);
+        return;
+      }
+
+      if (usernameStatus.checking) {
+        toast.error('Checking username availability, please wait...');
+        setSaving(false);
+        return;
+      }
+      if (usernameStatus.available === false) {
+        toast.error(usernameStatus.message || `@${cleanUsername} is already taken.`);
+        setSaving(false);
+        return;
+      }
+
+      if (cleanUsername !== profile?.username?.toLowerCase()) {
+        const { data: existingUser } = await supabase
+          .from('profiles')
+          .select('id')
+          .ilike('username', cleanUsername)
+          .neq('id', session.user.id)
+          .maybeSingle();
+
+        if (existingUser) {
+          toast.error(`@${cleanUsername} is already taken by another user.`);
+          setUsernameStatus({
+            checking: false,
+            available: false,
+            message: `@${cleanUsername} is already taken by another user.`,
+            isCurrent: false,
+          });
+          setSaving(false);
+          return;
+        }
+      }
+
+      const { data, error } = await supabase
         .from('profiles')
-        .update({ is_private: isPrivate })
-        .eq('id', session.user.id);
-      toast.success('Settings & privacy preferences saved!');
+        .update({
+          is_private: isPrivate,
+          full_name: fullName.trim() || null,
+          username: cleanUsername,
+        })
+        .eq('id', session.user.id)
+        .select()
+        .single();
+
+      if (error) {
+        toast.error(error.message);
+      } else {
+        setProfile(data);
+        window.dispatchEvent(new Event('refreshStats'));
+        toast.success('Settings and profile updated successfully!');
+      }
     } catch (err) {
-      toast.success('Settings saved!');
+      toast.error('Failed to save settings');
     } finally {
       setSaving(false);
     }
@@ -128,20 +317,85 @@ export default function SettingsPage({ session }) {
                 </div>
               </section>
 
-              {/* Account Settings Stub Section */}
+              {/* Account Settings Section */}
               <section>
                 <h3 className="text-lg font-semibold flex items-center gap-2 mb-4">
                   <User size={20} />
-                  Account Settings
+                  Account & Profile Name
                 </h3>
                 <div className="glass-panel p-4 rounded-xl space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold mb-1 text-main">Display / Full Name</label>
+                    <input
+                      type="text"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      placeholder="e.g. Alex Morgan"
+                      className="w-full bg-surface border border-white/10 rounded-lg px-4 py-2.5 text-main placeholder:text-muted focus:outline-none focus:border-primary transition-all text-sm"
+                    />
+                    <p className="text-xs text-muted mt-1">Your display name shown on your profile.</p>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-sm font-semibold text-main">Username</label>
+                      {usernameStatus.checking && (
+                        <span className="text-[11px] text-amber-500 font-medium flex items-center gap-1">
+                          <Loader2 size={12} className="animate-spin" /> Checking...
+                        </span>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted text-sm font-bold">@</span>
+                      <input
+                        type="text"
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        placeholder="username"
+                        className={`w-full pl-8 pr-10 py-2.5 bg-surface border rounded-lg text-main placeholder:text-muted focus:outline-none transition-all text-sm font-mono ${
+                          usernameStatus.checking
+                            ? 'border-amber-500/50 focus:border-amber-500'
+                            : usernameStatus.available === false
+                            ? 'border-rose-500 focus:border-rose-500 bg-rose-500/5'
+                            : usernameStatus.available === true && !usernameStatus.isCurrent
+                            ? 'border-emerald-500 focus:border-emerald-500 bg-emerald-500/5'
+                            : 'border-white/10 focus:border-primary'
+                        }`}
+                      />
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center pointer-events-none">
+                        {usernameStatus.checking ? (
+                          <Loader2 size={16} className="text-amber-500 animate-spin" />
+                        ) : usernameStatus.available === false ? (
+                          <XCircle size={16} className="text-rose-500" />
+                        ) : usernameStatus.available === true && !usernameStatus.isCurrent ? (
+                          <CheckCircle2 size={16} className="text-emerald-500" />
+                        ) : null}
+                      </div>
+                    </div>
+                    {usernameStatus.message ? (
+                      <p className={`text-xs font-medium mt-1.5 flex items-center gap-1.5 ${
+                        usernameStatus.checking
+                          ? 'text-amber-500'
+                          : usernameStatus.available === false
+                          ? 'text-rose-500'
+                          : usernameStatus.available === true && !usernameStatus.isCurrent
+                          ? 'text-emerald-500'
+                          : 'text-muted'
+                      }`}>
+                        {usernameStatus.available === false && <AlertCircle size={12} className="shrink-0" />}
+                        {usernameStatus.available === true && !usernameStatus.isCurrent && <CheckCircle2 size={12} className="shrink-0" />}
+                        <span>{usernameStatus.message}</span>
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted mt-1">Your unique handle on Connectra.</p>
+                    )}
+                  </div>
                   <div>
                     <label className="block text-sm font-medium mb-1 text-muted">Email Address</label>
                     <input 
                       type="email" 
                       disabled 
                       value={session?.user?.email || ''} 
-                      className="w-full bg-surface/50 border border-white/5 rounded-lg px-4 py-2 text-muted cursor-not-allowed" 
+                      className="w-full bg-surface/50 border border-white/5 rounded-lg px-4 py-2 text-muted cursor-not-allowed text-sm" 
                     />
                     <p className="text-xs text-muted mt-1">To change your email, contact support.</p>
                   </div>
@@ -151,9 +405,17 @@ export default function SettingsPage({ session }) {
               <div className="pt-4 flex justify-end">
                 <button 
                   onClick={handleSave}
-                  className="px-6 py-2.5 bg-primary hover:bg-primary-hover text-white rounded-xl font-medium transition-all transform hover:scale-105 active:scale-95 shadow-lg shadow-primary/20"
+                  disabled={saving || usernameStatus.checking || usernameStatus.available === false}
+                  className="px-6 py-2.5 bg-primary hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl font-medium transition-all transform hover:scale-105 active:scale-95 shadow-lg shadow-primary/20 flex items-center gap-2"
                 >
-                  Save Changes
+                  {saving ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    'Save Changes'
+                  )}
                 </button>
               </div>
 

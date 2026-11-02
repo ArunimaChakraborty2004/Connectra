@@ -1,18 +1,17 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import Sidebar from '../components/Sidebar';
 import Loader from '../components/ui/Loader';
 import EmptyState from '../components/ui/EmptyState';
 import { toast } from '../lib/toast';
-import { Settings, MapPin, Link as LinkIcon, Code2, Briefcase, Grid, FileText, FolderGit2, GitBranch, ExternalLink, MessageCircle, Trophy, CheckCircle2, Clock, UserPlus, UserCheck, UserMinus, Flame } from 'lucide-react';
+import { Settings, MapPin, Link as LinkIcon, Code2, Briefcase, Grid, FileText, FolderGit2, GitBranch, ExternalLink, MessageCircle, Trophy, CheckCircle2, Clock, UserPlus, UserCheck, UserMinus } from 'lucide-react';
 import Feed from '../components/Feed';
 import EditProfileModal from '../components/profile/EditProfileModal';
 import BadgesPanel from '../components/profile/BadgesPanel';
 import AIReviewPanel from '../components/profile/AIReviewPanel';
 import FollowsModal from '../components/profile/FollowsModal';
 import { createNotification } from '../lib/notifications';
-import { calculateUserStreak } from '../utils/streakHelper';
 
 function ProfileRepos({ userId }) {
   const [projects, setProjects] = useState([]);
@@ -73,6 +72,7 @@ function ProfileRepos({ userId }) {
 
 export default function ProfilePage({ session }) {
   const { username } = useParams();
+  const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   const [currentUserProfile, setCurrentUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -82,7 +82,6 @@ export default function ProfilePage({ session }) {
   const [postCount, setPostCount] = useState(0);
   const [totalLikes, setTotalLikes] = useState(0);
   const [connectionsCount, setConnectionsCount] = useState(0);
-  const [streak, setStreak] = useState(1);
 
   const [isFollowing, setIsFollowing] = useState(false);
   const [isFollower, setIsFollower] = useState(false);
@@ -165,7 +164,7 @@ export default function ProfilePage({ session }) {
         const { count } = await supabase.from('projects').select('*', { count: 'exact', head: true }).eq('user_id', targetProfile.id);
         setRepoCount(count || 0);
 
-        // Load posts for badges, streak, and likes
+        // Load posts for badges and likes
         const { data: userPosts, count: pCount } = await supabase
           .from('posts')
           .select('id, created_at', { count: 'exact' })
@@ -191,11 +190,6 @@ export default function ProfilePage({ session }) {
           .eq('status', 'accepted')
           .or(`requester_id.eq.${targetProfile.id},receiver_id.eq.${targetProfile.id}`);
         setConnectionsCount(cCount || 0);
-
-        // Real dynamic streak
-        const postDates = (userPosts || []).map(p => p.created_at);
-        const computedStreak = calculateUserStreak(targetProfile.id, postDates);
-        setStreak(computedStreak);
       }
       setLoading(false);
     };
@@ -288,7 +282,11 @@ export default function ProfilePage({ session }) {
                 <div className="px-6 pb-6 relative">
                   <div className="flex justify-between items-end -mt-12 mb-4">
                     <div className="h-24 w-24 rounded-2xl bg-surface border-4 border-background flex items-center justify-center text-4xl font-bold text-main overflow-hidden shadow-xl">
-                      {profile.avatar_url ? <img src={profile.avatar_url} alt={profile.username} className="w-full h-full object-cover" /> : profile.username[0].toUpperCase()}
+                      {profile.avatar_url ? (
+                        <img src={profile.avatar_url} alt={profile.full_name || profile.username} className="w-full h-full object-cover" />
+                      ) : (
+                        (profile.full_name || profile.username || 'U')[0]?.toUpperCase()
+                      )}
                     </div>
                     {session.user.id === profile.id ? (
                       <button 
@@ -346,11 +344,14 @@ export default function ProfilePage({ session }) {
                   
                   <div>
                     <div className="flex flex-wrap items-center gap-2.5">
-                      <h1 className="text-2xl font-bold text-main">{profile.username}</h1>
-                      <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-orange-500/10 text-orange-500 border border-orange-500/20 flex items-center gap-1">
-                        <Flame size={12} className="fill-orange-500 text-orange-500" />
-                        {streak}d Streak
-                      </span>
+                      <h1 className="text-2xl font-bold text-main">
+                        {profile.full_name || profile.username}
+                      </h1>
+                      {profile.full_name && (
+                        <span className="text-sm text-muted font-mono font-medium">
+                          @{profile.username}
+                        </span>
+                      )}
                     </div>
                     <p className="text-muted mt-1 text-[15px]">{profile.bio || 'No bio provided.'}</p>
                     
@@ -384,11 +385,6 @@ export default function ProfilePage({ session }) {
 
                       <span className="text-main font-semibold">
                         {connectionsCount} <span className="font-normal text-muted">Connections</span>
-                      </span>
-
-                      <span className="text-main font-semibold flex items-center gap-1">
-                        <Flame size={14} className="text-orange-500 fill-orange-500" />
-                        {streak} <span className="font-normal text-muted">Day Streak</span>
                       </span>
                     </div>
                   </div>
@@ -475,7 +471,7 @@ export default function ProfilePage({ session }) {
                 <ProfileRepos userId={profile.id} />
               ) : (
                 <div className="flex flex-col gap-4">
-                  <BadgesPanel stats={{ postCount, repoCount, totalLikes, connections: connectionsCount, streak, githubUrl: profile.github_url }} />
+                  <BadgesPanel stats={{ postCount, repoCount, totalLikes, connections: connectionsCount, githubUrl: profile.github_url }} />
                   {session.user.id === profile.id && (
                     <AIReviewPanel profile={profile} repoCount={repoCount} />
                   )}
@@ -488,7 +484,12 @@ export default function ProfilePage({ session }) {
                 profile={profile} 
                 onUpdate={(updatedProfile) => {
                   setProfile(updatedProfile);
-                  if (session.user.id === updatedProfile.id) setCurrentUserProfile(updatedProfile);
+                  if (session.user.id === updatedProfile.id) {
+                    setCurrentUserProfile(updatedProfile);
+                  }
+                  if (updatedProfile.username && updatedProfile.username !== username) {
+                    navigate(`/profile/${updatedProfile.username}`, { replace: true });
+                  }
                 }} 
               />
 

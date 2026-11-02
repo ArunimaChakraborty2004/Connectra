@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Upload, CheckCircle2, AlertCircle, Sparkles, Wand2, Shield, Rocket, Briefcase, RefreshCw } from 'lucide-react';
+import { X, Upload, CheckCircle2, AlertCircle, Sparkles, Wand2, Shield, Rocket, Briefcase, RefreshCw, Loader2, XCircle } from 'lucide-react';
 import { toast } from '../../lib/toast';
 import { generateBioOptions } from '../../lib/ai';
 
 export default function EditProfileModal({ isOpen, onClose, profile, onUpdate }) {
   const [formData, setFormData] = useState({
+    full_name: profile?.full_name || '',
+    username: profile?.username || '',
     bio: profile?.bio || '',
     location: profile?.location || '',
     website_url: profile?.website_url || profile?.website || '',
@@ -22,6 +24,12 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
   const [loading, setLoading] = useState(false);
   const [githubLinked, setGithubLinked] = useState(false);
   const [verificationSent, setVerificationSent] = useState(false);
+  const [usernameStatus, setUsernameStatus] = useState({
+    checking: false,
+    available: null, // null | true | false
+    message: '',
+    isCurrent: true,
+  });
 
   // AI Bio Generation State
   const [aiBioLoading, setAiBioLoading] = useState(false);
@@ -48,13 +56,154 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
 
   useEffect(() => {
     if (!isOpen) return;
+    if (profile) {
+      setFormData({
+        full_name: profile.full_name || '',
+        username: profile.username || '',
+        bio: profile.bio || '',
+        location: profile.location || '',
+        website_url: profile.website_url || profile.website || '',
+        github_url: profile.github_url || '',
+        linkedin_url: profile.linkedin_url || '',
+        twitter_url: profile.twitter_url || '',
+        leetcode_url: profile.leetcode_url || '',
+        tech_stack: profile.tech_stack || '',
+      });
+      setAvatarPreview(profile.avatar_url || '');
+      setUsernameStatus({
+        checking: false,
+        available: true,
+        message: 'This is your current handle.',
+        isCurrent: true,
+      });
+    }
     // Only check the original profile URL when opening the modal
     if (profile?.github_url && profile.github_url.includes('github.com/')) {
        setGithubLinked(true);
     } else {
        setGithubLinked(false);
     }
-  }, [isOpen, profile?.github_url]);
+  }, [isOpen, profile]);
+
+  // Real-time debounced username uniqueness check
+  useEffect(() => {
+    if (!isOpen) return;
+    const raw = formData.username;
+    if (!raw || !raw.trim()) {
+      setUsernameStatus({
+        checking: false,
+        available: false,
+        message: 'Username cannot be empty.',
+        isCurrent: false,
+      });
+      return;
+    }
+
+    const clean = raw.trim().toLowerCase().replace(/\s+/g, '_');
+
+    // If identical to current user's username
+    if (profile?.username && clean === profile.username.toLowerCase()) {
+      setUsernameStatus({
+        checking: false,
+        available: true,
+        message: 'This is your current handle.',
+        isCurrent: true,
+      });
+      return;
+    }
+
+    // Format & length validation
+    if (clean.length < 3) {
+      setUsernameStatus({
+        checking: false,
+        available: false,
+        message: 'Username must be at least 3 characters.',
+        isCurrent: false,
+      });
+      return;
+    }
+
+    if (clean.length > 30) {
+      setUsernameStatus({
+        checking: false,
+        available: false,
+        message: 'Username cannot exceed 30 characters.',
+        isCurrent: false,
+      });
+      return;
+    }
+
+    if (!/^[a-zA-Z0-9_]+$/.test(clean)) {
+      setUsernameStatus({
+        checking: false,
+        available: false,
+        message: 'Only letters, numbers, and underscores are allowed.',
+        isCurrent: false,
+      });
+      return;
+    }
+
+    let isMounted = true;
+    setUsernameStatus(prev => ({
+      ...prev,
+      checking: true,
+      message: 'Checking handle availability...',
+    }));
+
+    const timer = setTimeout(async () => {
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, username')
+          .ilike('username', clean)
+          .neq('id', profile?.id || '')
+          .maybeSingle();
+
+        if (!isMounted) return;
+
+        if (error) {
+          console.warn('Username query error:', error);
+          setUsernameStatus({
+            checking: false,
+            available: true,
+            message: '',
+            isCurrent: false,
+          });
+          return;
+        }
+
+        if (data) {
+          setUsernameStatus({
+            checking: false,
+            available: false,
+            message: `@${clean} is already taken by another developer.`,
+            isCurrent: false,
+          });
+        } else {
+          setUsernameStatus({
+            checking: false,
+            available: true,
+            message: `@${clean} is available!`,
+            isCurrent: false,
+          });
+        }
+      } catch (err) {
+        if (isMounted) {
+          setUsernameStatus({
+            checking: false,
+            available: true,
+            message: '',
+            isCurrent: false,
+          });
+        }
+      }
+    }, 350);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [formData.username, isOpen, profile?.id, profile?.username]);
 
   const handleLinkGithub = async () => {
     if (!formData.github_url || !formData.github_url.includes('github.com/')) {
@@ -103,6 +252,44 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
   const handleSubmit = async (e) => {
     e.preventDefault();
     
+    const trimmedUsername = formData.username?.trim();
+    if (!trimmedUsername) {
+      toast.error('Username cannot be empty.');
+      return;
+    }
+    const cleanUsername = trimmedUsername.toLowerCase().replace(/\s+/g, '_');
+
+    // Prevent saving if handle is taken or currently checking
+    if (usernameStatus.checking) {
+      toast.error('Checking username availability, please wait...');
+      return;
+    }
+    if (usernameStatus.available === false) {
+      toast.error(usernameStatus.message || `@${cleanUsername} is already taken.`);
+      return;
+    }
+
+    // Direct database guard if changed
+    if (cleanUsername !== profile?.username?.toLowerCase()) {
+      const { data: existingUser } = await supabase
+        .from('profiles')
+        .select('id')
+        .ilike('username', cleanUsername)
+        .neq('id', profile.id)
+        .maybeSingle();
+
+      if (existingUser) {
+        toast.error(`@${cleanUsername} is already taken by another developer.`);
+        setUsernameStatus({
+          checking: false,
+          available: false,
+          message: `@${cleanUsername} is already taken by another developer.`,
+          isCurrent: false,
+        });
+        return;
+      }
+    }
+
     if (formData.github_url && !githubLinked) {
       toast.error("Please verify your GitHub URL before saving.");
       return;
@@ -169,6 +356,8 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
 
     // Base payload with columns guaranteed to exist in the database
     const updatePayload = {
+      full_name: formData.full_name?.trim() || null,
+      username: cleanUsername,
       bio: formData.bio,
       tech_stack: formData.tech_stack,
       website_url: formData.website_url,
@@ -207,6 +396,7 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
       toast.error(error.message);
     } else {
       toast.success('Profile updated successfully');
+      window.dispatchEvent(new Event('refreshStats'));
       onUpdate(data);
       onClose();
     }
@@ -241,7 +431,7 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
                     <img src={avatarPreview} alt="Avatar Preview" className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-3xl font-bold text-muted">
-                      {profile.username[0].toUpperCase()}
+                      {(formData.full_name || formData.username || 'U')[0]?.toUpperCase()}
                     </div>
                   )}
                   <label className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity">
@@ -253,6 +443,81 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
                 <div>
                   <h3 className="text-sm font-semibold text-main mb-1">Profile Picture</h3>
                   <p className="text-xs text-muted mb-3">Upload a new avatar (JPG, PNG, max 2MB).</p>
+                </div>
+              </div>
+
+              {/* Name & Username Inputs */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-main mb-1.5">
+                    Display / Full Name
+                  </label>
+                  <input
+                    type="text"
+                    name="full_name"
+                    value={formData.full_name}
+                    onChange={handleChange}
+                    placeholder="e.g. Alex Morgan"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-background border border-border text-sm text-main placeholder-muted focus:outline-none focus:border-primary transition-all"
+                  />
+                  <p className="text-[11px] text-muted mt-1">Your display name shown on your profile.</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-main mb-1.5 flex items-center justify-between">
+                    <span>Username / Handle <span className="text-[#ea580c]">*</span></span>
+                    {usernameStatus.checking && (
+                      <span className="text-[11px] text-amber-500 font-normal flex items-center gap-1">
+                        <Loader2 size={12} className="animate-spin" /> Checking...
+                      </span>
+                    )}
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted text-sm font-bold">@</span>
+                    <input
+                      type="text"
+                      name="username"
+                      value={formData.username}
+                      onChange={handleChange}
+                      placeholder="username"
+                      required
+                      className={`w-full pl-8 pr-10 py-2.5 rounded-xl bg-background border text-sm text-main placeholder-muted focus:outline-none transition-all font-mono ${
+                        usernameStatus.checking
+                          ? 'border-amber-500/60 focus:border-amber-500'
+                          : usernameStatus.available === false
+                          ? 'border-rose-500 focus:border-rose-500 bg-rose-500/5'
+                          : usernameStatus.available === true && !usernameStatus.isCurrent
+                          ? 'border-emerald-500 focus:border-emerald-500 bg-emerald-500/5'
+                          : 'border-border focus:border-primary'
+                      }`}
+                    />
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center pointer-events-none">
+                      {usernameStatus.checking ? (
+                        <Loader2 size={16} className="text-amber-500 animate-spin" />
+                      ) : usernameStatus.available === false ? (
+                        <XCircle size={16} className="text-rose-500" />
+                      ) : usernameStatus.available === true && !usernameStatus.isCurrent ? (
+                        <CheckCircle2 size={16} className="text-emerald-500" />
+                      ) : null}
+                    </div>
+                  </div>
+                  {usernameStatus.message ? (
+                    <p className={`text-[11px] font-medium mt-1.5 flex items-center gap-1.5 ${
+                      usernameStatus.checking
+                        ? 'text-amber-500'
+                        : usernameStatus.available === false
+                        ? 'text-rose-500'
+                        : usernameStatus.available === true && !usernameStatus.isCurrent
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : 'text-muted'
+                    }`}>
+                      {usernameStatus.available === false && <AlertCircle size={12} className="shrink-0" />}
+                      {usernameStatus.available === true && !usernameStatus.isCurrent && <CheckCircle2 size={12} className="shrink-0" />}
+                      <span>{usernameStatus.message}</span>
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-muted mt-1">Your unique handle on Connectra.</p>
+                  )}
                 </div>
               </div>
 
@@ -477,8 +742,8 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
             </button>
             <button
               onClick={handleSubmit}
-              disabled={loading}
-              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50 flex items-center gap-2 shadow-sm cursor-pointer"
+              disabled={loading || usernameStatus.checking || usernameStatus.available === false}
+              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 shadow-sm cursor-pointer"
             >
               {loading ? (
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />

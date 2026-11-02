@@ -1,23 +1,75 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import Sidebar from '../components/Sidebar';
-import { Search, UserPlus, UserCheck, UserMinus, UserX, Clock, Filter, MoreVertical, Flag, ShieldBan, ShieldCheck, Lock, Check } from 'lucide-react';
+import PostCard from '../components/feed/PostCard';
+import {
+  Search,
+  UserPlus,
+  UserCheck,
+  UserMinus,
+  UserX,
+  Clock,
+  Filter,
+  MoreVertical,
+  Flag,
+  ShieldBan,
+  ShieldCheck,
+  Lock,
+  Check,
+  SlidersHorizontal,
+  X,
+  Sparkles,
+  FileText,
+  Users,
+  Tag,
+  ArrowUpDown,
+  RotateCcw,
+  ChevronDown,
+  CheckCircle2,
+} from 'lucide-react';
 import Loader from '../components/ui/Loader';
 import { toast } from '../lib/toast';
 import { Link, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createNotification } from '../lib/notifications';
 
+const POPULAR_SKILLS = [
+  'React',
+  'Python',
+  'TypeScript',
+  'JavaScript',
+  'Node.js',
+  'Next.js',
+  'AI / ML',
+  'CyberSec',
+  'Rust',
+  'Go',
+  'Tailwind',
+  'Docker',
+  'AWS',
+  'PostgreSQL',
+];
+
 export default function SearchPage({ session }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const urlQuery = searchParams.get('q') || '';
   const urlTab = searchParams.get('tab') || 'all';
+
   const [query, setQuery] = useState(urlQuery);
   const [users, setUsers] = useState([]);
+  const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingPosts, setLoadingPosts] = useState(false);
   const [profile, setProfile] = useState(null);
   const [connections, setConnections] = useState({});
-  const [activeFilter, setActiveFilter] = useState(urlTab);
+
+  // Filter states
+  const [contentType, setContentType] = useState('all'); // 'all' | 'devs' | 'posts'
+  const [selectedSkill, setSelectedSkill] = useState(null); // string e.g. 'React'
+  const [sortBy, setSortBy] = useState('relevance'); // 'relevance' | 'xp' | 'newest' | 'followers'
+  const [activeFilter, setActiveFilter] = useState(urlTab); // 'all' | 'following' | 'followers' | 'blocked'
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+
   const [blockedUserIds, setBlockedUserIds] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem(`blocked_users_${session.user.id}`) || '[]');
@@ -25,13 +77,14 @@ export default function SearchPage({ session }) {
       return [];
     }
   });
+
   const [activeActionMenu, setActiveActionMenu] = useState(null);
   const [reportModalUser, setReportModalUser] = useState(null);
   const [reportReason, setReportReason] = useState('Spam or misleading information');
   const [reportDetails, setReportDetails] = useState('');
   const [submittingReport, setSubmittingReport] = useState(false);
 
-  // Sync local state when URL parameter changes
+  // Sync state when URL parameter changes
   useEffect(() => {
     setQuery(urlQuery);
   }, [urlQuery]);
@@ -52,6 +105,16 @@ export default function SearchPage({ session }) {
     }
   };
 
+  const handleSearchSubmit = (e) => {
+    if (e) e.preventDefault();
+    if (query.trim()) {
+      setSearchParams({ q: query.trim() });
+    } else {
+      setSearchParams({});
+    }
+    loadAllResults();
+  };
+
   useEffect(() => {
     const loadProfile = async () => {
       const { data } = await supabase
@@ -64,30 +127,31 @@ export default function SearchPage({ session }) {
     loadProfile();
   }, [session]);
 
-  // Follow relationships (Instagram style)
-  const [followingMap, setFollowingMap] = useState({}); // userIds I follow
-  const [followersMap, setFollowersMap] = useState({}); // userIds who follow me
+  // Follow relationships
+  const [followingMap, setFollowingMap] = useState({});
+  const [followersMap, setFollowersMap] = useState({});
 
-  // Load all follow relationships for current user
   const loadFollows = async () => {
     try {
-      // 1. People I am following
       const { data: myFollowing } = await supabase
         .from('follows')
         .select('following_id')
         .eq('follower_id', session.user.id);
 
-      // 2. People following me
       const { data: myFollowers } = await supabase
         .from('follows')
         .select('follower_id')
         .eq('following_id', session.user.id);
 
       const fIngMap = {};
-      (myFollowing || []).forEach(f => { fIngMap[f.following_id] = true; });
+      (myFollowing || []).forEach((f) => {
+        fIngMap[f.following_id] = true;
+      });
 
       const fErsMap = {};
-      (myFollowers || []).forEach(f => { fErsMap[f.follower_id] = true; });
+      (myFollowers || []).forEach((f) => {
+        fErsMap[f.follower_id] = true;
+      });
 
       setFollowingMap(fIngMap);
       setFollowersMap(fErsMap);
@@ -96,22 +160,23 @@ export default function SearchPage({ session }) {
     }
   };
 
-
-
   useEffect(() => {
     loadFollows();
   }, [session.user.id]);
 
   const handleFollow = async (targetId) => {
-    // Instant optimistic update
-    setFollowingMap(prev => ({ ...prev, [targetId]: true }));
+    setFollowingMap((prev) => ({ ...prev, [targetId]: true }));
     const { error } = await supabase
       .from('follows')
       .insert({ follower_id: session.user.id, following_id: targetId });
 
     if (error) {
       toast.error(error.message);
-      setFollowingMap(prev => { const n = { ...prev }; delete n[targetId]; return n; });
+      setFollowingMap((prev) => {
+        const n = { ...prev };
+        delete n[targetId];
+        return n;
+      });
     } else {
       toast.success('Following developer!');
       createNotification({
@@ -120,13 +185,16 @@ export default function SearchPage({ session }) {
         type: 'follow',
         entityId: targetId,
       });
-      // Dispatch event to refresh sidebar stats
       window.dispatchEvent(new Event('refreshStats'));
     }
   };
 
   const handleUnfollow = async (targetId) => {
-    setFollowingMap(prev => { const n = { ...prev }; delete n[targetId]; return n; });
+    setFollowingMap((prev) => {
+      const n = { ...prev };
+      delete n[targetId];
+      return n;
+    });
     const { error } = await supabase
       .from('follows')
       .delete()
@@ -135,7 +203,7 @@ export default function SearchPage({ session }) {
 
     if (error) {
       toast.error(error.message);
-      setFollowingMap(prev => ({ ...prev, [targetId]: true }));
+      setFollowingMap((prev) => ({ ...prev, [targetId]: true }));
     } else {
       toast.info('Unfollowed');
       window.dispatchEvent(new Event('refreshStats'));
@@ -143,7 +211,11 @@ export default function SearchPage({ session }) {
   };
 
   const handleRemoveFollower = async (targetId) => {
-    setFollowersMap(prev => { const n = { ...prev }; delete n[targetId]; return n; });
+    setFollowersMap((prev) => {
+      const n = { ...prev };
+      delete n[targetId];
+      return n;
+    });
     const { error } = await supabase
       .from('follows')
       .delete()
@@ -152,7 +224,7 @@ export default function SearchPage({ session }) {
 
     if (error) {
       toast.error(error.message);
-      setFollowersMap(prev => ({ ...prev, [targetId]: true }));
+      setFollowersMap((prev) => ({ ...prev, [targetId]: true }));
     } else {
       toast.info('Removed from followers');
       window.dispatchEvent(new Event('refreshStats'));
@@ -162,71 +234,174 @@ export default function SearchPage({ session }) {
   const followingCount = Object.keys(followingMap).length;
   const followersCount = Object.keys(followersMap).length;
 
-  const filters = [
-    { id: 'all', label: `All Devs (${users.filter(u => !blockedUserIds.includes(u.id)).length})` },
-    { id: 'following', label: `Following (${followingCount})` },
-    { id: 'followers', label: `Followers (${followersCount})` },
-    ...(blockedUserIds.length > 0 ? [{ id: 'blocked', label: `Blocked (${blockedUserIds.length})` }] : []),
-  ];
+  // Search execution for both developers and posts
+  const loadAllResults = async () => {
+    setLoading(true);
+    const cleanQuery = query.trim().replace(/^#/, '');
 
-  const filteredUsers = users.filter(user => {
+    try {
+      // 1. Fetch Developers
+      let result = [];
+      if (cleanQuery) {
+        const { data: byName } = await supabase
+          .from('profiles')
+          .select('*')
+          .neq('id', session.user.id)
+          .or(
+            `username.ilike.%${cleanQuery}%,full_name.ilike.%${cleanQuery}%,tech_stack.ilike.%${cleanQuery}%,bio.ilike.%${cleanQuery}%`
+          )
+          .limit(40);
+        result = byName || [];
+      } else {
+        const { data } = await supabase
+          .from('profiles')
+          .select('*')
+          .neq('id', session.user.id)
+          .limit(40);
+        result = data || [];
+      }
+
+      const normalized = (result || []).map((u) => ({
+        ...u,
+        isPrivate:
+          u.is_private !== undefined
+            ? Boolean(u.is_private)
+            : localStorage.getItem(`connectra_private_${u.id}`) === 'true',
+        displayName: u.username || u.full_name || `Developer_${u.id.slice(0, 5)}`,
+        profileSlug: u.username || u.id,
+      }));
+
+      setUsers(normalized);
+
+      // 2. Fetch Matching Posts if searching or filtering by posts / all
+      if (contentType === 'all' || contentType === 'posts') {
+        setLoadingPosts(true);
+        let pQuery = supabase
+          .from('posts')
+          .select(`
+            id, user_id, content, image_url, code_snippet, code_language, poll_data, created_at, updated_at,
+            profiles(username, avatar_url)
+          `)
+          .order('created_at', { ascending: false });
+
+        if (cleanQuery) {
+          pQuery = pQuery.or(`content.ilike.%${cleanQuery}%,code_language.ilike.%${cleanQuery}%`);
+        }
+        if (selectedSkill) {
+          pQuery = pQuery.ilike('content', `%${selectedSkill}%`);
+        }
+
+        const { data: postsData } = await pQuery.limit(20);
+
+        if (postsData && postsData.length > 0) {
+          const postIds = postsData.map((p) => p.id);
+          const [{ data: likesData }, { data: commentsData }] = await Promise.all([
+            supabase.from('likes').select('id, post_id, user_id').in('post_id', postIds),
+            supabase
+              .from('comments')
+              .select('id, post_id, user_id, content, created_at, profiles(username, avatar_url)')
+              .in('post_id', postIds)
+              .order('created_at', { ascending: true }),
+          ]);
+
+          const likesCountMap = {};
+          const userLikedMap = {};
+          (likesData || []).forEach((l) => {
+            likesCountMap[l.post_id] = (likesCountMap[l.post_id] || 0) + 1;
+            if (session?.user?.id && l.user_id === session.user.id) {
+              userLikedMap[l.post_id] = true;
+            }
+          });
+
+          const commentsCountMap = {};
+          const commentsByPost = {};
+          (commentsData || []).forEach((c) => {
+            commentsCountMap[c.post_id] = (commentsCountMap[c.post_id] || 0) + 1;
+            if (!commentsByPost[c.post_id]) commentsByPost[c.post_id] = [];
+            commentsByPost[c.post_id].push(c);
+          });
+
+          const formattedPosts = postsData.map((p) => ({
+            ...p,
+            likes: [{ count: likesCountMap[p.id] || 0 }],
+            likes_count: likesCountMap[p.id] || 0,
+            user_has_liked: Boolean(userLikedMap[p.id]),
+            comments_count: commentsCountMap[p.id] || 0,
+            comments: commentsByPost[p.id] || [],
+            author: p.profiles?.username || 'developer',
+            author_avatar: p.profiles?.avatar_url,
+          }));
+
+          setPosts(formattedPosts);
+        } else {
+          setPosts([]);
+        }
+      } else {
+        setPosts([]);
+      }
+    } catch (err) {
+      console.error('Search error:', err);
+      setUsers([]);
+      setPosts([]);
+    } finally {
+      setLoading(false);
+      setLoadingPosts(false);
+    }
+  };
+
+  useEffect(() => {
+    const debounce = setTimeout(loadAllResults, 250);
+    return () => clearTimeout(debounce);
+  }, [query, session.user.id, contentType, selectedSkill]);
+
+  // Filter developers based on active filters and sorting
+  let filteredUsers = users.filter((user) => {
     const isBlocked = blockedUserIds.includes(user.id);
     if (activeFilter === 'blocked') return isBlocked;
     if (isBlocked) return false;
     if (activeFilter === 'following') return Boolean(followingMap[user.id]);
     if (activeFilter === 'followers') return Boolean(followersMap[user.id]);
+
+    // Skill filter on developer tech_stack or bio
+    if (selectedSkill) {
+      const skillNorm = selectedSkill.toLowerCase();
+      const tech = (user.tech_stack || '').toLowerCase();
+      const bio = (user.bio || '').toLowerCase();
+      if (!tech.includes(skillNorm) && !bio.includes(skillNorm)) {
+        return false;
+      }
+    }
+
     return true;
   });
 
-  useEffect(() => {
-    const searchUsers = async () => {
-      setLoading(true);
+  // Sort developers
+  if (sortBy === 'xp') {
+    filteredUsers = [...filteredUsers].sort((a, b) => (b.xp || 0) - (a.xp || 0));
+  } else if (sortBy === 'newest') {
+    filteredUsers = [...filteredUsers].sort(
+      (a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)
+    );
+  } else if (sortBy === 'followers') {
+    filteredUsers = [...filteredUsers].sort(
+      (a, b) => (Boolean(followersMap[b.id]) ? 1 : 0) - (Boolean(followersMap[a.id]) ? 1 : 0)
+    );
+  }
 
-      const cleanQuery = query.trim().replace(/^#/, '');
+  // Active filter count for badge indicator
+  let activeFilterCount = 0;
+  if (contentType !== 'all') activeFilterCount++;
+  if (selectedSkill) activeFilterCount++;
+  if (sortBy !== 'relevance') activeFilterCount++;
+  if (activeFilter !== 'all') activeFilterCount++;
 
-      try {
-        let result = [];
-        if (cleanQuery) {
-          // Universal search across username, full_name, tech_stack, and bio directly from Supabase
-          const { data: byName } = await supabase
-            .from('profiles')
-            .select('*')
-            .neq('id', session.user.id)
-            .or(`username.ilike.%${cleanQuery}%,full_name.ilike.%${cleanQuery}%,tech_stack.ilike.%${cleanQuery}%,bio.ilike.%${cleanQuery}%`)
-            .limit(30);
-
-          result = byName || [];
-        } else {
-          // No query: show all developers in Supabase
-          const { data } = await supabase
-            .from('profiles')
-            .select('*')
-            .neq('id', session.user.id)
-            .limit(40);
-
-          result = data || [];
-        }
-
-        // Normalize display name and attach privacy status
-        const normalized = (result || []).map(u => ({
-          ...u,
-          isPrivate: u.is_private !== undefined ? Boolean(u.is_private) : localStorage.getItem(`connectra_private_${u.id}`) === 'true',
-          displayName: u.username || u.full_name || `Developer_${u.id.slice(0, 5)}`,
-          profileSlug: u.username || u.id,
-        }));
-
-        setUsers(normalized);
-      } catch (err) {
-        console.error('Search error:', err);
-        setUsers([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    const debounce = setTimeout(searchUsers, 250);
-    return () => clearTimeout(debounce);
-  }, [query, session.user.id]);
+  const resetAllFilters = () => {
+    setContentType('all');
+    setSelectedSkill(null);
+    setSortBy('relevance');
+    setActiveFilter('all');
+    toast.info('All search filters reset');
+  };
 
   const handleBlockUser = (userId, displayName) => {
     const nextBlocked = [...new Set([...blockedUserIds, userId])];
@@ -237,7 +412,7 @@ export default function SearchPage({ session }) {
   };
 
   const handleUnblockUser = (userId) => {
-    const nextBlocked = blockedUserIds.filter(id => id !== userId);
+    const nextBlocked = blockedUserIds.filter((id) => id !== userId);
     setBlockedUserIds(nextBlocked);
     localStorage.setItem(`blocked_users_${session.user.id}`, JSON.stringify(nextBlocked));
     toast.success('Developer unblocked');
@@ -249,7 +424,6 @@ export default function SearchPage({ session }) {
     setSubmittingReport(true);
 
     try {
-      // Store in audit_logs or analytics_events if available, with graceful fallback
       await supabase.from('audit_logs').insert({
         user_id: session.user.id,
         action: 'report_user',
@@ -259,98 +433,406 @@ export default function SearchPage({ session }) {
           reason: reportReason,
           details: reportDetails,
           reported_username: reportModalUser.displayName,
-          timestamp: new Date().toISOString()
-        }
+          timestamp: new Date().toISOString(),
+        },
       });
     } catch (err) {
       console.warn('Audit log report fallback:', err);
     }
 
     setSubmittingReport(false);
-    toast.success(`Report submitted for ${reportModalUser.displayName}. Our safety team has been notified.`);
+    toast.success(
+      `Report submitted for ${reportModalUser.displayName}. Our safety team has been notified.`
+    );
     setReportModalUser(null);
     setReportDetails('');
   };
 
+  const typeTabs = [
+    { id: 'all', label: 'All Results', icon: Sparkles, count: filteredUsers.length + posts.length },
+    { id: 'devs', label: 'Developers', icon: Users, count: filteredUsers.length },
+    { id: 'posts', label: 'Posts & Feed', icon: FileText, count: posts.length },
+  ];
+
   return (
-    <div className="min-h-screen" style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)' }}>
-      <div className="max-w-[1400px] mx-auto px-6 py-8 flex flex-col lg:flex-row gap-8 relative items-start justify-center z-10">
+    <div
+      className="min-h-screen"
+      style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)' }}
+    >
+      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-8 flex flex-col lg:flex-row gap-8 relative items-start justify-center z-10">
+        {/* Left Sidebar */}
         <div className="hidden lg:block w-full max-w-[300px] shrink-0">
           {profile ? (
-            <Sidebar profile={profile} stats={{ followers: followersCount, following: followingCount }} />
+            <Sidebar
+              profile={profile}
+              stats={{ followers: followersCount, following: followingCount }}
+            />
           ) : (
             <Loader />
           )}
         </div>
 
-
+        {/* Center Search Hub */}
         <div className="flex-1 w-full max-w-2xl">
-          {/* Search Header */}
-          <div className="mb-6">
+          {/* Header */}
+          <div className="mb-5">
             <h1 className="text-2xl font-bold mb-1" style={{ color: 'var(--text-color)' }}>
-              Find Developers
+              Search & Explore
             </h1>
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-              Connect with engineers, designers, and builders on Connectra
+              Discover engineers, tech discussions, code snippets, and skills across Connectra
             </p>
           </div>
 
-          {/* Search Bar */}
-          <div className="glass-panel rounded-2xl p-4 mb-4">
-            <div className="relative">
-              <Search
-                className="absolute left-3.5 top-1/2 -translate-y-1/2"
-                size={18}
-                style={{ color: 'var(--text-muted)' }}
-              />
-              <input
-                type="text"
-                value={query}
-                onChange={handleQueryChange}
-                placeholder="Search by username, skill (e.g. React, CyberSec, Python)..."
-                className="w-full rounded-xl pl-11 pr-4 py-3 text-sm outline-none transition-colors"
-                style={{
-                  backgroundColor: 'var(--bg-color)',
-                  color: 'var(--text-color)',
-                  border: '1px solid var(--border-color)',
-                }}
-                onFocus={e => e.target.style.borderColor = 'var(--primary-color)'}
-                onBlur={e => e.target.style.borderColor = 'var(--border-color)'}
-              />
-            </div>
-          </div>
+          {/* Search Bar & Working Filter Hub */}
+          <form
+            onSubmit={handleSearchSubmit}
+            className="glass-panel rounded-2xl p-3 sm:p-4 mb-4 shadow-sm"
+            style={{ border: '1px solid var(--border-color)' }}
+          >
+            <div className="flex items-center gap-2">
+              {/* Input field */}
+              <div className="relative flex-1">
+                <Search
+                  className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                  size={18}
+                  style={{ color: 'var(--text-muted)' }}
+                />
+                <input
+                  type="text"
+                  value={query}
+                  onChange={handleQueryChange}
+                  placeholder="Search by username, skill (e.g. React, CyberSec), or topic..."
+                  className="w-full rounded-xl pl-10 pr-9 py-2.5 text-sm outline-none transition-all"
+                  style={{
+                    backgroundColor: 'var(--bg-color)',
+                    color: 'var(--text-color)',
+                    border: '1px solid var(--border-color)',
+                  }}
+                  onFocus={(e) => (e.target.style.borderColor = 'var(--primary-color)')}
+                  onBlur={(e) => (e.target.style.borderColor = 'var(--border-color)')}
+                />
+                {query && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuery('');
+                      setSearchParams({});
+                    }}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full text-muted hover:text-white transition-colors cursor-pointer"
+                    title="Clear search"
+                  >
+                    <X size={15} />
+                  </button>
+                )}
+              </div>
 
-          {/* Filter Pills */}
-          <div className="flex gap-2 mb-5">
-            <Filter size={14} style={{ color: 'var(--text-muted)', marginTop: 6 }} />
-            {filters.map(f => (
+              {/* Working Filter Button */}
               <button
-                key={f.id}
-                onClick={() => setActiveFilter(f.id)}
-                className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer"
-                style={{
-                  backgroundColor: activeFilter === f.id ? 'var(--primary-color)' : 'var(--surface-color)',
-                  color: activeFilter === f.id ? '#fff' : 'var(--text-muted)',
-                  border: '1px solid ' + (activeFilter === f.id ? 'var(--primary-color)' : 'var(--border-color)'),
-                }}
+                type="button"
+                onClick={() => setShowFilterPanel((prev) => !prev)}
+                className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer border shrink-0 ${
+                  showFilterPanel || activeFilterCount > 0
+                    ? 'bg-gradient-to-r from-orange-500/20 to-amber-500/20 border-orange-500 text-orange-500 font-bold shadow-xs'
+                    : 'bg-[var(--surface-color)] border-[var(--border-color)] text-[var(--text-muted)] hover:text-[var(--text-color)] hover:border-[var(--primary-color)]'
+                }`}
+                title="Toggle search filters"
               >
-                {f.label}
+                <SlidersHorizontal size={15} className={activeFilterCount > 0 ? 'text-orange-500' : ''} />
+                <span className="hidden sm:inline">Filter</span>
+                {activeFilterCount > 0 && (
+                  <span className="w-4.5 h-4.5 rounded-full bg-gradient-to-r from-orange-500 to-amber-500 text-white text-[10px] flex items-center justify-center font-bold">
+                    {activeFilterCount}
+                  </span>
+                )}
+                <ChevronDown
+                  size={13}
+                  className={`transition-transform duration-200 ${showFilterPanel ? 'rotate-180' : ''}`}
+                />
               </button>
-            ))}
+
+              {/* Search Submit Button */}
+              <button
+                type="submit"
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white shadow-sm shadow-orange-500/20 transition-all cursor-pointer shrink-0 active:scale-95"
+              >
+                <Search size={15} />
+                <span className="hidden sm:inline">Search</span>
+              </button>
+            </div>
+
+            {/* Expandable Filter Drawer Panel */}
+            <AnimatePresence>
+              {showFilterPanel && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden pt-4 mt-3 border-t flex flex-col gap-4"
+                  style={{ borderColor: 'var(--border-color)' }}
+                >
+                  {/* Category Type */}
+                  <div>
+                    <label
+                      className="text-xs font-bold block mb-2 flex items-center gap-1.5"
+                      style={{ color: 'var(--text-color)' }}
+                    >
+                      <Sparkles size={13} className="text-orange-500" /> Content Type
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {typeTabs.map((t) => {
+                        const Icon = t.icon;
+                        const isSel = contentType === t.id;
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => setContentType(t.id)}
+                            className="px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border"
+                            style={{
+                              backgroundColor: isSel
+                                ? 'var(--primary-color)'
+                                : 'var(--surface-color)',
+                              color: isSel ? '#fff' : 'var(--text-muted)',
+                              borderColor: isSel ? 'var(--primary-color)' : 'var(--border-color)',
+                            }}
+                          >
+                            <Icon size={13} />
+                            <span>{t.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Skills & Tech Filter */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label
+                        className="text-xs font-bold flex items-center gap-1.5"
+                        style={{ color: 'var(--text-color)' }}
+                      >
+                        <Tag size={13} className="text-amber-500" /> Filter by Skill / Tech
+                      </label>
+                      {selectedSkill && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedSkill(null)}
+                          className="text-[11px] text-orange-500 hover:underline cursor-pointer"
+                        >
+                          Clear Skill
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {POPULAR_SKILLS.map((skill) => {
+                        const isSel = selectedSkill === skill;
+                        return (
+                          <button
+                            key={skill}
+                            type="button"
+                            onClick={() => setSelectedSkill(isSel ? null : skill)}
+                            className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer border"
+                            style={{
+                              backgroundColor: isSel
+                                ? 'rgba(234, 88, 12, 0.15)'
+                                : 'var(--surface-color)',
+                              borderColor: isSel ? 'var(--primary-color)' : 'var(--border-color)',
+                              color: isSel ? 'var(--primary-color)' : 'var(--text-muted)',
+                              fontWeight: isSel ? 700 : 500,
+                            }}
+                          >
+                            {isSel ? `✓ ${skill}` : skill}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Sort Order */}
+                  <div>
+                    <label
+                      className="text-xs font-bold block mb-2 flex items-center gap-1.5"
+                      style={{ color: 'var(--text-color)' }}
+                    >
+                      <ArrowUpDown size={13} className="text-emerald-500" /> Sort Results By
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { id: 'relevance', label: '🎯 Most Relevant' },
+                        { id: 'xp', label: '⭐ Top XP / Level' },
+                        { id: 'newest', label: '✨ Newest First' },
+                        { id: 'followers', label: '👥 Most Followed' },
+                      ].map((s) => {
+                        const isSel = sortBy === s.id;
+                        return (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => setSortBy(s.id)}
+                            className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer border"
+                            style={{
+                              backgroundColor: isSel
+                                ? 'rgba(16, 185, 129, 0.15)'
+                                : 'var(--surface-color)',
+                              borderColor: isSel ? '#10b981' : 'var(--border-color)',
+                              color: isSel ? '#10b981' : 'var(--text-muted)',
+                            }}
+                          >
+                            {s.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Relationship Filter */}
+                  <div>
+                    <label
+                      className="text-xs font-bold block mb-2 flex items-center gap-1.5"
+                      style={{ color: 'var(--text-color)' }}
+                    >
+                      <Users size={13} className="text-indigo-500" /> Developer Relationship
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { id: 'all', label: `All Devs (${users.filter((u) => !blockedUserIds.includes(u.id)).length})` },
+                        { id: 'following', label: `Following (${followingCount})` },
+                        { id: 'followers', label: `Followers (${followersCount})` },
+                        ...(blockedUserIds.length > 0
+                          ? [{ id: 'blocked', label: `Blocked (${blockedUserIds.length})` }]
+                          : []),
+                      ].map((f) => {
+                        const isSel = activeFilter === f.id;
+                        return (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => setActiveFilter(f.id)}
+                            className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer border"
+                            style={{
+                              backgroundColor: isSel
+                                ? 'rgba(99, 102, 241, 0.15)'
+                                : 'var(--surface-color)',
+                              borderColor: isSel ? '#6366f1' : 'var(--border-color)',
+                              color: isSel ? '#6366f1' : 'var(--text-muted)',
+                            }}
+                          >
+                            {f.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Panel Footer Actions */}
+                  <div
+                    className="flex items-center justify-between pt-3 border-t mt-1"
+                    style={{ borderColor: 'var(--border-color)' }}
+                  >
+                    <button
+                      type="button"
+                      onClick={resetAllFilters}
+                      className="text-xs flex items-center gap-1.5 text-muted hover:text-white font-medium cursor-pointer transition-colors"
+                    >
+                      <RotateCcw size={13} /> Reset Filters
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowFilterPanel(false)}
+                      className="px-4 py-1.5 rounded-xl text-xs font-bold bg-gradient-to-r from-orange-500 to-amber-500 text-white flex items-center gap-1.5 shadow-sm cursor-pointer"
+                    >
+                      <CheckCircle2 size={14} /> Apply & Close
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </form>
+
+          {/* Active Filter Pills Bar */}
+          <div className="flex flex-wrap items-center gap-2 mb-5">
+            {/* Quick Content Type Tabs */}
+            {typeTabs.map((t) => {
+              const Icon = t.icon;
+              const isSel = contentType === t.id;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setContentType(t.id)}
+                  className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-1.5"
+                  style={{
+                    backgroundColor: isSel ? 'var(--primary-color)' : 'var(--surface-color)',
+                    color: isSel ? '#fff' : 'var(--text-muted)',
+                    border: '1px solid ' + (isSel ? 'var(--primary-color)' : 'var(--border-color)'),
+                  }}
+                >
+                  <Icon size={12} />
+                  <span>
+                    {t.label} ({t.count})
+                  </span>
+                </button>
+              );
+            })}
+
+            {/* Active Skill Chip */}
+            {selectedSkill && (
+              <span
+                className="text-xs px-2.5 py-1.5 rounded-lg font-bold flex items-center gap-1 bg-orange-500/15 text-orange-500 border border-orange-500/30"
+              >
+                <span>Skill: {selectedSkill}</span>
+                <button
+                  onClick={() => setSelectedSkill(null)}
+                  className="hover:text-white ml-0.5 cursor-pointer"
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            )}
+
+            {/* Active Sort Chip */}
+            {sortBy !== 'relevance' && (
+              <span
+                className="text-xs px-2.5 py-1.5 rounded-lg font-semibold flex items-center gap-1 bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+              >
+                <span>Sort: {sortBy.toUpperCase()}</span>
+                <button
+                  onClick={() => setSortBy('relevance')}
+                  className="hover:text-white ml-0.5 cursor-pointer"
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            )}
+
+            {/* Reset All shortcut */}
+            {activeFilterCount > 0 && (
+              <button
+                onClick={resetAllFilters}
+                className="text-xs px-2.5 py-1.5 rounded-lg font-semibold text-rose-400 hover:text-rose-300 transition-colors cursor-pointer"
+              >
+                Reset All
+              </button>
+            )}
+
             {loading && (
-              <span className="text-xs ml-2 flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
-                <span className="w-3 h-3 border-2 border-violet-500 border-t-transparent rounded-full animate-spin inline-block" />
+              <span
+                className="text-xs ml-auto flex items-center gap-1.5"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <span className="w-3 h-3 border-2 border-orange-500 border-t-transparent rounded-full animate-spin inline-block" />
                 Searching...
               </span>
             )}
           </div>
 
-          {/* Results */}
-          <div className="flex flex-col gap-3">
+          {/* Results Container */}
+          <div className="flex flex-col gap-4">
             <AnimatePresence mode="popLayout">
-              {loading && users.length === 0 ? (
+              {loading && users.length === 0 && posts.length === 0 ? (
                 <Loader key="loader" />
-              ) : filteredUsers.length === 0 ? (
+              ) : filteredUsers.length === 0 && posts.length === 0 ? (
                 <motion.div
                   key="empty"
                   initial={{ opacity: 0 }}
@@ -359,266 +841,354 @@ export default function SearchPage({ session }) {
                 >
                   <div
                     className="w-16 h-16 rounded-full flex items-center justify-center mb-4"
-                    style={{ backgroundColor: 'var(--surface-color)', border: '1px solid var(--border-color)' }}
+                    style={{
+                      backgroundColor: 'var(--surface-color)',
+                      border: '1px solid var(--border-color)',
+                    }}
                   >
                     <Search size={28} style={{ color: 'var(--text-muted)' }} />
                   </div>
-                  <h3 className="text-base font-semibold mb-1" style={{ color: 'var(--text-color)' }}>
+                  <h3
+                    className="text-base font-semibold mb-1"
+                    style={{ color: 'var(--text-color)' }}
+                  >
                     {activeFilter === 'following'
                       ? 'Not following anyone yet'
                       : activeFilter === 'followers'
                       ? 'No followers yet'
-                      : query
-                      ? `No developers match "${query}"`
-                      : 'No developers found'}
+                      : query || selectedSkill
+                      ? `No results match "${query || selectedSkill}"`
+                      : 'No developers or posts found'}
                   </h3>
-                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                    {activeFilter === 'following'
-                      ? 'Explore developers and click "Follow" or "Follow Back" to stay connected!'
-                      : activeFilter === 'followers'
-                      ? 'Share your projects and profile to gain followers in the community.'
-                      : query
-                      ? 'Try a different username, full name, or skill keyword'
-                      : 'Explore developers and start networking!'}
+                  <p className="text-sm max-w-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+                    {query || selectedSkill
+                      ? 'Try adjusting your search query, clearing skill filters, or broadening your search criteria.'
+                      : 'Explore developers and start networking across Connectra!'}
                   </p>
+                  {activeFilterCount > 0 && (
+                    <button
+                      onClick={resetAllFilters}
+                      className="px-4 py-2 rounded-xl text-xs font-bold bg-primary text-white hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
+                    >
+                      Clear All Filters
+                    </button>
+                  )}
                 </motion.div>
               ) : (
-                filteredUsers.map((user, i) => {
-                  const conn = connections[user.id];
-                  const status = conn?.status;
-
-                  return (
-                    <motion.div
-                      key={user.id}
-                      initial={{ opacity: 0, y: 12 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.97 }}
-                      transition={{ duration: 0.18, delay: i * 0.04 }}
-                      className="glass-panel rounded-2xl p-4 flex items-center gap-4 transition-all"
-                      style={{ '--tw-border-opacity': 1 }}
-                    >
-                      {/* Avatar */}
-                      <Link
-                        to={`/profile/${encodeURIComponent(user.profileSlug || user.displayName)}`}
-                        className="shrink-0"
-                      >
-                        <div
-                          className="h-13 w-13 rounded-xl flex items-center justify-center text-base font-bold overflow-hidden border"
-                          style={{
-                            width: 52,
-                            height: 52,
-                            backgroundColor: 'var(--surface-hover)',
-                            borderColor: 'var(--border-color)',
-                            color: 'var(--primary-color)',
-                          }}
-                        >
-                          {user.avatar_url ? (
-                            <img src={user.avatar_url} alt={user.displayName} className="w-full h-full object-cover" />
-                          ) : (
-                            <span>{user.displayName?.[0]?.toUpperCase() || '?'}</span>
-                          )}
-                        </div>
-                      </Link>
-
-                      {/* Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <Link
-                            to={`/profile/${encodeURIComponent(user.profileSlug || user.displayName)}`}
-                            className="font-bold text-[15px] hover:underline block truncate transition-colors"
-                            style={{ color: 'var(--text-color)' }}
-                            onMouseEnter={e => e.target.style.color = 'var(--primary-color)'}
-                            onMouseLeave={e => e.target.style.color = 'var(--text-color)'}
+                <>
+                  {/* Developers Section */}
+                  {(contentType === 'all' || contentType === 'devs') && filteredUsers.length > 0 && (
+                    <div className="flex flex-col gap-3">
+                      {contentType === 'all' && posts.length > 0 && (
+                        <div className="flex items-center justify-between pb-1">
+                          <h2
+                            className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5"
+                            style={{ color: 'var(--text-muted)' }}
                           >
-                            {user.displayName}
-                          </Link>
-                          {user.isPrivate && (
-                            <span
-                              className="text-[10px] flex items-center gap-1 font-semibold px-2 py-0.5 rounded-full shrink-0"
-                              style={{
-                                backgroundColor: 'rgba(107, 114, 128, 0.15)',
-                                color: 'var(--text-muted)',
-                                border: '1px solid var(--border-color)',
-                              }}
-                              title="Private Profile (Details visible to connections only)"
+                            <Users size={14} className="text-orange-500" /> Developers (
+                            {filteredUsers.length})
+                          </h2>
+                        </div>
+                      )}
+
+                      {filteredUsers.map((user, i) => {
+                        const conn = connections[user.id];
+                        const status = conn?.status;
+
+                        return (
+                          <motion.div
+                            key={user.id}
+                            initial={{ opacity: 0, y: 12 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.97 }}
+                            transition={{ duration: 0.18, delay: i * 0.03 }}
+                            className="glass-panel rounded-2xl p-4 flex items-center gap-4 transition-all"
+                            style={{ border: '1px solid var(--border-color)' }}
+                          >
+                            {/* Avatar */}
+                            <Link
+                              to={`/profile/${encodeURIComponent(user.profileSlug || user.displayName)}`}
+                              className="shrink-0"
                             >
-                              <Lock size={10} /> Private
-                            </span>
-                          )}
-                        </div>
-                        {user.isPrivate && status !== 'accepted' ? (
-                          <p className="text-xs mt-1 italic" style={{ color: 'var(--text-muted)' }}>
-                            🔒 Profile details are private. Connect to view tech stack and repositories.
-                          </p>
-                        ) : (
-                          <>
-                            {user.bio && (
-                              <p className="text-sm truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                                {user.bio}
-                              </p>
-                            )}
-                            {user.tech_stack && (
-                              <div className="flex flex-wrap gap-1 mt-1.5">
-                                {user.tech_stack.split(',').slice(0, 4).map((tech, idx) => (
-                                  <span
-                                    key={idx}
-                                    className="text-[10px] font-medium px-2 py-0.5 rounded-md"
-                                    style={{
-                                      backgroundColor: 'var(--surface-hover)',
-                                      border: '1px solid var(--border-color)',
-                                      color: 'var(--text-muted)',
-                                    }}
-                                  >
-                                    {tech.trim()}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-
-                      {/* Actions & Moderation */}
-                      <div className="flex items-center gap-2 shrink-0 relative">
-                        {blockedUserIds.includes(user.id) ? (
-                          <button
-                            onClick={() => handleUnblockUser(user.id)}
-                            className="px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
-                            style={{
-                              backgroundColor: 'rgba(16,185,129,0.12)',
-                              color: '#10b981',
-                              border: '1px solid rgba(16,185,129,0.3)',
-                            }}
-                          >
-                            <ShieldCheck size={13} /> Unblock
-                          </button>
-                        ) : (() => {
-                          const isFollowing = Boolean(followingMap[user.id]);
-                          const isFollower = Boolean(followersMap[user.id]);
-
-                          if (isFollowing) {
-                            return (
-                              <button
-                                onClick={() => handleUnfollow(user.id)}
-                                className="group px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border"
+                              <div
+                                className="rounded-xl flex items-center justify-center text-base font-bold overflow-hidden border"
                                 style={{
+                                  width: 52,
+                                  height: 52,
                                   backgroundColor: 'var(--surface-hover)',
                                   borderColor: 'var(--border-color)',
-                                  color: 'var(--text-color)',
+                                  color: 'var(--primary-color)',
                                 }}
-                                title="Click to Unfollow"
                               >
-                                <span className="group-hover:hidden flex items-center gap-1.5 text-emerald-400">
-                                  <UserCheck size={13} /> Following
-                                </span>
-                                <span className="hidden group-hover:flex items-center gap-1.5 text-rose-400">
-                                  <UserMinus size={13} /> Unfollow
-                                </span>
-                              </button>
-                            );
-                          }
+                                {user.avatar_url ? (
+                                  <img
+                                    src={user.avatar_url}
+                                    alt={user.displayName}
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <span>{user.displayName?.[0]?.toUpperCase() || '?'}</span>
+                                )}
+                              </div>
+                            </Link>
 
-                          if (isFollower) {
-                            return (
-                              <button
-                                onClick={() => handleFollow(user.id)}
-                                className="px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm text-white bg-indigo-600 hover:bg-indigo-500"
-                                title="Follow back this developer"
-                              >
-                                <UserPlus size={13} /> Follow Back
-                              </button>
-                            );
-                          }
-
-                          return (
-                            <button
-                              onClick={() => handleFollow(user.id)}
-                              className="px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm text-white"
-                              style={{ backgroundColor: 'var(--primary-color)' }}
-                              title="Follow developer"
-                            >
-                              <UserPlus size={13} /> Follow
-                            </button>
-                          );
-                        })()}
-
-                        {/* More Menu (Remove Follower / Report / Block) */}
-                        <div className="relative">
-                          <button
-                            onClick={() => setActiveActionMenu(activeActionMenu === user.id ? null : user.id)}
-                            aria-label="User options"
-                            className="p-2 rounded-xl transition-colors cursor-pointer"
-                            style={{ color: 'var(--text-muted)' }}
-                            onMouseEnter={e => {
-                              e.currentTarget.style.backgroundColor = 'var(--surface-hover)';
-                              e.currentTarget.style.color = 'var(--text-color)';
-                            }}
-                            onMouseLeave={e => {
-                              e.currentTarget.style.backgroundColor = 'transparent';
-                              e.currentTarget.style.color = 'var(--text-muted)';
-                            }}
-                          >
-                            <MoreVertical size={16} />
-                          </button>
-
-                          {activeActionMenu === user.id && (
-                            <div
-                              className="absolute right-0 top-full mt-1 w-44 rounded-xl py-1.5 shadow-xl z-30 border"
-                              style={{
-                                backgroundColor: 'var(--surface-color)',
-                                borderColor: 'var(--border-color)',
-                              }}
-                            >
-                              {Boolean(followersMap[user.id]) && (
-                                <button
-                                  onClick={() => {
-                                    setActiveActionMenu(null);
-                                    handleRemoveFollower(user.id);
-                                  }}
-                                  className="w-full px-3 py-2 text-left text-xs flex items-center gap-2 transition-colors cursor-pointer text-rose-400 hover:bg-rose-500/10"
+                            {/* Info */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <Link
+                                  to={`/profile/${encodeURIComponent(user.profileSlug || user.displayName)}`}
+                                  className="font-bold text-[15px] hover:underline block truncate transition-colors"
+                                  style={{ color: 'var(--text-color)' }}
+                                  onMouseEnter={(e) =>
+                                    (e.target.style.color = 'var(--primary-color)')
+                                  }
+                                  onMouseLeave={(e) =>
+                                    (e.target.style.color = 'var(--text-color)')
+                                  }
                                 >
-                                  <UserX size={13} /> Remove Follower
-                                </button>
+                                  {user.displayName}
+                                </Link>
+                                {user.xp > 0 && (
+                                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-500 border border-amber-500/30 shrink-0">
+                                    Lv.{user.level || 1} • {user.xp} XP
+                                  </span>
+                                )}
+                                {user.isPrivate && (
+                                  <span
+                                    className="text-[10px] flex items-center gap-1 font-semibold px-2 py-0.5 rounded-full shrink-0"
+                                    style={{
+                                      backgroundColor: 'rgba(107, 114, 128, 0.15)',
+                                      color: 'var(--text-muted)',
+                                      border: '1px solid var(--border-color)',
+                                    }}
+                                    title="Private Profile (Details visible to connections only)"
+                                  >
+                                    <Lock size={10} /> Private
+                                  </span>
+                                )}
+                              </div>
+
+                              {user.isPrivate && status !== 'accepted' ? (
+                                <p
+                                  className="text-xs mt-1 italic"
+                                  style={{ color: 'var(--text-muted)' }}
+                                >
+                                  🔒 Profile details are private. Connect to view tech stack.
+                                </p>
+                              ) : (
+                                <>
+                                  {user.bio && (
+                                    <p
+                                      className="text-sm truncate mt-0.5"
+                                      style={{ color: 'var(--text-muted)' }}
+                                    >
+                                      {user.bio}
+                                    </p>
+                                  )}
+                                  {user.tech_stack && (
+                                    <div className="flex flex-wrap gap-1 mt-1.5">
+                                      {user.tech_stack
+                                        .split(',')
+                                        .slice(0, 4)
+                                        .map((tech, idx) => (
+                                          <button
+                                            key={idx}
+                                            type="button"
+                                            onClick={() => setSelectedSkill(tech.trim())}
+                                            className="text-[10px] font-medium px-2 py-0.5 rounded-md transition-colors cursor-pointer hover:border-orange-500"
+                                            style={{
+                                              backgroundColor:
+                                                selectedSkill === tech.trim()
+                                                  ? 'rgba(234, 88, 12, 0.2)'
+                                                  : 'var(--surface-hover)',
+                                              border:
+                                                '1px solid ' +
+                                                (selectedSkill === tech.trim()
+                                                  ? 'var(--primary-color)'
+                                                  : 'var(--border-color)'),
+                                              color:
+                                                selectedSkill === tech.trim()
+                                                  ? 'var(--primary-color)'
+                                                  : 'var(--text-muted)',
+                                            }}
+                                            title={`Filter by ${tech.trim()}`}
+                                          >
+                                            {tech.trim()}
+                                          </button>
+                                        ))}
+                                    </div>
+                                  )}
+                                </>
                               )}
-
-                              <button
-                                onClick={() => {
-                                  setActiveActionMenu(null);
-                                  setReportModalUser(user);
-                                }}
-                                className="w-full px-3 py-2 text-left text-xs flex items-center gap-2 transition-colors cursor-pointer"
-                                style={{ color: '#f59e0b' }}
-                                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(245,158,11,0.1)'}
-                                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                              >
-                                <Flag size={13} /> Report User
-                              </button>
-
-                              <button
-                                onClick={() => handleBlockUser(user.id, user.displayName)}
-                                className="w-full px-3 py-2 text-left text-xs flex items-center gap-2 transition-colors cursor-pointer"
-                                style={{ color: '#ef4444' }}
-                                onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(239,68,68,0.1)'}
-                                onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}
-                              >
-                                <ShieldBan size={13} /> Block User
-                              </button>
                             </div>
-                          )}
-                        </div>
+
+                            {/* Actions & Follow */}
+                            <div className="flex items-center gap-2 shrink-0 relative">
+                              {blockedUserIds.includes(user.id) ? (
+                                <button
+                                  onClick={() => handleUnblockUser(user.id)}
+                                  className="px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+                                  style={{
+                                    backgroundColor: 'rgba(16,185,129,0.12)',
+                                    color: '#10b981',
+                                    border: '1px solid rgba(16,185,129,0.3)',
+                                  }}
+                                >
+                                  <ShieldCheck size={13} /> Unblock
+                                </button>
+                              ) : (() => {
+                                const isFollowing = Boolean(followingMap[user.id]);
+                                const isFollower = Boolean(followersMap[user.id]);
+
+                                if (isFollowing) {
+                                  return (
+                                    <button
+                                      onClick={() => handleUnfollow(user.id)}
+                                      className="group px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border"
+                                      style={{
+                                        backgroundColor: 'var(--surface-hover)',
+                                        borderColor: 'var(--border-color)',
+                                        color: 'var(--text-color)',
+                                      }}
+                                      title="Click to Unfollow"
+                                    >
+                                      <span className="group-hover:hidden flex items-center gap-1.5 text-emerald-400">
+                                        <UserCheck size={13} /> Following
+                                      </span>
+                                      <span className="hidden group-hover:flex items-center gap-1.5 text-rose-400">
+                                        <UserMinus size={13} /> Unfollow
+                                      </span>
+                                    </button>
+                                  );
+                                }
+
+                                if (isFollower) {
+                                  return (
+                                    <button
+                                      onClick={() => handleFollow(user.id)}
+                                      className="px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm text-white bg-indigo-600 hover:bg-indigo-500"
+                                      title="Follow back this developer"
+                                    >
+                                      <UserPlus size={13} /> Follow Back
+                                    </button>
+                                  );
+                                }
+
+                                return (
+                                  <button
+                                    onClick={() => handleFollow(user.id)}
+                                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm text-white bg-primary hover:opacity-90"
+                                    title="Follow developer"
+                                  >
+                                    <UserPlus size={13} /> Follow
+                                  </button>
+                                );
+                              })()}
+
+                              {/* More Menu */}
+                              <div className="relative">
+                                <button
+                                  onClick={() =>
+                                    setActiveActionMenu(
+                                      activeActionMenu === user.id ? null : user.id
+                                    )
+                                  }
+                                  aria-label="User options"
+                                  className="p-2 rounded-xl transition-colors cursor-pointer"
+                                  style={{ color: 'var(--text-muted)' }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.backgroundColor = 'var(--surface-hover)';
+                                    e.currentTarget.style.color = 'var(--text-color)';
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.backgroundColor = 'transparent';
+                                    e.currentTarget.style.color = 'var(--text-muted)';
+                                  }}
+                                >
+                                  <MoreVertical size={16} />
+                                </button>
+
+                                {activeActionMenu === user.id && (
+                                  <div
+                                    className="absolute right-0 top-full mt-1 w-44 rounded-xl py-1.5 shadow-xl z-30 border"
+                                    style={{
+                                      backgroundColor: 'var(--surface-color)',
+                                      borderColor: 'var(--border-color)',
+                                    }}
+                                  >
+                                    {Boolean(followersMap[user.id]) && (
+                                      <button
+                                        onClick={() => {
+                                          setActiveActionMenu(null);
+                                          handleRemoveFollower(user.id);
+                                        }}
+                                        className="w-full px-3 py-2 text-left text-xs flex items-center gap-2 transition-colors cursor-pointer text-rose-400 hover:bg-rose-500/10"
+                                      >
+                                        <UserX size={13} /> Remove Follower
+                                      </button>
+                                    )}
+
+                                    <button
+                                      onClick={() => {
+                                        setActiveActionMenu(null);
+                                        setReportModalUser(user);
+                                      }}
+                                      className="w-full px-3 py-2 text-left text-xs flex items-center gap-2 transition-colors cursor-pointer text-amber-500 hover:bg-amber-500/10"
+                                    >
+                                      <Flag size={13} /> Report User
+                                    </button>
+
+                                    <button
+                                      onClick={() => handleBlockUser(user.id, user.displayName)}
+                                      className="w-full px-3 py-2 text-left text-xs flex items-center gap-2 transition-colors cursor-pointer text-rose-500 hover:bg-rose-500/10"
+                                    >
+                                      <ShieldBan size={13} /> Block User
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Matching Posts Section */}
+                  {(contentType === 'all' || contentType === 'posts') && posts.length > 0 && (
+                    <div className="flex flex-col gap-4 mt-2">
+                      <div className="flex items-center justify-between pb-1">
+                        <h2
+                          className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5"
+                          style={{ color: 'var(--text-muted)' }}
+                        >
+                          <FileText size={14} className="text-orange-500" /> Community Posts (
+                          {posts.length})
+                        </h2>
                       </div>
-                    </motion.div>
-                  );
-                })
+
+                      {posts.map((post) => (
+                        <PostCard
+                          key={post.id}
+                          post={post}
+                          session={session}
+                          onUpdate={loadAllResults}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </AnimatePresence>
           </div>
 
-          {/* Results count */}
-          {!loading && filteredUsers.length > 0 && (
-            <p className="text-xs text-center mt-4" style={{ color: 'var(--text-muted)' }}>
-              Showing {filteredUsers.length} developer{filteredUsers.length !== 1 ? 's' : ''}
-              {query ? ` matching "${query}"` : ''}
+          {/* Results count footer */}
+          {!loading && (filteredUsers.length > 0 || posts.length > 0) && (
+            <p className="text-xs text-center mt-6" style={{ color: 'var(--text-muted)' }}>
+              Showing {filteredUsers.length} developer{filteredUsers.length !== 1 ? 's' : ''} and{' '}
+              {posts.length} post{posts.length !== 1 ? 's' : ''}
+              {query ? ` for "${query}"` : ''}
+              {selectedSkill ? ` in ${selectedSkill}` : ''}
             </p>
           )}
         </div>
@@ -650,12 +1220,15 @@ export default function SearchPage({ session }) {
 
               <form onSubmit={handleReportSubmit} className="flex flex-col gap-3.5">
                 <div>
-                  <label className="text-xs font-semibold block mb-1.5" style={{ color: 'var(--text-color)' }}>
+                  <label
+                    className="text-xs font-semibold block mb-1.5"
+                    style={{ color: 'var(--text-color)' }}
+                  >
                     Reason for report
                   </label>
                   <select
                     value={reportReason}
-                    onChange={e => setReportReason(e.target.value)}
+                    onChange={(e) => setReportReason(e.target.value)}
                     className="w-full rounded-xl px-3 py-2 text-xs outline-none border transition-colors"
                     style={{
                       backgroundColor: 'var(--bg-color)',
@@ -663,21 +1236,34 @@ export default function SearchPage({ session }) {
                       color: 'var(--text-color)',
                     }}
                   >
-                    <option value="Spam or misleading information">Spam or misleading information</option>
-                    <option value="Harassment or abusive behavior">Harassment or abusive behavior</option>
-                    <option value="Inappropriate or malicious code snippet">Inappropriate or malicious code snippet</option>
-                    <option value="Fake or impersonated profile">Fake or impersonated profile</option>
-                    <option value="Other security/safety violation">Other security/safety violation</option>
+                    <option value="Spam or misleading information">
+                      Spam or misleading information
+                    </option>
+                    <option value="Harassment or abusive behavior">
+                      Harassment or abusive behavior
+                    </option>
+                    <option value="Inappropriate or malicious code snippet">
+                      Inappropriate or malicious code snippet
+                    </option>
+                    <option value="Fake or impersonated profile">
+                      Fake or impersonated profile
+                    </option>
+                    <option value="Other security/safety violation">
+                      Other security/safety violation
+                    </option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold block mb-1.5" style={{ color: 'var(--text-color)' }}>
+                  <label
+                    className="text-xs font-semibold block mb-1.5"
+                    style={{ color: 'var(--text-color)' }}
+                  >
                     Additional Details (Optional)
                   </label>
                   <textarea
                     value={reportDetails}
-                    onChange={e => setReportDetails(e.target.value)}
+                    onChange={(e) => setReportDetails(e.target.value)}
                     rows={3}
                     placeholder="Provide any additional context or proof..."
                     className="w-full rounded-xl px-3 py-2 text-xs outline-none border resize-none transition-colors"

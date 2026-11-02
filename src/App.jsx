@@ -14,6 +14,7 @@ import EventsPage from './pages/EventsPage';
 import ReelsPage from './pages/ReelsPage';
 import ChatPage from './pages/ChatPage';
 import CollabBoardPage from './pages/CollabBoardPage';
+import PostPage from './pages/PostPage';
 import ToastContainer from './components/ui/Toast';
 import Loader from './components/ui/Loader';
 import NotificationsPanel from './components/NotificationsPanel';
@@ -38,7 +39,7 @@ function AppInner({ session }) {
       try {
         const { data } = await supabase
           .from('profiles')
-          .select('id, username, bio, tech_stack, github_url, xp, level, avatar_url')
+          .select('id, username, full_name, bio, tech_stack, github_url, xp, level, avatar_url')
           .eq('id', session.user.id)
           .single();
         if (data) {
@@ -104,6 +105,8 @@ function AppInner({ session }) {
       <div className="pb-16 lg:pb-0">
         <Routes>
           <Route path="/" element={<Dashboard session={session} />} />
+          <Route path="/post/:id" element={<PostPage session={session} />} />
+          <Route path="/posts/:id" element={<PostPage session={session} />} />
           <Route path="/search" element={<SearchPage session={session} />} />
           <Route path="/profile/:username" element={<ProfilePage session={session} />} />
           <Route path="/profile/:username/coding" element={<CodingProfilePage session={session} />} />
