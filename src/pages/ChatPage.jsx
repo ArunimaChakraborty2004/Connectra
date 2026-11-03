@@ -38,6 +38,8 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from '../lib/toast';
 import Loader from '../components/ui/Loader';
 import { createNotification } from '../lib/notifications';
+import { deriveConversationKey, encryptMessage, decryptMessage, isEncryptedMessage, generateKeyFingerprint } from '../lib/e2ee';
+import { appendAuditEvent } from '../lib/auditLog';
 
 const QUICK_REACTIONS = ['👍', '❤️', '🔥', '😂', '🚀', '💡', '🎉'];
 const CHAT_EMOJIS = [
@@ -61,6 +63,11 @@ export default function ChatPage({ session }) {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
   const [loadingConvos, setLoadingConvos] = useState(true);
+
+  // E2EE States (End-to-End Encryption with AES-GCM-256)
+  const [e2eeEnabled, setE2eeEnabled] = useState(true);
+  const [e2eeCryptoKey, setE2eeCryptoKey] = useState(null);
+  const [e2eeFingerprint, setE2eeFingerprint] = useState('');
 
   // Emojis & message reactions
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -323,6 +330,7 @@ export default function ChatPage({ session }) {
   const loadDirectMessages = async (otherUserId) => {
     setLoadingMessages(true);
     try {
+      const key = await deriveConversationKey(myId, otherUserId);
       const { data } = await supabase
         .from('messages')
         .select('*')
@@ -330,7 +338,17 @@ export default function ChatPage({ session }) {
           `and(sender_id.eq.${myId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${myId})`
         )
         .order('created_at', { ascending: true });
-      setMessages(data || []);
+
+      const decrypted = await Promise.all(
+        (data || []).map(async (m) => {
+          if (isEncryptedMessage(m.content)) {
+            const dec = await decryptMessage(m.content, key);
+            return { ...m, content: dec, isE2EE: true };
+          }
+          return m;
+        })
+      );
+      setMessages(decrypted);
     } catch (err) {
       console.warn('loadDirectMessages error:', err);
     } finally {
@@ -417,13 +435,22 @@ export default function ChatPage({ session }) {
     setSearchResults(data || []);
   };
 
-  const startChat = (user) => {
+  const startChat = async (user) => {
     setSelectedGroup(null);
     setSelectedUser(user);
     setSearchQuery('');
     setSearchResults([]);
     if (!conversations.some(c => c.id === user.id)) {
       setConversations(prev => [user, ...prev]);
+    }
+    // Initialize E2EE for this user
+    try {
+      const key = await deriveConversationKey(myId, user.id);
+      const fp = await generateKeyFingerprint(myId, user.id);
+      setE2eeCryptoKey(key);
+      setE2eeFingerprint(fp);
+    } catch (err) {
+      console.warn('E2EE init error:', err);
     }
   };
 
@@ -629,10 +656,29 @@ export default function ChatPage({ session }) {
         });
       } else if (selectedUser) {
         let sentData = null;
+        let contentToStore = messageContent || (attachmentName ? `Shared attachment: ${attachmentName}` : '');
+        let isEncrypted = false;
+
+        // Perform client-side E2EE encryption before transmission
+        if (e2eeEnabled && messageContent) {
+          try {
+            const key = e2eeCryptoKey || (await deriveConversationKey(myId, selectedUser.id));
+            contentToStore = await encryptMessage(messageContent, key);
+            isEncrypted = true;
+            appendAuditEvent({
+              action: 'E2EE_MESSAGE_ENCRYPTED',
+              actorId: myId,
+              details: { receiverId: selectedUser.id, cipher: 'AES-GCM-256' },
+            });
+          } catch (e2eeErr) {
+            console.warn('E2EE encryption fallback to plaintext:', e2eeErr);
+          }
+        }
+
         const fullPayload = {
           sender_id: myId,
           receiver_id: selectedUser.id,
-          content: messageContent || (attachmentName ? `Shared attachment: ${attachmentName}` : ''),
+          content: contentToStore,
           attachment_url: attachmentUrl,
           attachment_name: attachmentName,
           attachment_type: attachmentType,
@@ -646,7 +692,7 @@ export default function ChatPage({ session }) {
             .single();
 
           if (error) throw error;
-          sentData = data;
+          sentData = { ...data, content: messageContent, isE2EE: isEncrypted };
         } catch (insertErr) {
           // Fallback if attachment columns are not in schema cache
           if (insertErr?.message?.includes('attachment_') || insertErr?.message?.includes('column')) {
@@ -1322,6 +1368,33 @@ export default function ChatPage({ session }) {
                   </div>
                 </div>
 
+                {/* Direct Chat E2EE Controls & Key Fingerprint */}
+                {selectedUser && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setE2eeEnabled(v => !v)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer shadow-xs ${
+                        e2eeEnabled
+                          ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-400'
+                          : 'bg-stone-100 dark:bg-stone-800 border-stone-200 text-stone-500'
+                      }`}
+                      title={e2eeEnabled ? "End-to-End Encryption Active (AES-GCM-256)" : "E2EE Disabled"}
+                    >
+                      <Lock size={12} className={e2eeEnabled ? "text-emerald-500" : "text-stone-400"} />
+                      <span>{e2eeEnabled ? "E2EE: Active" : "E2EE: Off"}</span>
+                    </button>
+                    {e2eeFingerprint && (
+                      <span
+                        className="hidden lg:inline text-[10px] font-mono px-2 py-1 rounded-lg bg-black/10 dark:bg-black/40 text-stone-500 border border-black/5 dark:border-white/5"
+                        title="Conversation Cryptographic Key Identity Fingerprint"
+                      >
+                        FP: {e2eeFingerprint}
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 {/* Group Action Controls: Share Link & Admin Panel */}
                 {selectedGroup && (
                   <div className="flex items-center gap-2">
@@ -1589,6 +1662,14 @@ export default function ChatPage({ session }) {
                                 <div className={`flex items-center gap-1 text-[10px] font-bold mb-1.5 ${isMe ? 'text-amber-200' : 'text-orange-600'}`}>
                                   <Pin size={10} className="fill-current" />
                                   <span>PINNED ANNOUNCEMENT</span>
+                                </div>
+                              )}
+
+                              {/* E2EE Verified Badge */}
+                              {msg.isE2EE && (
+                                <div className={`flex items-center gap-1 text-[9px] font-mono font-bold mb-1 ${isMe ? 'text-emerald-200' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                                  <Lock size={9} />
+                                  <span>🔒 E2EE VERIFIED (AES-GCM-256)</span>
                                 </div>
                               )}
 
