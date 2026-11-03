@@ -6,9 +6,18 @@ import { toast } from '../lib/toast';
 import { Link } from 'react-router-dom';
 import Loader from '../components/ui/Loader';
 
-function CollabCard({ post, session, onUpdate }) {
+import { computeTeamSynergy, getSynergyRationale } from '../lib/skillGraph';
+
+function CollabCard({ post, session, onUpdate, userTechStack }) {
   const isOwner = post.user_id === session?.user?.id;
   const skills = post.skills_needed ? post.skills_needed.split(',').map(s => s.trim()).filter(Boolean) : [];
+  const [showSynergyBreakdown, setShowSynergyBreakdown] = useState(false);
+
+  // Compute live mathematical synergy score
+  const synergy = computeTeamSynergy({
+    requiredSkills: post.skills_needed || '',
+    userSkills: userTechStack || 'Full-Stack Web Development',
+  });
 
   const handleClose = async () => {
     const { error } = await supabase
@@ -36,11 +45,11 @@ function CollabCard({ post, session, onUpdate }) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.97 }}
-      className="glass-panel rounded-2xl p-5 flex flex-col gap-4 transition-colors"
+      className="glass-panel rounded-2xl p-5 flex flex-col gap-4 transition-colors relative"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1">
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
             <span
               className="text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full"
               style={
@@ -54,6 +63,19 @@ function CollabCard({ post, session, onUpdate }) {
             <span className="text-[10px] flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
               <Clock size={10} /> {new Date(post.created_at).toLocaleDateString()}
             </span>
+
+            {/* Mathematical Team Synergy Pill */}
+            {!isOwner && post.status === 'open' && (
+              <button
+                type="button"
+                onClick={() => setShowSynergyBreakdown(prev => !prev)}
+                className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-gradient-to-r from-orange-500/20 via-amber-500/20 to-orange-500/10 border border-orange-500/40 text-orange-600 dark:text-orange-400 flex items-center gap-1 cursor-pointer transition-transform hover:scale-105"
+                title="Click to view AI & Graph Synergy breakdown"
+              >
+                <span>✨ {synergy.score}% Synergy</span>
+                <span className="text-[9px] opacity-75 hidden sm:inline">({synergy.matchLevel})</span>
+              </button>
+            )}
           </div>
           <h3 className="text-base font-bold" style={{ color: 'var(--text-color)' }}>{post.title}</h3>
         </div>
@@ -86,6 +108,31 @@ function CollabCard({ post, session, onUpdate }) {
 
       {post.description && (
         <p className="text-sm leading-relaxed" style={{ color: 'var(--text-muted)' }}>{post.description}</p>
+      )}
+
+      {/* Expandable Synergy Rationale & Vector Breakdown */}
+      {showSynergyBreakdown && !isOwner && (
+        <div className="p-3 rounded-xl bg-orange-500/10 border border-orange-500/30 text-xs space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-orange-600 dark:text-orange-400 text-[11px] uppercase tracking-wider">
+              Skill Graph Synergy Breakdown
+            </span>
+            <span className="text-[10px] font-mono text-stone-500">Jaccard Overlap: {synergy.breakdown.directOverlap}%</span>
+          </div>
+          <p className="text-stone-700 dark:text-stone-300 text-xs leading-relaxed">
+            {getSynergyRationale({ synergy, projectTitle: post.title })}
+          </p>
+          {synergy.matchedSkills.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-orange-500/20 text-[10px]">
+              <span className="text-stone-500">Direct Overlap:</span>
+              {synergy.matchedSkills.map((ms, i) => (
+                <span key={i} className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-mono">
+                  ✓ {ms}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {skills.length > 0 && (
@@ -256,6 +303,21 @@ export default function CollabBoardPage({ session }) {
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [filter, setFilter] = useState('all');
+  const [userTechStack, setUserTechStack] = useState('');
+
+  // Fetch viewer profile to compute live mathematical synergy scores
+  useEffect(() => {
+    const fetchUserStack = async () => {
+      if (!session?.user?.id) return;
+      const { data } = await supabase
+        .from('profiles')
+        .select('tech_stack')
+        .eq('id', session.user.id)
+        .single();
+      if (data?.tech_stack) setUserTechStack(data.tech_stack);
+    };
+    fetchUserStack();
+  }, [session?.user?.id]);
 
   const loadPosts = async () => {
     setLoading(true);
@@ -357,7 +419,13 @@ export default function CollabBoardPage({ session }) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <AnimatePresence>
             {posts.map(post => (
-              <CollabCard key={post.id} post={post} session={session} onUpdate={loadPosts} />
+              <CollabCard
+                key={post.id}
+                post={post}
+                session={session}
+                onUpdate={loadPosts}
+                userTechStack={userTechStack}
+              />
             ))}
           </AnimatePresence>
         </div>
