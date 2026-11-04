@@ -5,11 +5,10 @@ import CreatePost from './feed/CreatePost';
 import PostCard from './feed/PostCard';
 import Loader from './ui/Loader';
 import EmptyState from './ui/EmptyState';
-import { MessageSquare, Plus, X, ChevronLeft, ChevronRight, Play, Film } from 'lucide-react';
+import { MessageSquare, Plus, X, ChevronLeft, ChevronRight, Play, Film, Clock, Trash2 } from 'lucide-react';
 import { Link, useSearchParams, useParams } from 'react-router-dom';
 import CreateStoryModal from './stories/CreateStoryModal';
 import CreateReel from './reels/CreateReel';
-import { Trash2 } from 'lucide-react';
 
 function StoriesRow({ session }) {
   const [users, setUsers] = useState([]);
@@ -20,9 +19,30 @@ function StoriesRow({ session }) {
   const [showCreateStory, setShowCreateStory] = useState(false);
   const [showCreateReel, setShowCreateReel] = useState(false);
 
+  // Helper to calculate elapsed time and remaining hours/minutes until 24-hour auto-removal
+  const getStoryTimeInfo = (story) => {
+    if (!story) return null;
+    const createdAt = new Date(story.created_at || Date.now()).getTime();
+    const expiresAt = new Date(story.expires_at || (createdAt + 24 * 3600 * 1000)).getTime();
+    const now = Date.now();
+
+    const diffPastMs = Math.max(0, now - createdAt);
+    const diffFutureMs = Math.max(0, expiresAt - now);
+
+    const pastHours = Math.floor(diffPastMs / (1000 * 60 * 60));
+    const pastMinutes = Math.floor((diffPastMs % (1000 * 60 * 60)) / (1000 * 60));
+    const timeAgo = pastHours > 0 ? `${pastHours}h ago` : `${Math.max(1, pastMinutes)}m ago`;
+
+    const remainingHours = Math.floor(diffFutureMs / (1000 * 60 * 60));
+    const remainingMinutes = Math.floor((diffFutureMs % (1000 * 60 * 60)) / (1000 * 60));
+    const timeLeft = remainingHours > 0 ? `${remainingHours}h left` : `${Math.max(1, remainingMinutes)}m left`;
+
+    return { timeAgo, timeLeft, isExpired: diffFutureMs <= 0 };
+  };
+
   const fetchStoriesAndReels = async () => {
     try {
-      // 1. Fetch real stories from database
+      // 1. Fetch real stories from database that haven't expired
       const nowIso = new Date().toISOString();
       let dbStories = [];
       try {
@@ -37,14 +57,17 @@ function StoriesRow({ session }) {
         console.warn('Stories table query fallback:', err);
       }
 
-      // Merge with locally cached stories (so optimistic stories appear instantly)
+      // Merge with locally cached stories (so optimistic stories appear instantly and auto-clear at expiry)
+      const nowMs = Date.now();
       const localStories = JSON.parse(localStorage.getItem('connectra_active_stories') || '[]');
-      const validLocalStories = localStories.filter(s => new Date(s.expires_at) > new Date());
+      const validLocalStories = localStories.filter(s => new Date(s.expires_at).getTime() > nowMs);
       validLocalStories.forEach(ls => {
         if (!dbStories.some(s => s.id === ls.id)) {
           dbStories.unshift(ls);
         }
       });
+      // Save purged local list
+      localStorage.setItem('connectra_active_stories', JSON.stringify(validLocalStories));
       setStories(dbStories);
 
       // 2. Fetch reels as fallback media
@@ -79,6 +102,32 @@ function StoriesRow({ session }) {
       fetchStoriesAndReels();
     }
   }, [session?.user?.id]);
+
+  // Realtime subscription for stories & reels
+  useEffect(() => {
+    const sub = supabase.channel('stories-live-channel')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'stories' }, fetchStoriesAndReels)
+      .subscribe();
+
+    // Auto-Expiration Poller: Every 15 seconds, automatically removes stories older than 24h
+    const timer = setInterval(() => {
+      const nowMs = Date.now();
+      setStories(prev => {
+        const activeOnly = prev.filter(s => new Date(s.expires_at).getTime() > nowMs);
+        if (activeOnly.length !== prev.length) {
+          const local = JSON.parse(localStorage.getItem('connectra_active_stories') || '[]');
+          const valid = local.filter(s => new Date(s.expires_at).getTime() > nowMs);
+          localStorage.setItem('connectra_active_stories', JSON.stringify(valid));
+        }
+        return activeOnly;
+      });
+    }, 15000);
+
+    return () => {
+      sub.unsubscribe();
+      clearInterval(timer);
+    };
+  }, []);
 
   const handleOpenUserStory = (user) => {
     // 1. Check if user has an active Story
@@ -148,14 +197,21 @@ function StoriesRow({ session }) {
     return stories.some(s => s.user_id === userId) || reels.some(r => r.user_id === userId);
   };
 
+  const getUserStory = (userId) => {
+    return stories.find(s => s.user_id === userId) || null;
+  };
+
+  const currentUserStory = currentUser ? getUserStory(currentUser.id) : null;
+  const currentUserTimeInfo = currentUserStory ? getStoryTimeInfo(currentUserStory) : null;
+
   return (
     <>
       <div className="rounded-2xl p-4 bg-white border border-[#f1e4d3] shadow-xs">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-bold text-[#2b1f17] tracking-tight">Stories</h2>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-600 border border-orange-500/20">
-              24h
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-600 border border-orange-500/20 flex items-center gap-1">
+              <Clock size={10} /> 24h Timeline
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -220,6 +276,11 @@ function StoriesRow({ session }) {
               <span className="text-[11px] font-semibold text-[#8d7565] group-hover:text-[#2b1f17] transition-colors truncate w-full block">
                 Your Story
               </span>
+              {currentUserTimeInfo && (
+                <span className="text-[9px] font-bold text-orange-600 block -mt-1 truncate w-full">
+                  {currentUserTimeInfo.timeLeft}
+                </span>
+              )}
             </button>
           )}
 
@@ -227,6 +288,8 @@ function StoriesRow({ session }) {
           {users.map((user) => {
             const userInitial = user.username?.[0]?.toUpperCase() || 'D';
             const hasActiveStory = userHasStory(user.id);
+            const userStory = getUserStory(user.id);
+            const timeInfo = userStory ? getStoryTimeInfo(userStory) : null;
 
             return (
               <button
@@ -258,6 +321,11 @@ function StoriesRow({ session }) {
                 <span className="text-[11px] font-semibold text-[#8d7565] group-hover:text-[#2b1f17] transition-colors truncate w-full block">
                   {user.username}
                 </span>
+                {timeInfo && (
+                  <span className="text-[9px] font-bold text-orange-600 block -mt-1 truncate w-full">
+                    {timeInfo.timeLeft}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -305,7 +373,7 @@ function StoriesRow({ session }) {
                 </div>
               </div>
 
-              {/* Top User Info Bar */}
+              {/* Top User Info Bar with exact Timeline */}
               <div className="pt-5 px-4 pb-3 bg-gradient-to-b from-black/90 to-transparent flex items-center justify-between z-10">
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded-full overflow-hidden border border-white/40 bg-[#ea580c] flex items-center justify-center text-xs font-bold text-white shadow-sm">
@@ -317,9 +385,21 @@ function StoriesRow({ session }) {
                   </div>
                   <div>
                     <span className="text-sm font-bold text-white block leading-tight">@{activeStory.user.username}</span>
-                    <span className="text-[10px] text-white/70">
-                      {activeStory.story ? 'Active Dev Story (24h)' : activeStory.reel ? 'Connectra Reel' : 'Developer Status'}
-                    </span>
+                    {activeStory.story ? (
+                      (() => {
+                        const tInfo = getStoryTimeInfo(activeStory.story);
+                        return (
+                          <div className="flex items-center gap-1 text-[10px] text-amber-300 font-semibold mt-0.5">
+                            <Clock size={10} className="text-amber-400 shrink-0" />
+                            <span>Posted {tInfo?.timeAgo} · ⏳ {tInfo?.timeLeft} before auto-removal</span>
+                          </div>
+                        );
+                      })()
+                    ) : (
+                      <span className="text-[10px] text-white/70">
+                        {activeStory.reel ? 'Connectra Reel' : 'Developer Status'}
+                      </span>
+                    )}
                   </div>
                 </div>
 

@@ -271,6 +271,18 @@ export default function ChatPage({ session }) {
     return () => document.removeEventListener('startChat', handleStartChat);
   }, []);
 
+  // Escape key handler: closes active direct or group chat to return to hub overview
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setSelectedUser(null);
+        setSelectedGroup(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const loadConversations = async () => {
     setLoadingConvos(true);
     try {
@@ -287,15 +299,30 @@ export default function ChatPage({ session }) {
       if (!data) return;
 
       const seen = new Set();
-      const convos = [];
+      const rawConvos = [];
       for (const msg of data) {
         const otherId = msg.sender_id === myId ? msg.receiver_id : msg.sender_id;
         if (!seen.has(otherId)) {
           seen.add(otherId);
           const otherProfile = msg.sender_id === myId ? msg.receiver : msg.sender;
-          if (otherProfile) convos.push({ ...otherProfile, lastMessage: msg.content });
+          if (otherProfile) rawConvos.push({ profile: otherProfile, otherId, msg });
         }
       }
+
+      const convos = await Promise.all(
+        rawConvos.map(async ({ profile, otherId, msg }) => {
+          let preview = msg.content || '';
+          if (isEncryptedMessage(msg.content)) {
+            try {
+              const key = await deriveConversationKey(myId, otherId);
+              preview = await decryptMessage(msg.content, key);
+            } catch {
+              preview = '🔒 Encrypted message';
+            }
+          }
+          return { ...profile, lastMessage: preview };
+        })
+      );
       setConversations(convos);
     } catch (err) {
       console.error('loadConversations error:', err);
@@ -1392,6 +1419,20 @@ export default function ChatPage({ session }) {
                         FP: {e2eeFingerprint}
                       </span>
                     )}
+
+                    {/* Close / Stop Active Chat Cross Mark */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedUser(null);
+                        setSelectedGroup(null);
+                      }}
+                      className="p-1.5 rounded-xl text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-200/60 dark:hover:bg-stone-800 transition-all cursor-pointer border border-transparent hover:border-stone-300 dark:hover:border-stone-700 ml-0.5"
+                      title="Close conversation (Esc)"
+                      aria-label="Close conversation"
+                    >
+                      <X size={18} />
+                    </button>
                   </div>
                 )}
 
@@ -1419,6 +1460,20 @@ export default function ChatPage({ session }) {
                     >
                       <Settings size={14} className="text-orange-500" />
                       <span>{groupAdminRole ? 'Admin Panel' : 'Members'}</span>
+                    </button>
+
+                    {/* Close / Stop Active Group Chat Cross Mark */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedUser(null);
+                        setSelectedGroup(null);
+                      }}
+                      className="p-1.5 rounded-xl text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-200/60 dark:hover:bg-stone-800 transition-all cursor-pointer border border-transparent hover:border-stone-300 dark:hover:border-stone-700 ml-0.5"
+                      title="Close group chat (Esc)"
+                      aria-label="Close group chat"
+                    >
+                      <X size={18} />
                     </button>
                   </div>
                 )}
@@ -1665,14 +1720,6 @@ export default function ChatPage({ session }) {
                                 </div>
                               )}
 
-                              {/* E2EE Verified Badge */}
-                              {msg.isE2EE && (
-                                <div className={`flex items-center gap-1 text-[9px] font-mono font-bold mb-1 ${isMe ? 'text-emerald-200' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                                  <Lock size={9} />
-                                  <span>🔒 E2EE VERIFIED (AES-GCM-256)</span>
-                                </div>
-                              )}
-
                               {/* Message Content & Quoted Reply rendering */}
                               {(() => {
                                 const raw = msg.content || '';
@@ -1704,16 +1751,31 @@ export default function ChatPage({ session }) {
                                 return <p className="whitespace-pre-wrap">{raw}</p>;
                               })()}
 
-                              <p
-                                className={`text-[9px] mt-1 text-right ${
-                                  isMe ? 'text-white/70' : 'text-stone-400'
+                              {/* Footer: E2EE verification pill + Timestamp */}
+                              <div
+                                className={`flex items-center justify-end gap-1.5 mt-1.5 select-none ${
+                                  isMe ? 'text-white/75' : 'text-stone-400'
                                 }`}
                               >
-                                {new Date(msg.created_at).toLocaleTimeString([], {
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                })}
-                              </p>
+                                {msg.isE2EE && (
+                                  <span
+                                    className={`inline-flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.5 rounded-md font-semibold ${
+                                      isMe
+                                        ? 'bg-black/20 text-emerald-200'
+                                        : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                                    }`}
+                                    title="Verified End-to-End Encrypted (AES-GCM-256)"
+                                  >
+                                    <Lock size={8} /> E2EE
+                                  </span>
+                                )}
+                                <span className="text-[9px]">
+                                  {new Date(msg.created_at).toLocaleTimeString([], {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}
+                                </span>
+                              </div>
                             </div>
 
                             {/* Message Reaction Badges Row */}

@@ -29,7 +29,7 @@ export default function PostCard({ post, session, onUpdate, isHighlighted = fals
   const [showMenu, setShowMenu] = useState(false);
   const [pollData, setPollData] = useState(post.poll_data || null);
   const [hasVoted, setHasVoted] = useState(
-    post.poll_data?.options?.some((o) => o.votes?.includes(session.user.id)) || false
+    Boolean(session?.user?.id && post.poll_data?.options?.some((o) => o.votes?.includes(session.user.id)))
   );
   const [isLiked, setIsLiked] = useState(() => Boolean(post.user_has_liked));
   const [likeCount, setLikeCount] = useState(() => post.likes?.[0]?.count ?? post.likes_count ?? 0);
