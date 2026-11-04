@@ -50,7 +50,17 @@ const POPULAR_SKILLS = [
   'PostgreSQL',
 ];
 
+const parseTechStack = (techStack) => {
+  if (!techStack) return [];
+  if (Array.isArray(techStack)) return techStack.map((t) => String(t).trim()).filter(Boolean);
+  if (typeof techStack === 'string') {
+    return techStack.split(/[,|/]+/).map((t) => t.trim()).filter(Boolean);
+  }
+  return [];
+};
+
 export default function SearchPage({ session }) {
+  const currentUserId = session?.user?.id;
   const [searchParams, setSearchParams] = useSearchParams();
   const urlQuery = searchParams.get('q') || '';
   const urlTab = searchParams.get('tab') || 'all';
@@ -72,7 +82,8 @@ export default function SearchPage({ session }) {
 
   const [blockedUserIds, setBlockedUserIds] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem(`blocked_users_${session.user.id}`) || '[]');
+      if (!currentUserId) return [];
+      return JSON.parse(localStorage.getItem(`blocked_users_${currentUserId}`) || '[]');
     } catch {
       return [];
     }
@@ -117,40 +128,50 @@ export default function SearchPage({ session }) {
 
   useEffect(() => {
     const loadProfile = async () => {
-      const { data } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', session.user.id)
-        .single();
-      setProfile(data || { id: session.user.id, username: 'User' });
+      if (!currentUserId) return;
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', currentUserId)
+          .single();
+        if (data && !error) {
+          setProfile(data);
+        } else {
+          setProfile({ id: currentUserId, username: session?.user?.email?.split('@')[0] || 'User' });
+        }
+      } catch {
+        setProfile({ id: currentUserId, username: 'User' });
+      }
     };
     loadProfile();
-  }, [session]);
+  }, [currentUserId]);
 
   // Follow relationships
   const [followingMap, setFollowingMap] = useState({});
   const [followersMap, setFollowersMap] = useState({});
 
   const loadFollows = async () => {
+    if (!currentUserId) return;
     try {
       const { data: myFollowing } = await supabase
         .from('follows')
         .select('following_id')
-        .eq('follower_id', session.user.id);
+        .eq('follower_id', currentUserId);
 
       const { data: myFollowers } = await supabase
         .from('follows')
         .select('follower_id')
-        .eq('following_id', session.user.id);
+        .eq('following_id', currentUserId);
 
       const fIngMap = {};
       (myFollowing || []).forEach((f) => {
-        fIngMap[f.following_id] = true;
+        if (f.following_id) fIngMap[f.following_id] = true;
       });
 
       const fErsMap = {};
       (myFollowers || []).forEach((f) => {
-        fErsMap[f.follower_id] = true;
+        if (f.follower_id) fErsMap[f.follower_id] = true;
       });
 
       setFollowingMap(fIngMap);
@@ -162,13 +183,14 @@ export default function SearchPage({ session }) {
 
   useEffect(() => {
     loadFollows();
-  }, [session.user.id]);
+  }, [currentUserId]);
 
   const handleFollow = async (targetId) => {
+    if (!currentUserId || !targetId) return;
     setFollowingMap((prev) => ({ ...prev, [targetId]: true }));
     const { error } = await supabase
       .from('follows')
-      .insert({ follower_id: session.user.id, following_id: targetId });
+      .insert({ follower_id: currentUserId, following_id: targetId });
 
     if (error) {
       toast.error(error.message);
@@ -181,7 +203,7 @@ export default function SearchPage({ session }) {
       toast.success('Following developer!');
       createNotification({
         userId: targetId,
-        actorId: session.user.id,
+        actorId: currentUserId,
         type: 'follow',
         entityId: targetId,
       });
@@ -190,6 +212,7 @@ export default function SearchPage({ session }) {
   };
 
   const handleUnfollow = async (targetId) => {
+    if (!currentUserId || !targetId) return;
     setFollowingMap((prev) => {
       const n = { ...prev };
       delete n[targetId];
@@ -198,7 +221,7 @@ export default function SearchPage({ session }) {
     const { error } = await supabase
       .from('follows')
       .delete()
-      .eq('follower_id', session.user.id)
+      .eq('follower_id', currentUserId)
       .eq('following_id', targetId);
 
     if (error) {
@@ -211,6 +234,7 @@ export default function SearchPage({ session }) {
   };
 
   const handleRemoveFollower = async (targetId) => {
+    if (!currentUserId || !targetId) return;
     setFollowersMap((prev) => {
       const n = { ...prev };
       delete n[targetId];
@@ -220,7 +244,7 @@ export default function SearchPage({ session }) {
       .from('follows')
       .delete()
       .eq('follower_id', targetId)
-      .eq('following_id', session.user.id);
+      .eq('following_id', currentUserId);
 
     if (error) {
       toast.error(error.message);
@@ -243,21 +267,36 @@ export default function SearchPage({ session }) {
       // 1. Fetch Developers
       let result = [];
       if (cleanQuery) {
-        const { data: byName } = await supabase
-          .from('profiles')
-          .select('*')
-          .neq('id', session.user.id)
+        let q = supabase.from('profiles').select('*');
+        if (currentUserId) {
+          q = q.neq('id', currentUserId);
+        }
+        const safeQuery = cleanQuery.replace(/[,()]/g, ' ').trim();
+        const { data: byName, error: searchError } = await q
           .or(
-            `username.ilike.%${cleanQuery}%,full_name.ilike.%${cleanQuery}%,tech_stack.ilike.%${cleanQuery}%,bio.ilike.%${cleanQuery}%`
+            `username.ilike.%${safeQuery}%,full_name.ilike.%${safeQuery}%,bio.ilike.%${safeQuery}%`
           )
           .limit(40);
-        result = byName || [];
+
+        if (searchError || !byName || byName.length === 0) {
+          let fb = supabase.from('profiles').select('*');
+          if (currentUserId) fb = fb.neq('id', currentUserId);
+          const { data: fallbackUsers } = await fb
+            .ilike('username', `%${safeQuery}%`)
+            .limit(40);
+          result = fallbackUsers || [];
+        } else {
+          result = byName;
+        }
       } else {
-        const { data } = await supabase
-          .from('profiles')
-          .select('*')
-          .neq('id', session.user.id)
-          .limit(40);
+        let q = supabase.from('profiles').select('*');
+        if (currentUserId) {
+          q = q.neq('id', currentUserId);
+        }
+        const { data, error } = await q.limit(40);
+        if (error) {
+          console.warn('Error fetching profiles:', error);
+        }
         result = data || [];
       }
 
@@ -266,9 +305,11 @@ export default function SearchPage({ session }) {
         isPrivate:
           u.is_private !== undefined
             ? Boolean(u.is_private)
-            : localStorage.getItem(`connectra_private_${u.id}`) === 'true',
-        displayName: u.username || u.full_name || `Developer_${u.id.slice(0, 5)}`,
-        profileSlug: u.username || u.id,
+            : u.id
+            ? localStorage.getItem(`connectra_private_${u.id}`) === 'true'
+            : false,
+        displayName: u.username || u.full_name || (u.id ? `Developer_${u.id.slice(0, 5)}` : 'Developer'),
+        profileSlug: u.username || u.id || 'developer',
       }));
 
       setUsers(normalized);
@@ -279,7 +320,7 @@ export default function SearchPage({ session }) {
         let pQuery = supabase
           .from('posts')
           .select(`
-            id, user_id, content, image_url, code_snippet, code_language, poll_data, created_at, updated_at,
+            id, user_id, content, image_url, code_snippet, code_language, created_at, updated_at,
             profiles(username, avatar_url)
           `)
           .order('created_at', { ascending: false });
@@ -308,7 +349,7 @@ export default function SearchPage({ session }) {
           const userLikedMap = {};
           (likesData || []).forEach((l) => {
             likesCountMap[l.post_id] = (likesCountMap[l.post_id] || 0) + 1;
-            if (session?.user?.id && l.user_id === session.user.id) {
+            if (currentUserId && l.user_id === currentUserId) {
               userLikedMap[l.post_id] = true;
             }
           });
@@ -352,10 +393,12 @@ export default function SearchPage({ session }) {
   useEffect(() => {
     const debounce = setTimeout(loadAllResults, 250);
     return () => clearTimeout(debounce);
-  }, [query, session.user.id, contentType, selectedSkill]);
+  }, [query, currentUserId, contentType, selectedSkill]);
 
   // Filter developers based on active filters and sorting
   let filteredUsers = users.filter((user) => {
+    if (!user || !user.id) return false;
+    if (currentUserId && user.id === currentUserId) return false;
     const isBlocked = blockedUserIds.includes(user.id);
     if (activeFilter === 'blocked') return isBlocked;
     if (isBlocked) return false;
@@ -365,9 +408,13 @@ export default function SearchPage({ session }) {
     // Skill filter on developer tech_stack or bio
     if (selectedSkill) {
       const skillNorm = selectedSkill.toLowerCase();
-      const tech = (user.tech_stack || '').toLowerCase();
-      const bio = (user.bio || '').toLowerCase();
-      if (!tech.includes(skillNorm) && !bio.includes(skillNorm)) {
+      const techStr = Array.isArray(user.tech_stack)
+        ? user.tech_stack.join(' ').toLowerCase()
+        : typeof user.tech_stack === 'string'
+        ? user.tech_stack.toLowerCase()
+        : '';
+      const bioStr = typeof user.bio === 'string' ? user.bio.toLowerCase() : '';
+      if (!techStr.includes(skillNorm) && !bioStr.includes(skillNorm)) {
         return false;
       }
     }
@@ -406,7 +453,9 @@ export default function SearchPage({ session }) {
   const handleBlockUser = (userId, displayName) => {
     const nextBlocked = [...new Set([...blockedUserIds, userId])];
     setBlockedUserIds(nextBlocked);
-    localStorage.setItem(`blocked_users_${session.user.id}`, JSON.stringify(nextBlocked));
+    if (currentUserId) {
+      localStorage.setItem(`blocked_users_${currentUserId}`, JSON.stringify(nextBlocked));
+    }
     setActiveActionMenu(null);
     toast.info(`Blocked ${displayName}. They won't appear in your search.`);
   };
@@ -414,7 +463,9 @@ export default function SearchPage({ session }) {
   const handleUnblockUser = (userId) => {
     const nextBlocked = blockedUserIds.filter((id) => id !== userId);
     setBlockedUserIds(nextBlocked);
-    localStorage.setItem(`blocked_users_${session.user.id}`, JSON.stringify(nextBlocked));
+    if (currentUserId) {
+      localStorage.setItem(`blocked_users_${currentUserId}`, JSON.stringify(nextBlocked));
+    }
     toast.success('Developer unblocked');
   };
 
@@ -424,18 +475,20 @@ export default function SearchPage({ session }) {
     setSubmittingReport(true);
 
     try {
-      await supabase.from('audit_logs').insert({
-        user_id: session.user.id,
-        action: 'report_user',
-        entity_type: 'profile',
-        entity_id: reportModalUser.id,
-        metadata: {
-          reason: reportReason,
-          details: reportDetails,
-          reported_username: reportModalUser.displayName,
-          timestamp: new Date().toISOString(),
-        },
-      });
+      if (currentUserId) {
+        await supabase.from('audit_logs').insert({
+          user_id: currentUserId,
+          action: 'report_user',
+          entity_type: 'profile',
+          entity_id: reportModalUser.id,
+          metadata: {
+            reason: reportReason,
+            details: reportDetails,
+            reported_username: reportModalUser.displayName,
+            timestamp: new Date().toISOString(),
+          },
+        });
+      }
     } catch (err) {
       console.warn('Audit log report fallback:', err);
     }
@@ -462,14 +515,10 @@ export default function SearchPage({ session }) {
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-8 flex flex-col lg:flex-row gap-8 relative items-start justify-center z-10">
         {/* Left Sidebar */}
         <div className="hidden lg:block w-full max-w-[300px] shrink-0">
-          {profile ? (
-            <Sidebar
-              profile={profile}
-              stats={{ followers: followersCount, following: followingCount }}
-            />
-          ) : (
-            <Loader />
-          )}
+          <Sidebar
+            profile={profile || { id: currentUserId, username: session?.user?.email?.split('@')[0] || 'User' }}
+            stats={{ followers: followersCount, following: followingCount }}
+          />
         </div>
 
         {/* Center Search Hub */}
@@ -985,35 +1034,34 @@ export default function SearchPage({ session }) {
                                       {user.bio}
                                     </p>
                                   )}
-                                  {user.tech_stack && (
+                                  {parseTechStack(user.tech_stack).length > 0 && (
                                     <div className="flex flex-wrap gap-1 mt-1.5">
-                                      {user.tech_stack
-                                        .split(',')
+                                      {parseTechStack(user.tech_stack)
                                         .slice(0, 4)
                                         .map((tech, idx) => (
                                           <button
                                             key={idx}
                                             type="button"
-                                            onClick={() => setSelectedSkill(tech.trim())}
+                                            onClick={() => setSelectedSkill(tech)}
                                             className="text-[10px] font-medium px-2 py-0.5 rounded-md transition-colors cursor-pointer hover:border-orange-500"
                                             style={{
                                               backgroundColor:
-                                                selectedSkill === tech.trim()
+                                                selectedSkill === tech
                                                   ? 'rgba(234, 88, 12, 0.2)'
                                                   : 'var(--surface-hover)',
                                               border:
                                                 '1px solid ' +
-                                                (selectedSkill === tech.trim()
+                                                (selectedSkill === tech
                                                   ? 'var(--primary-color)'
                                                   : 'var(--border-color)'),
                                               color:
-                                                selectedSkill === tech.trim()
+                                                selectedSkill === tech
                                                   ? 'var(--primary-color)'
                                                   : 'var(--text-muted)',
                                             }}
-                                            title={`Filter by ${tech.trim()}`}
+                                            title={`Filter by ${tech}`}
                                           >
-                                            {tech.trim()}
+                                            {tech}
                                           </button>
                                         ))}
                                     </div>
