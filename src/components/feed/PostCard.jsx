@@ -217,6 +217,7 @@ export default function PostCard({ post, session, onUpdate, isHighlighted = fals
           const savedReelLikes = JSON.parse(localStorage.getItem(`connectra_reel_likes_${session.user.id}`) || '[]');
           localStorage.setItem(`connectra_reel_likes_${session.user.id}`, JSON.stringify(savedReelLikes.filter(id => id !== targetReelId)));
         }
+        window.dispatchEvent(new CustomEvent('refreshReels'));
       } else {
         // 2. Post like handling
         if (nextLiked) {
@@ -301,35 +302,46 @@ export default function PostCard({ post, session, onUpdate, isHighlighted = fals
           console.warn('DB reel comment fallback:', e);
         }
         const localComments = JSON.parse(localStorage.getItem(`connectra_reel_comments_${targetReelId}`) || '[]');
-        localStorage.setItem(`connectra_reel_comments_${targetReelId}`, JSON.stringify([...localComments, newCommentObj]));
+        const filteredOld = localComments.filter((c) => c.id !== tempId && c.content !== text);
+        localStorage.setItem(`connectra_reel_comments_${targetReelId}`, JSON.stringify([...filteredOld, newCommentObj]));
+        window.dispatchEvent(new CustomEvent('refreshReels'));
+        window.dispatchEvent(new CustomEvent('refreshFeed'));
         toast.success('Comment posted on reel! 💬');
       } else {
         // 2. Post comment handling
-        const { data, error } = await supabase
-          .from('comments')
-          .insert({
-            post_id: post.id,
-            user_id: session.user.id,
-            content: text,
-          })
-          .select('id, post_id, user_id, content, created_at, profiles(username, avatar_url)')
-          .single();
+        let insertedComment = newCommentObj;
+        try {
+          const { data, error } = await supabase
+            .from('comments')
+            .insert({
+              post_id: post.id,
+              user_id: session.user.id,
+              content: text,
+            })
+            .select('id, post_id, user_id, content, created_at, profiles(username, avatar_url)')
+            .single();
 
-        if (error) {
-          console.warn('Post comment fallback to local storage:', error);
-        } else if (data) {
-          setComments((prev) => prev.map((c) => (c.id === tempId ? data : c)));
-          if (post.user_id && post.user_id !== session.user.id) {
-            createNotification({
-              userId: post.user_id,
-              actorId: session.user.id,
-              type: 'comment',
-              entityId: post.id,
-            });
+          if (error) {
+            console.warn('Post comment fallback to local storage:', error);
+          } else if (data) {
+            insertedComment = data;
+            setComments((prev) => prev.map((c) => (c.id === tempId ? data : c)));
+            if (post.user_id && post.user_id !== session.user.id) {
+              createNotification({
+                userId: post.user_id,
+                actorId: session.user.id,
+                type: 'comment',
+                entityId: post.id,
+              });
+            }
           }
+        } catch (e) {
+          console.warn('DB post comment error:', e);
         }
         const localComments = JSON.parse(localStorage.getItem(`connectra_post_comments_${post.id}`) || '[]');
-        localStorage.setItem(`connectra_post_comments_${post.id}`, JSON.stringify([...localComments, newCommentObj]));
+        const filteredOld = localComments.filter((c) => c.id !== tempId && c.content !== text);
+        localStorage.setItem(`connectra_post_comments_${post.id}`, JSON.stringify([...filteredOld, insertedComment]));
+        window.dispatchEvent(new CustomEvent('refreshFeed'));
         toast.success('Comment posted! 💬');
       }
     } catch (err) {
@@ -362,14 +374,68 @@ export default function PostCard({ post, session, onUpdate, isHighlighted = fals
 
   const handleDeleteComment = async (commentId) => {
     if (!confirm('Remove this comment?')) return;
-    setComments(prev => prev.filter(c => c.id !== commentId));
+    const commentToDelete = comments.find((c) => c.id === commentId);
+
+    // Optimistically update UI
+    setComments((prev) => prev.filter((c) => c.id !== commentId));
     toast.success('Comment removed');
-    const { error } = await supabase.from('comments').delete().eq('id', commentId);
-    if (error) {
-      toast.error('Failed to remove comment');
-      if (onUpdate) onUpdate();
-    } else {
-      if (onUpdate) onUpdate();
+
+    try {
+      if (isReelItem) {
+        // 1. Delete from reel_comments in Supabase
+        if (commentId && !commentId.startsWith('temp-')) {
+          const { error } = await supabase.from('reel_comments').delete().eq('id', commentId);
+          if (error) console.warn('Supabase reel comment delete notice:', error);
+        }
+        if (commentToDelete?.content) {
+          // Clean up any matching record by content & user
+          await supabase
+            .from('reel_comments')
+            .delete()
+            .eq('reel_id', targetReelId)
+            .eq('user_id', session?.user?.id)
+            .eq('content', commentToDelete.content);
+        }
+
+        // 2. Clear from localStorage
+        const localComments = JSON.parse(localStorage.getItem(`connectra_reel_comments_${targetReelId}`) || '[]');
+        const updatedLocal = localComments.filter(
+          (c) => c.id !== commentId && !(c.content === commentToDelete?.content && (c.user_id === session?.user?.id || c.user_id === commentToDelete?.user_id))
+        );
+        localStorage.setItem(`connectra_reel_comments_${targetReelId}`, JSON.stringify(updatedLocal));
+
+        // 3. Notify all listeners
+        window.dispatchEvent(new CustomEvent('refreshReels'));
+        window.dispatchEvent(new CustomEvent('refreshFeed'));
+        if (onUpdate) onUpdate();
+      } else {
+        // 1. Delete from comments in Supabase
+        if (commentId && !commentId.startsWith('temp-')) {
+          const { error } = await supabase.from('comments').delete().eq('id', commentId);
+          if (error) console.warn('Supabase post comment delete notice:', error);
+        }
+        if (commentToDelete?.content) {
+          await supabase
+            .from('comments')
+            .delete()
+            .eq('post_id', post.id)
+            .eq('user_id', session?.user?.id)
+            .eq('content', commentToDelete.content);
+        }
+
+        // 2. Clear from localStorage
+        const localComments = JSON.parse(localStorage.getItem(`connectra_post_comments_${post.id}`) || '[]');
+        const updatedLocal = localComments.filter(
+          (c) => c.id !== commentId && !(c.content === commentToDelete?.content && (c.user_id === session?.user?.id || c.user_id === commentToDelete?.user_id))
+        );
+        localStorage.setItem(`connectra_post_comments_${post.id}`, JSON.stringify(updatedLocal));
+
+        // 3. Notify all listeners
+        window.dispatchEvent(new CustomEvent('refreshFeed'));
+        if (onUpdate) onUpdate();
+      }
+    } catch (err) {
+      console.warn('Comment delete error:', err);
     }
   };
 
