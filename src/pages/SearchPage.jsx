@@ -26,10 +26,11 @@ import {
   RotateCcw,
   ChevronDown,
   CheckCircle2,
+  MessageSquare,
 } from 'lucide-react';
 import Loader from '../components/ui/Loader';
 import { toast } from '../lib/toast';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createNotification } from '../lib/notifications';
 
@@ -60,6 +61,7 @@ const parseTechStack = (techStack) => {
 };
 
 export default function SearchPage({ session }) {
+  const navigate = useNavigate();
   const currentUserId = session?.user?.id;
   const [searchParams, setSearchParams] = useSearchParams();
   const urlQuery = searchParams.get('q') || '';
@@ -105,6 +107,22 @@ export default function SearchPage({ session }) {
       setActiveFilter(urlTab);
     }
   }, [urlTab]);
+
+  // Escape key handler: clear query if present, or close hub & go back to feed
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (query) {
+          setQuery('');
+          setSearchParams({});
+        } else {
+          navigate('/');
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [query, navigate, setSearchParams]);
 
   const handleQueryChange = (e) => {
     const val = e.target.value;
@@ -523,14 +541,37 @@ export default function SearchPage({ session }) {
 
         {/* Center Search Hub */}
         <div className="flex-1 w-full max-w-2xl">
-          {/* Header */}
-          <div className="mb-5">
-            <h1 className="text-2xl font-bold mb-1" style={{ color: 'var(--text-color)' }}>
-              Search & Explore
-            </h1>
-            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-              Discover engineers, tech discussions, code snippets, and skills across Connectra
-            </p>
+          {/* Header with Close Hub Cross Mark */}
+          <div className="mb-5 flex items-start justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <h1 className="text-2xl font-bold" style={{ color: 'var(--text-color)' }}>
+                  Search & Explore
+                </h1>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-500 border border-orange-500/20">
+                  Dev Hub
+                </span>
+              </div>
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                Discover engineers, tech discussions, code snippets, and skills across Connectra
+              </p>
+            </div>
+
+            {/* Cross mark to close/stop the Search Hub and return to Feed */}
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="px-3 py-2 rounded-xl border transition-all cursor-pointer hover:border-orange-500 hover:bg-orange-500/10 text-muted hover:text-white shrink-0 flex items-center gap-1.5 text-xs font-semibold shadow-xs"
+              style={{
+                backgroundColor: 'var(--surface-color)',
+                borderColor: 'var(--border-color)',
+              }}
+              title="Close Search Hub & Return to Feed (Esc)"
+              aria-label="Close Search Hub"
+            >
+              <X size={15} className="text-orange-500" />
+              <span className="hidden sm:inline">Close</span>
+            </button>
           </div>
 
           {/* Search Bar & Working Filter Hub */}
@@ -1071,7 +1112,16 @@ export default function SearchPage({ session }) {
                             </div>
 
                             {/* Actions & Follow */}
-                            <div className="flex items-center gap-2 shrink-0 relative">
+                            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 relative">
+                              {/* Direct Message shortcut */}
+                              <Link
+                                to={`/chat?user=${user.id}`}
+                                className="p-2 rounded-xl text-stone-400 hover:text-orange-500 hover:bg-orange-500/10 transition-all border border-transparent hover:border-orange-500/30 cursor-pointer flex items-center justify-center shrink-0"
+                                title={`Direct message @${user.displayName}`}
+                              >
+                                <MessageSquare size={15} />
+                              </Link>
+
                               {blockedUserIds.includes(user.id) ? (
                                 <button
                                   onClick={() => handleUnblockUser(user.id)}
