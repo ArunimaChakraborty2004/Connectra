@@ -332,7 +332,7 @@ export default function AICopilotWidget({ session }) {
     setTimeout(() => setCopiedIndex(null), 2000);
   };
 
-  // Render inline formatting (bold, inline code)
+  // Render inline formatting (bold, italic, inline code)
   const renderInline = (text) => {
     if (!text) return null;
 
@@ -344,10 +344,10 @@ export default function AICopilotWidget({ session }) {
         return (
           <code
             key={cIdx}
-            className={`px-1.5 py-0.5 mx-0.5 rounded font-mono text-[11px] border ${
+            className={`px-1.5 py-0.5 mx-0.5 rounded font-mono text-[11px] border shadow-2xs ${
               isDark
-                ? 'bg-black/50 text-amber-300 border-amber-500/20'
-                : 'bg-orange-50 text-orange-700 border-orange-200'
+                ? 'bg-black/60 text-amber-300 border-amber-500/25'
+                : 'bg-orange-50 text-orange-800 border-orange-200'
             }`}
           >
             {cPart.slice(1, -1)}
@@ -358,17 +358,35 @@ export default function AICopilotWidget({ session }) {
       // Split on **bold**
       const boldParts = cPart.split(/(\*\*.*?\*\*)/g);
       return boldParts.map((bPart, bIdx) => {
-        if (bPart.startsWith('**') && bPart.endsWith('**') && bPart.length > 4) {
+        if (bPart.startsWith('**') && bPart.endsWith('**') && bPart.length >= 4) {
           return (
             <strong
               key={`${cIdx}-${bIdx}`}
-              className={isDark ? 'text-orange-400 font-bold' : 'text-[#ea580c] font-bold'}
+              className={isDark ? 'text-amber-100 font-bold' : 'text-stone-900 font-bold'}
             >
               {bPart.slice(2, -2)}
             </strong>
           );
         }
-        return bPart;
+
+        // Split on *italic* or _italic_
+        const italicParts = bPart.split(/(\*[^*]+\*|_[^_]+_)/g);
+        return italicParts.map((iPart, iIdx) => {
+          if (
+            (iPart.startsWith('*') && iPart.endsWith('*') && iPart.length >= 3) ||
+            (iPart.startsWith('_') && iPart.endsWith('_') && iPart.length >= 3)
+          ) {
+            return (
+              <em
+                key={`${cIdx}-${bIdx}-${iIdx}`}
+                className="italic font-medium text-stone-700 dark:text-stone-300"
+              >
+                {iPart.slice(1, -1)}
+              </em>
+            );
+          }
+          return iPart;
+        });
       });
     });
   };
@@ -545,125 +563,120 @@ export default function AICopilotWidget({ session }) {
                 : 'bg-white text-[#1c130d] border-[#f1e4d3] shadow-orange-950/15'
             }`}
           >
-            {/* Header */}
+            {/* Header Tier 1: Brand & Window Actions */}
             <div
-              className={`p-3.5 border-b flex items-center justify-between transition-colors ${
+              className={`p-3 border-b flex items-center justify-between transition-colors ${
                 isDark
                   ? 'bg-gradient-to-r from-[#211710] via-[#1a120d] to-[#211710] border-[#382416]'
                   : 'bg-gradient-to-r from-[#fff7ed] via-[#fffdfa] to-white border-[#f1e4d3]'
               }`}
             >
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#ea580c] to-[#f97316] flex items-center justify-center text-white shadow-md shadow-orange-500/25 shrink-0">
-                  <Sparkles size={18} />
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-[#ea580c] to-[#f97316] flex items-center justify-center text-white shadow-md shadow-orange-500/25 shrink-0">
+                  <Sparkles size={16} />
                 </div>
-                <div>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-sm font-bold tracking-tight">Connectra Copilot</span>
-                    <span className="text-[10px] uppercase font-extrabold px-1.5 py-0.2 rounded-full bg-orange-500/15 text-orange-500 border border-orange-500/25">
-                      v2.0 AI
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-[11px] opacity-75">
-                    <span className="truncate max-w-[100px]" title={activeSession?.title}>
-                      {activeSession?.title || `@${devName}`}
-                    </span>
-                    <span>·</span>
-                    <button
-                      onClick={() => setShowModelPicker(p => !p)}
-                      className="flex items-center gap-1 font-mono text-[10px] text-orange-500 hover:underline cursor-pointer"
-                    >
-                      <Cpu size={10} />
-                      {AVAILABLE_MODELS.find(m => m.id === selectedModel)?.name || 'Qwen 3.8'}
-                      <ChevronDown size={10} />
-                    </button>
-                    <span>·</span>
-                    {/* RAG Toggle Pill */}
-                    <button
-                      type="button"
-                      onClick={() => setRagEnabled(p => !p)}
-                      className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-1 cursor-pointer transition-colors border ${
-                        ragEnabled
-                          ? 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30'
-                          : 'bg-stone-500/15 text-stone-400 border-stone-500/30'
-                      }`}
-                      title={ragEnabled ? `RAG Active: Indexing ${ragDocumentCount} workspace records` : 'RAG Disabled (Zero-Shot)'}
-                    >
-                      <Database size={9} />
-                      <span>{ragEnabled ? 'RAG: ON' : 'RAG: OFF'}</span>
-                    </button>
-                  </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold tracking-tight text-stone-900 dark:text-stone-100">
+                    Connectra Copilot
+                  </span>
+                  <span className="text-[10px] uppercase font-extrabold px-1.5 py-0.2 rounded-full bg-orange-500/15 text-orange-500 border border-orange-500/25">
+                    v2.0 AI
+                  </span>
                 </div>
               </div>
 
-              {/* Window Controls: New Chat, History, Dark Toggle, Expand, Close */}
+              {/* Window Actions */}
               <div className="flex items-center gap-1">
-                {/* + New Chat Button */}
-                <button
-                  type="button"
-                  onClick={handleStartNewChat}
-                  className="flex items-center gap-1 px-2 py-1 rounded-xl bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white hover:brightness-105 transition-all text-xs font-bold cursor-pointer shadow-xs"
-                  title="Start New Chat"
-                >
-                  <Plus size={13} strokeWidth={2.8} />
-                  <span className="text-[10px]">New</span>
-                </button>
-
-                {/* Previous Chats / History Drawer Toggle */}
-                <button
-                  type="button"
-                  onClick={() => setShowHistoryDrawer(p => !p)}
-                  className={`p-1.5 rounded-xl transition-colors text-xs cursor-pointer ${
-                    showHistoryDrawer
-                      ? 'bg-orange-500/20 text-orange-500 font-bold'
-                      : isDark
-                      ? 'text-stone-400 hover:bg-stone-800'
-                      : 'text-stone-600 hover:bg-orange-50'
-                  }`}
-                  title="View Previous Chats"
-                >
-                  <History size={16} />
-                </button>
-
-                {/* Theme Toggle Button */}
                 <button
                   type="button"
                   onClick={toggleTheme}
-                  className={`flex items-center gap-1 px-2 py-1 rounded-xl transition-all text-xs font-bold border cursor-pointer ${
-                    isDark
-                      ? 'bg-amber-400/15 border-amber-400/30 text-amber-300 hover:bg-amber-400/25'
-                      : 'bg-[#fff7ed] border-orange-200 text-stone-700 hover:bg-[#ffedd5]'
-                  }`}
-                  title={isDark ? 'Switch to Warm Cream Light' : 'Switch to Cyber Dark Mode'}
+                  className="p-1.5 rounded-lg text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
+                  title={isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
                 >
-                  {isDark ? <Sun size={13} className="text-amber-400" /> : <Moon size={13} className="text-[#ea580c]" />}
-                  <span className="text-[10px] hidden xs:inline">{isDark ? 'Light' : 'Dark'}</span>
+                  {isDark ? <Sun size={15} className="text-amber-400" /> : <Moon size={15} className="text-orange-500" />}
                 </button>
 
-                {/* Expand / Minimize Window */}
                 <button
                   type="button"
                   onClick={() => setIsExpanded(p => !p)}
-                  className={`p-1.5 rounded-xl transition-colors text-xs hidden sm:flex cursor-pointer ${
-                    isDark ? 'text-stone-400 hover:bg-stone-800' : 'text-stone-600 hover:bg-orange-50'
-                  }`}
-                  title={isExpanded ? 'Collapse' : 'Expand window'}
+                  className="p-1.5 rounded-lg text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
+                  title={isExpanded ? 'Restore Size' : 'Expand View'}
                 >
-                  {isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                  {isExpanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
                 </button>
 
-                {/* Close Button */}
                 <button
                   type="button"
                   onClick={() => setIsOpen(false)}
-                  className={`p-1.5 rounded-xl transition-colors text-xs cursor-pointer ${
-                    isDark
-                      ? 'text-stone-400 hover:text-white hover:bg-stone-800'
-                      : 'text-stone-600 hover:text-stone-900 hover:bg-orange-50'
-                  }`}
+                  className="p-1.5 rounded-lg text-stone-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer"
                   title="Close Copilot"
                 >
-                  <X size={17} />
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+
+            {/* Header Tier 2: Dedicated Control Toolbar (No Awkward Line Wrapping!) */}
+            <div
+              className={`px-3 py-1.5 border-b flex items-center justify-between gap-2 text-xs flex-wrap ${
+                isDark ? 'bg-[#19110b] border-[#382416]' : 'bg-[#fffaf5] border-[#f1e4d3]'
+              }`}
+            >
+              {/* Left Controls: Model Switcher & RAG Pill */}
+              <div className="flex items-center gap-1.5 flex-nowrap">
+                {/* Model Selector Dropdown Trigger */}
+                <button
+                  type="button"
+                  onClick={() => setShowModelPicker(p => !p)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-mono text-[11px] font-semibold bg-white dark:bg-stone-800 border border-[#f1e4d3] dark:border-stone-700 shadow-2xs hover:border-orange-500/60 text-stone-700 dark:text-stone-200 transition-colors cursor-pointer whitespace-nowrap"
+                  title="Switch LLM Model"
+                >
+                  <Cpu size={12} className="text-orange-500 shrink-0" />
+                  <span className="truncate max-w-[120px]">
+                    {AVAILABLE_MODELS.find(m => m.id === selectedModel)?.name || 'Qwen 3.8'}
+                  </span>
+                  <ChevronDown size={11} className="opacity-60 shrink-0" />
+                </button>
+
+                {/* RAG Grounding Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setRagEnabled(p => !p)}
+                  className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer whitespace-nowrap shadow-2xs ${
+                    ragEnabled
+                      ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/35'
+                      : 'bg-stone-100 dark:bg-stone-800 text-stone-500 border-stone-200 dark:border-stone-700'
+                  }`}
+                  title={ragEnabled ? `RAG Active: Indexing ${ragDocumentCount} workspace records` : 'RAG Disabled (Zero-Shot)'}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${ragEnabled ? 'bg-emerald-500 animate-pulse' : 'bg-stone-400'}`} />
+                  <span>{ragEnabled ? 'RAG: ON' : 'RAG: OFF'}</span>
+                </button>
+              </div>
+
+              {/* Right Controls: New Chat & History */}
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={handleStartNewChat}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 text-orange-600 dark:text-orange-400 font-bold border border-orange-500/25 transition-colors text-[11px] cursor-pointer"
+                  title="Start New Chat"
+                >
+                  <Plus size={12} strokeWidth={2.5} />
+                  <span>New</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowHistoryDrawer(p => !p)}
+                  className={`p-1.5 rounded-lg transition-colors text-xs cursor-pointer border ${
+                    showHistoryDrawer
+                      ? 'bg-orange-500/20 text-orange-500 border-orange-500/30'
+                      : 'bg-transparent text-stone-500 border-transparent hover:bg-black/5 dark:hover:bg-white/5'
+                  }`}
+                  title="View Previous Chats"
+                >
+                  <History size={14} />
                 </button>
               </div>
             </div>
@@ -791,20 +804,25 @@ export default function AICopilotWidget({ session }) {
                       {renderFormattedContent(m.content)}
                     </div>
 
-                    {/* Cited RAG Knowledge Sources */}
+                    {/* Cited RAG Knowledge Sources (Beautified Glass Chips) */}
                     {m.sources && m.sources.length > 0 && (
-                      <div className="mt-2.5 pt-2 border-t border-orange-500/15 text-[10px] space-y-1">
-                        <span className="font-bold text-orange-500 flex items-center gap-1">
-                          <BookOpen size={10} /> Grounded with {m.sources.length} Workspace Reference(s):
-                        </span>
-                        <div className="flex flex-wrap gap-1">
+                      <div className="mt-3 pt-2.5 border-t border-black/5 dark:border-white/10 space-y-1.5">
+                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-stone-500 dark:text-stone-400">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          <span>Grounded with {m.sources.length} Workspace Reference(s):</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
                           {m.sources.map((src, sIdx) => (
-                            <span
+                            <div
                               key={sIdx}
-                              className="px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 font-mono text-[9px] border border-orange-500/20"
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-stone-100/90 dark:bg-black/40 border border-stone-200/90 dark:border-white/10 text-stone-700 dark:text-stone-300 hover:border-orange-500/60 transition-colors shadow-2xs group"
+                              title={src.title}
                             >
-                              [Ref {sIdx + 1}]: {src.title}
-                            </span>
+                              <span className="font-mono font-bold text-[10px] text-orange-600 dark:text-orange-400">
+                                [Ref {sIdx + 1}]
+                              </span>
+                              <span className="truncate max-w-[200px]">{src.title}</span>
+                            </div>
                           ))}
                         </div>
                       </div>

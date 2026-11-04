@@ -14,23 +14,40 @@ export default function ReelsPage({ session }) {
   const [activeReelId, setActiveReelId] = useState(null);
 
   const fetchReels = async () => {
-    const { data, error } = await supabase
-      .from('reels')
-      .select(`
-        *,
-        profiles(username, avatar_url),
-        reel_likes(id, user_id),
-        reel_comments(id, user_id, content, created_at, profiles(username, avatar_url))
-      `)
-      .order('created_at', { ascending: false });
-    
-    if (data) {
-      setReels(data);
-      if (data.length > 0 && !activeReelId) {
-        setActiveReelId(data[0].id);
+    try {
+      const { data, error } = await supabase
+        .from('reels')
+        .select(`
+          *,
+          profiles(username, avatar_url),
+          reel_likes(id, user_id),
+          reel_comments(id, user_id, content, created_at, profiles(username, avatar_url))
+        `)
+        .order('created_at', { ascending: false });
+
+      let combined = [];
+      if (data && data.length > 0) {
+        combined = [...data];
       }
+      // Merge optimistic locally saved reels so newly created reels always display immediately
+      const localReels = JSON.parse(localStorage.getItem('connectra_active_reels') || '[]');
+      localReels.forEach((lr) => {
+        if (!combined.some((r) => r.id === lr.id)) {
+          combined.unshift(lr);
+        }
+      });
+
+      setReels(combined);
+      if (combined.length > 0 && !activeReelId) {
+        setActiveReelId(combined[0].id);
+      }
+    } catch (err) {
+      console.warn('Error fetching reels, using local cache:', err);
+      const localReels = JSON.parse(localStorage.getItem('connectra_active_reels') || '[]');
+      setReels(localReels);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
