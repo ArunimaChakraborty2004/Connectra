@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import Sidebar from '../components/Sidebar';
 import PostCard from '../components/feed/PostCard';
@@ -60,6 +60,48 @@ const parseTechStack = (techStack) => {
   return [];
 };
 
+// Calculate search relevance score: higher means better match
+const getMatchScore = (user, q) => {
+  if (!q || !user) return 0;
+  const lowerQ = q.toLowerCase();
+  const uname = (user.username || '').toLowerCase();
+  const fname = (user.full_name || '').toLowerCase();
+  const dname = (user.displayName || '').toLowerCase();
+  const tech = (Array.isArray(user.tech_stack) ? user.tech_stack.join(' ') : (user.tech_stack || '')).toLowerCase();
+  const bio = (user.bio || '').toLowerCase();
+
+  // 1. Exact match on username: score 100
+  if (uname === lowerQ) return 100;
+  // 2. Starts with query: highest priority prefix match (e.g. typing 'p' matches 'prachi')
+  if (uname.startsWith(lowerQ)) return 85;
+  if (fname.startsWith(lowerQ)) return 75;
+  if (dname.startsWith(lowerQ)) return 70;
+  // 3. Substring match
+  if (uname.includes(lowerQ)) return 50;
+  if (fname.includes(lowerQ)) return 40;
+  if (dname.includes(lowerQ)) return 35;
+  if (tech.includes(lowerQ)) return 25;
+  if (bio.includes(lowerQ)) return 15;
+  return 0;
+};
+
+// Highlight matched query letters in text
+const highlightMatch = (text, q) => {
+  if (!q || !text) return text;
+  const str = String(text);
+  const idx = str.toLowerCase().indexOf(q.toLowerCase());
+  if (idx === -1) return str;
+  return (
+    <>
+      {str.slice(0, idx)}
+      <span className="text-orange-500 font-extrabold underline decoration-orange-500/50">
+        {str.slice(idx, idx + q.length)}
+      </span>
+      {str.slice(idx + q.length)}
+    </>
+  );
+};
+
 export default function SearchPage({ session }) {
   const navigate = useNavigate();
   const currentUserId = session?.user?.id;
@@ -74,6 +116,11 @@ export default function SearchPage({ session }) {
   const [loadingPosts, setLoadingPosts] = useState(false);
   const [profile, setProfile] = useState(null);
   const [connections, setConnections] = useState({});
+
+  // Typeahead suggestions popup state
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [allProfilesCache, setAllProfilesCache] = useState([]);
+  const searchContainerRef = useRef(null);
 
   // Filter states
   const [contentType, setContentType] = useState('all'); // 'all' | 'devs' | 'posts'
@@ -97,6 +144,35 @@ export default function SearchPage({ session }) {
   const [reportDetails, setReportDetails] = useState('');
   const [submittingReport, setSubmittingReport] = useState(false);
 
+  // Pre-load all available profiles once on mount for instant zero-latency popup
+  useEffect(() => {
+    supabase
+      .from('profiles')
+      .select('*')
+      .limit(80)
+      .then(({ data }) => {
+        if (data) {
+          const norm = data.map((u) => ({
+            ...u,
+            displayName: u.username || u.full_name || (u.id ? `Developer_${u.id.slice(0, 5)}` : 'Developer'),
+            profileSlug: u.username || u.id || 'developer',
+          }));
+          setAllProfilesCache(norm);
+        }
+      });
+  }, []);
+
+  // Click outside listener to close floating typeahead suggestions
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   // Sync state when URL parameter changes
   useEffect(() => {
     setQuery(urlQuery);
@@ -108,10 +184,11 @@ export default function SearchPage({ session }) {
     }
   }, [urlTab]);
 
-  // Escape key handler: clear query if present, or close hub & go back to feed
+  // Escape key handler: clear query or close hub & go back to feed
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
+        setShowSuggestions(false);
         if (query) {
           setQuery('');
           setSearchParams({});
@@ -127,6 +204,7 @@ export default function SearchPage({ session }) {
   const handleQueryChange = (e) => {
     const val = e.target.value;
     setQuery(val);
+    setShowSuggestions(true);
     if (val.trim()) {
       setSearchParams({ q: val });
     } else {
@@ -136,6 +214,7 @@ export default function SearchPage({ session }) {
 
   const handleSearchSubmit = (e) => {
     if (e) e.preventDefault();
+    setShowSuggestions(false);
     if (query.trim()) {
       setSearchParams({ q: query.trim() });
     } else {
@@ -440,8 +519,22 @@ export default function SearchPage({ session }) {
     return true;
   });
 
+  // Compute instant matching suggestions for typeahead dropdown
+  const cleanQ = query.trim().replace(/^#/, '');
+  const candidatePool = allProfilesCache.length > 0 ? allProfilesCache : users;
+  const instantSuggestions = cleanQ
+    ? candidatePool
+        .filter((u) => u && u.id && u.id !== currentUserId && getMatchScore(u, cleanQ) > 0)
+        .sort((a, b) => getMatchScore(b, cleanQ) - getMatchScore(a, cleanQ))
+        .slice(0, 6)
+    : [];
+
   // Sort developers
-  if (sortBy === 'xp') {
+  if (sortBy === 'relevance' && cleanQ) {
+    filteredUsers = [...filteredUsers].sort(
+      (a, b) => getMatchScore(b, cleanQ) - getMatchScore(a, cleanQ)
+    );
+  } else if (sortBy === 'xp') {
     filteredUsers = [...filteredUsers].sort((a, b) => (b.xp || 0) - (a.xp || 0));
   } else if (sortBy === 'newest') {
     filteredUsers = [...filteredUsers].sort(
@@ -581,8 +674,8 @@ export default function SearchPage({ session }) {
             style={{ border: '1px solid var(--border-color)' }}
           >
             <div className="flex items-center gap-2">
-              {/* Input field */}
-              <div className="relative flex-1">
+              {/* Input field with ref for click-outside detection */}
+              <div className="relative flex-1" ref={searchContainerRef}>
                 <Search
                   className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
                   size={18}
@@ -592,6 +685,9 @@ export default function SearchPage({ session }) {
                   type="text"
                   value={query}
                   onChange={handleQueryChange}
+                  onFocus={() => {
+                    if (query.trim()) setShowSuggestions(true);
+                  }}
                   placeholder="Search by username, skill (e.g. React, CyberSec), or topic..."
                   className="w-full rounded-xl pl-10 pr-9 py-2.5 text-sm outline-none transition-all"
                   style={{
@@ -599,8 +695,8 @@ export default function SearchPage({ session }) {
                     color: 'var(--text-color)',
                     border: '1px solid var(--border-color)',
                   }}
-                  onFocus={(e) => (e.target.style.borderColor = 'var(--primary-color)')}
-                  onBlur={(e) => (e.target.style.borderColor = 'var(--border-color)')}
+                  onFocusCapture={(e) => (e.target.style.borderColor = 'var(--primary-color)')}
+                  onBlurCapture={(e) => (e.target.style.borderColor = 'var(--border-color)')}
                 />
                 {query && (
                   <button
@@ -608,6 +704,7 @@ export default function SearchPage({ session }) {
                     onClick={() => {
                       setQuery('');
                       setSearchParams({});
+                      setShowSuggestions(false);
                     }}
                     className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full text-muted hover:text-white transition-colors cursor-pointer"
                     title="Clear search"
@@ -615,6 +712,145 @@ export default function SearchPage({ session }) {
                     <X size={15} />
                   </button>
                 )}
+
+                {/* Instant Typeahead Suggestions Dropdown Popup */}
+                <AnimatePresence>
+                  {showSuggestions && cleanQ && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute left-0 right-0 top-full mt-2 z-50 rounded-2xl shadow-2xl border backdrop-blur-2xl overflow-hidden"
+                      style={{
+                        backgroundColor: 'var(--surface-color)',
+                        borderColor: 'var(--border-color)',
+                      }}
+                    >
+                      {/* Header */}
+                      <div
+                        className="p-2.5 px-3.5 border-b flex items-center justify-between text-xs"
+                        style={{ borderColor: 'var(--border-color)' }}
+                      >
+                        <span className="font-semibold text-orange-500 flex items-center gap-1.5">
+                          <Users size={14} />
+                          Matching Developers ({instantSuggestions.length})
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowSuggestions(false)}
+                          className="text-muted hover:text-white transition-colors p-0.5 rounded cursor-pointer"
+                          title="Close suggestions"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+
+                      {/* Suggestions List */}
+                      {instantSuggestions.length > 0 ? (
+                        <div
+                          className="py-1 max-h-72 overflow-y-auto divide-y"
+                          style={{ borderColor: 'var(--border-color)' }}
+                        >
+                          {instantSuggestions.map((user) => {
+                            const avatar = user.avatar_url;
+                            const tech = parseTechStack(user.tech_stack);
+                            return (
+                              <div
+                                key={user.id}
+                                className="p-2.5 px-3.5 flex items-center justify-between gap-3 hover:bg-orange-500/10 transition-colors cursor-pointer group"
+                                onClick={() => {
+                                  setShowSuggestions(false);
+                                  navigate(`/${user.profileSlug}`);
+                                }}
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <div className="w-9 h-9 rounded-full overflow-hidden bg-gradient-to-tr from-orange-500 to-amber-500 p-0.5 shrink-0 flex items-center justify-center">
+                                    {avatar ? (
+                                      <img
+                                        src={avatar}
+                                        alt={user.displayName}
+                                        className="w-full h-full object-cover rounded-full"
+                                      />
+                                    ) : (
+                                      <div className="w-full h-full rounded-full bg-orange-600 flex items-center justify-center text-white text-xs font-bold">
+                                        {(user.displayName || 'U')[0].toUpperCase()}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="min-w-0 text-left">
+                                    <div
+                                      className="text-sm font-semibold truncate flex items-center gap-1.5"
+                                      style={{ color: 'var(--text-color)' }}
+                                    >
+                                      {highlightMatch(user.full_name || user.displayName, cleanQ)}
+                                    </div>
+                                    <div className="text-xs text-orange-500/90 font-mono truncate">
+                                      @{highlightMatch(user.username || user.profileSlug, cleanQ)}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div
+                                  className="flex items-center gap-1.5 shrink-0"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {tech[0] && (
+                                    <span className="hidden sm:inline-block text-[10px] px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/20 font-medium">
+                                      {tech[0]}
+                                    </span>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setShowSuggestions(false);
+                                      navigate(`/chat?user=${user.id}`);
+                                    }}
+                                    className="p-1.5 rounded-lg border hover:border-orange-500 hover:bg-orange-500/10 text-muted hover:text-orange-500 transition-colors cursor-pointer"
+                                    style={{ borderColor: 'var(--border-color)' }}
+                                    title={`Message @${user.username}`}
+                                  >
+                                    <MessageSquare size={13} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setShowSuggestions(false);
+                                      navigate(`/${user.profileSlug}`);
+                                    }}
+                                    className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-orange-500 text-white hover:bg-orange-600 transition-colors shadow-xs cursor-pointer"
+                                  >
+                                    View
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="p-4 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
+                          No developer matches for &ldquo;<span className="text-orange-500 font-bold">{cleanQ}</span>&rdquo;.<br />
+                          Press Enter to search all posts, feed, and discussions.
+                        </div>
+                      )}
+
+                      {/* Footer */}
+                      <div
+                        className="p-2.5 px-3.5 border-t flex items-center justify-between text-[11px] cursor-pointer hover:bg-orange-500/10 transition-colors"
+                        style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
+                        onClick={handleSearchSubmit}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <Sparkles size={12} className="text-orange-500" />
+                          Press <kbd className="px-1.5 py-0.5 rounded bg-black/20 font-mono text-[10px] border border-white/10">Enter</kbd> to search everything
+                        </span>
+                        <span className="text-orange-500 font-semibold hover:underline">
+                          See all results &rarr;
+                        </span>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
 
               {/* Working Filter Button */}

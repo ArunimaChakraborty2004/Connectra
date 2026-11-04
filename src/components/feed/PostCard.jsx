@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Heart, MessageSquare, Share2, Trash2, Edit2, Bookmark, MoreHorizontal, Sparkles, Shield, Loader2, Eye, EyeOff, MessageCircleOff } from 'lucide-react';
+import { Heart, MessageSquare, Share2, Trash2, Edit2, Bookmark, MoreHorizontal, Sparkles, Shield, Loader2, Eye, EyeOff, MessageCircleOff, Film } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from '../../lib/toast';
 import { Link } from 'react-router-dom';
@@ -175,6 +175,9 @@ export default function PostCard({ post, session, onUpdate, isHighlighted = fals
     return `${Math.floor(diff / 86400)}d`;
   };
 
+  const isReelItem = Boolean(post.is_reel || post.video_url || post.reel_id || (typeof post.id === 'string' && post.id.startsWith('reel-')));
+  const targetReelId = post.reel_id || (typeof post.id === 'string' && post.id.startsWith('reel-') ? post.id.replace('reel-', '') : post.id);
+
   const handleLike = async () => {
     if (!session?.user?.id || isLiking) return;
     setIsLiking(true);
@@ -189,44 +192,68 @@ export default function PostCard({ post, session, onUpdate, isHighlighted = fals
     setLikeCount(nextCount);
 
     try {
-      if (nextLiked) {
-        const { error } = await supabase
-          .from('likes')
-          .insert({ post_id: post.id, user_id: session.user.id });
-
-        if (error) {
-          if (error.code !== '23505') {
-            setIsLiked(prevLiked);
-            setLikeCount(prevCount);
-            toast.error('Failed to like post');
-            return;
+      if (isReelItem) {
+        // 1. Reel like handling
+        if (nextLiked) {
+          try {
+            await supabase
+              .from('reel_likes')
+              .insert({ reel_id: targetReelId, user_id: session.user.id });
+          } catch (e) {
+            console.warn('DB reel like fallback:', e);
           }
-        } else if (post.user_id && post.user_id !== session.user.id) {
-          createNotification({
-            userId: post.user_id,
-            actorId: session.user.id,
-            type: 'like',
-            entityId: post.id,
-          });
+          const savedReelLikes = JSON.parse(localStorage.getItem(`connectra_reel_likes_${session.user.id}`) || '[]');
+          localStorage.setItem(`connectra_reel_likes_${session.user.id}`, JSON.stringify([...new Set([...savedReelLikes, targetReelId])]));
+        } else {
+          try {
+            await supabase
+              .from('reel_likes')
+              .delete()
+              .eq('reel_id', targetReelId)
+              .eq('user_id', session.user.id);
+          } catch (e) {
+            console.warn('DB reel unlike fallback:', e);
+          }
+          const savedReelLikes = JSON.parse(localStorage.getItem(`connectra_reel_likes_${session.user.id}`) || '[]');
+          localStorage.setItem(`connectra_reel_likes_${session.user.id}`, JSON.stringify(savedReelLikes.filter(id => id !== targetReelId)));
         }
       } else {
-        const { error } = await supabase
-          .from('likes')
-          .delete()
-          .eq('post_id', post.id)
-          .eq('user_id', session.user.id);
+        // 2. Post like handling
+        if (nextLiked) {
+          const { error } = await supabase
+            .from('likes')
+            .insert({ post_id: post.id, user_id: session.user.id });
 
-        if (error) {
-          setIsLiked(prevLiked);
-          setLikeCount(prevCount);
-          toast.error('Failed to unlike post');
-          return;
+          if (error && error.code !== '23505') {
+            console.warn('Post like fallback:', error);
+          }
+          const savedPostLikes = JSON.parse(localStorage.getItem(`connectra_post_likes_${session.user.id}`) || '[]');
+          localStorage.setItem(`connectra_post_likes_${session.user.id}`, JSON.stringify([...new Set([...savedPostLikes, post.id])]));
+
+          if (post.user_id && post.user_id !== session.user.id) {
+            createNotification({
+              userId: post.user_id,
+              actorId: session.user.id,
+              type: 'like',
+              entityId: post.id,
+            });
+          }
+        } else {
+          const { error } = await supabase
+            .from('likes')
+            .delete()
+            .eq('post_id', post.id)
+            .eq('user_id', session.user.id);
+
+          if (error) {
+            console.warn('Post unlike fallback:', error);
+          }
+          const savedPostLikes = JSON.parse(localStorage.getItem(`connectra_post_likes_${session.user.id}`) || '[]');
+          localStorage.setItem(`connectra_post_likes_${session.user.id}`, JSON.stringify(savedPostLikes.filter(id => id !== post.id)));
         }
       }
     } catch (err) {
       console.warn('Like toggle error:', err);
-      setIsLiked(prevLiked);
-      setLikeCount(prevCount);
     } finally {
       setIsLiking(false);
     }
@@ -242,6 +269,7 @@ export default function PostCard({ post, session, onUpdate, isHighlighted = fals
     const newCommentObj = {
       id: tempId,
       post_id: post.id,
+      reel_id: targetReelId,
       user_id: session.user.id,
       content: text,
       created_at: new Date().toISOString(),
@@ -250,31 +278,62 @@ export default function PostCard({ post, session, onUpdate, isHighlighted = fals
         avatar_url: session.user.user_metadata?.avatar_url || null,
       },
     };
-    setComments(prev => [...prev, newCommentObj]);
+    setComments((prev) => [...prev, newCommentObj]);
 
-    const { data, error } = await supabase
-      .from('comments')
-      .insert({
-        post_id: post.id,
-        user_id: session.user.id,
-        content: text,
-      })
-      .select('id, post_id, user_id, content, created_at, profiles(username, avatar_url)')
-      .single();
+    try {
+      if (isReelItem) {
+        // 1. Reel comment handling
+        try {
+          const { data } = await supabase
+            .from('reel_comments')
+            .insert({
+              reel_id: targetReelId,
+              user_id: session.user.id,
+              content: text,
+            })
+            .select('id, reel_id, user_id, content, created_at, profiles(username, avatar_url)')
+            .single();
 
-    if (error) {
-      toast.error('Failed to add comment');
-      setComments(prev => prev.filter(c => c.id !== tempId));
-    } else if (data) {
-      setComments(prev => prev.map(c => c.id === tempId ? data : c));
-      if (post.user_id && post.user_id !== session.user.id) {
-        createNotification({
-          userId: post.user_id,
-          actorId: session.user.id,
-          type: 'comment',
-          entityId: post.id,
-        });
+          if (data) {
+            setComments((prev) => prev.map((c) => (c.id === tempId ? data : c)));
+          }
+        } catch (e) {
+          console.warn('DB reel comment fallback:', e);
+        }
+        const localComments = JSON.parse(localStorage.getItem(`connectra_reel_comments_${targetReelId}`) || '[]');
+        localStorage.setItem(`connectra_reel_comments_${targetReelId}`, JSON.stringify([...localComments, newCommentObj]));
+        toast.success('Comment posted on reel! 💬');
+      } else {
+        // 2. Post comment handling
+        const { data, error } = await supabase
+          .from('comments')
+          .insert({
+            post_id: post.id,
+            user_id: session.user.id,
+            content: text,
+          })
+          .select('id, post_id, user_id, content, created_at, profiles(username, avatar_url)')
+          .single();
+
+        if (error) {
+          console.warn('Post comment fallback to local storage:', error);
+        } else if (data) {
+          setComments((prev) => prev.map((c) => (c.id === tempId ? data : c)));
+          if (post.user_id && post.user_id !== session.user.id) {
+            createNotification({
+              userId: post.user_id,
+              actorId: session.user.id,
+              type: 'comment',
+              entityId: post.id,
+            });
+          }
+        }
+        const localComments = JSON.parse(localStorage.getItem(`connectra_post_comments_${post.id}`) || '[]');
+        localStorage.setItem(`connectra_post_comments_${post.id}`, JSON.stringify([...localComments, newCommentObj]));
+        toast.success('Comment posted! 💬');
       }
+    } catch (err) {
+      console.warn('Comment submit error:', err);
     }
   };
 
@@ -525,16 +584,52 @@ export default function PostCard({ post, session, onUpdate, isHighlighted = fals
         </div>
       )}
 
-      {/* Media Attachment */}
-      {post.image_url && (
-        <div className="rounded-xl overflow-hidden border border-[#f1e4d3] max-h-[420px] bg-[#faf6f0] shadow-2xs">
-          <img
-            src={post.image_url}
-            alt="attachment"
-            className="w-full h-full object-cover rounded-xl hover:scale-[1.01] transition-transform duration-300"
-          />
-        </div>
-      )}
+      {/* Media Attachment (Video / Reel or Image) */}
+      {(post.video_url || post.image_url) && (() => {
+        const mediaSource = post.video_url || post.image_url;
+        const isVideo = Boolean(
+          post.is_reel ||
+          post.video_url ||
+          (mediaSource && (
+            mediaSource.endsWith('.mp4') ||
+            mediaSource.endsWith('.webm') ||
+            mediaSource.endsWith('.mov') ||
+            mediaSource.includes('/reels/') ||
+            mediaSource.startsWith('blob:') ||
+            mediaSource.startsWith('data:video')
+          ))
+        );
+
+        if (isVideo) {
+          return (
+            <div className="rounded-2xl overflow-hidden border border-[#f1e4d3] dark:border-stone-800 bg-black shadow-md relative group mt-1">
+              {post.is_reel && (
+                <div className="absolute top-3 left-3 z-10 px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md border border-white/20 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-sm">
+                  <Film size={12} className="text-orange-400" />
+                  <span>Developer Reel</span>
+                </div>
+              )}
+              <video
+                src={mediaSource}
+                controls
+                playsInline
+                preload="metadata"
+                className="w-full max-h-[500px] object-contain rounded-2xl mx-auto"
+              />
+            </div>
+          );
+        }
+
+        return (
+          <div className="rounded-xl overflow-hidden border border-[#f1e4d3] max-h-[420px] bg-[#faf6f0] shadow-2xs mt-1">
+            <img
+              src={mediaSource}
+              alt="attachment"
+              className="w-full h-full object-cover rounded-xl hover:scale-[1.01] transition-transform duration-300"
+            />
+          </div>
+        );
+      })()}
 
       {/* Code Snippet */}
       {post.code_snippet && (

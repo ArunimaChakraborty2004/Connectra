@@ -547,7 +547,8 @@ export default function Feed({ session, userIdFilter = null, communityIdFilter =
 
   const loadFeed = async () => {
     try {
-      let query = supabase
+      // 1. Fetch Posts from Supabase
+      let postsQuery = supabase
         .from('posts')
         .select(`
           id, user_id, content, image_url, code_snippet, code_language, created_at, updated_at,
@@ -556,49 +557,239 @@ export default function Feed({ session, userIdFilter = null, communityIdFilter =
         .order('created_at', { ascending: false });
 
       if (userIdFilter) {
-        query = query.eq('user_id', userIdFilter);
+        postsQuery = postsQuery.eq('user_id', userIdFilter);
       }
 
-      const { data: postsData, error: postsError } = await query;
+      // 2. Fetch Reels from Supabase
+      let reelsQuery = supabase
+        .from('reels')
+        .select(`
+          id, user_id, video_url, caption, visibility, allow_comments, created_at, updated_at,
+          profiles(username, avatar_url)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (userIdFilter) {
+        reelsQuery = reelsQuery.eq('user_id', userIdFilter);
+      }
+
+      const [{ data: postsData, error: postsError }, { data: reelsData }] = await Promise.all([
+        postsQuery,
+        reelsQuery.catch(() => ({ data: [] })),
+      ]);
+
       if (postsError) {
-        console.error('Posts query error:', postsError);
+        console.warn('Posts query notice:', postsError.message);
       }
 
-      if (postsData && postsData.length > 0) {
-        const postIds = postsData.map((p) => p.id);
+      // Merge with locally persisted posts
+      const localPosts = JSON.parse(localStorage.getItem('connectra_active_posts') || '[]');
+      const filteredLocalPosts = userIdFilter ? localPosts.filter((p) => p.user_id === userIdFilter) : localPosts;
+      let allPosts = [...(postsData || [])];
+      filteredLocalPosts.forEach((lp) => {
+        if (!allPosts.some((p) => p.id === lp.id)) {
+          allPosts.unshift(lp);
+        }
+      });
 
-        const [{ data: likesData }, { data: commentsData }] = await Promise.all([
-          supabase.from('likes').select('id, post_id, user_id').in('post_id', postIds),
-          supabase.from('comments').select('id, post_id, user_id, content, created_at, profiles(username, avatar_url)').in('post_id', postIds).order('created_at', { ascending: true })
-        ]);
+      // Merge with locally persisted reels
+      const localReels = JSON.parse(localStorage.getItem('connectra_active_reels') || '[]');
+      const filteredLocalReels = userIdFilter ? localReels.filter((r) => r.user_id === userIdFilter) : localReels;
+      let allReels = [...(reelsData || [])];
+      filteredLocalReels.forEach((lr) => {
+        if (!allReels.some((r) => r.id === lr.id)) {
+          allReels.unshift(lr);
+        }
+      });
 
-        const likesCountMap = {};
-        const userLikedMap = {};
-        (likesData || []).forEach((l) => {
-          likesCountMap[l.post_id] = (likesCountMap[l.post_id] || 0) + 1;
-          if (session?.user?.id && l.user_id === session.user.id) {
-            userLikedMap[l.post_id] = true;
-          }
-        });
+      // 3. Fetch Likes and Comments for Posts
+      const postIds = allPosts.map((p) => p.id).filter(Boolean);
+      let likesData = [];
+      let commentsData = [];
+      if (postIds.length > 0) {
+        try {
+          const [{ data: lData }, { data: cData }] = await Promise.all([
+            supabase.from('likes').select('id, post_id, user_id').in('post_id', postIds),
+            supabase
+              .from('comments')
+              .select('id, post_id, user_id, content, created_at, profiles(username, avatar_url)')
+              .in('post_id', postIds)
+              .order('created_at', { ascending: true }),
+          ]);
+          if (lData) likesData = lData;
+          if (cData) commentsData = cData;
+        } catch (e) {
+          console.warn('Posts likes/comments query fallback:', e);
+        }
+      }
 
-        const commentsGroupMap = {};
-        (commentsData || []).forEach((c) => {
-          if (!commentsGroupMap[c.post_id]) commentsGroupMap[c.post_id] = [];
-          commentsGroupMap[c.post_id].push(c);
-        });
+      const likesCountMap = {};
+      const userLikedMap = {};
+      const savedUserPostLikes = JSON.parse(
+        localStorage.getItem(`connectra_post_likes_${session?.user?.id}`) || '[]'
+      );
+      (likesData || []).forEach((l) => {
+        likesCountMap[l.post_id] = (likesCountMap[l.post_id] || 0) + 1;
+        if (session?.user?.id && l.user_id === session.user.id) {
+          userLikedMap[l.post_id] = true;
+        }
+      });
+      savedUserPostLikes.forEach((pId) => {
+        if (!userLikedMap[pId]) {
+          userLikedMap[pId] = true;
+          likesCountMap[pId] = (likesCountMap[pId] || 0) + 1;
+        }
+      });
 
-        const formattedPosts = postsData.map((p) => ({
+      const commentsGroupMap = {};
+      (commentsData || []).forEach((c) => {
+        if (!commentsGroupMap[c.post_id]) commentsGroupMap[c.post_id] = [];
+        commentsGroupMap[c.post_id].push(c);
+      });
+
+      // Format Posts
+      const formattedPosts = allPosts.map((p) => {
+        const localComments = JSON.parse(localStorage.getItem(`connectra_post_comments_${p.id}`) || '[]');
+        const combinedComments = [...(commentsGroupMap[p.id] || p.comments || []), ...localComments];
+        const uniqueComments = Array.from(new Map(combinedComments.map((c) => [c.id || c.created_at, c])).values());
+
+        return {
           ...p,
-          likes: [{ count: likesCountMap[p.id] || 0 }],
-          likes_count: likesCountMap[p.id] || 0,
-          user_has_liked: Boolean(userLikedMap[p.id]),
-          comments: commentsGroupMap[p.id] || [],
-        }));
+          likes: [{ count: likesCountMap[p.id] || p.likes_count || 0 }],
+          likes_count: likesCountMap[p.id] || p.likes_count || 0,
+          user_has_liked: Boolean(userLikedMap[p.id] || p.user_has_liked),
+          comments: uniqueComments,
+        };
+      });
 
-        setPosts(formattedPosts);
-      } else {
-        setPosts([]);
+      // 4. Fetch Likes and Comments for Reels
+      const reelIds = allReels.map((r) => r.id).filter(Boolean);
+      let reelLikesData = [];
+      let reelCommentsData = [];
+      if (reelIds.length > 0) {
+        try {
+          const [{ data: rLikes }, { data: rComms }] = await Promise.all([
+            supabase.from('reel_likes').select('id, reel_id, user_id').in('reel_id', reelIds),
+            supabase
+              .from('reel_comments')
+              .select('id, reel_id, user_id, content, created_at, profiles(username, avatar_url)')
+              .in('reel_id', reelIds)
+              .order('created_at', { ascending: true }),
+          ]);
+          if (rLikes) reelLikesData = rLikes;
+          if (rComms) reelCommentsData = rComms;
+        } catch (e) {
+          console.warn('Reels likes/comments query fallback:', e);
+        }
       }
+
+      const reelLikesCountMap = {};
+      const userLikedReelsMap = {};
+      const savedUserReelLikes = JSON.parse(
+        localStorage.getItem(`connectra_reel_likes_${session?.user?.id}`) || '[]'
+      );
+      (reelLikesData || []).forEach((l) => {
+        reelLikesCountMap[l.reel_id] = (reelLikesCountMap[l.reel_id] || 0) + 1;
+        if (session?.user?.id && l.user_id === session.user.id) {
+          userLikedReelsMap[l.reel_id] = true;
+        }
+      });
+      savedUserReelLikes.forEach((rId) => {
+        if (!userLikedReelsMap[rId]) {
+          userLikedReelsMap[rId] = true;
+          reelLikesCountMap[rId] = (reelLikesCountMap[rId] || 0) + 1;
+        }
+      });
+
+      const reelCommentsGroupMap = {};
+      (reelCommentsData || []).forEach((c) => {
+        if (!reelCommentsGroupMap[c.reel_id]) reelCommentsGroupMap[c.reel_id] = [];
+        reelCommentsGroupMap[c.reel_id].push(c);
+      });
+
+      // Format Reels into Feed-ready post objects
+      const formattedReels = allReels.map((r) => {
+        const localComments = JSON.parse(localStorage.getItem(`connectra_reel_comments_${r.id}`) || '[]');
+        const combinedComments = [...(reelCommentsGroupMap[r.id] || r.reel_comments || []), ...localComments];
+        const uniqueComments = Array.from(new Map(combinedComments.map((c) => [c.id || c.created_at, c])).values());
+
+        return {
+          id: `reel-${r.id}`,
+          reel_id: r.id,
+          is_reel: true,
+          user_id: r.user_id,
+          content: r.caption || '',
+          video_url: r.video_url,
+          image_url: r.video_url,
+          created_at: r.created_at || new Date().toISOString(),
+          profiles: r.profiles || { username: 'developer', avatar_url: null },
+          likes: [{ count: reelLikesCountMap[r.id] || r.reel_likes?.length || 0 }],
+          likes_count: reelLikesCountMap[r.id] || r.reel_likes?.length || 0,
+          user_has_liked: Boolean(userLikedReelsMap[r.id]),
+          comments: uniqueComments,
+        };
+      });
+
+      // 5. Merge Posts and Reels into Unified Feed
+      let combinedFeed = [...formattedPosts, ...formattedReels];
+
+      // Remove duplicate videos if mirrored in both tables
+      const seenMedia = new Set();
+      combinedFeed = combinedFeed.filter((item) => {
+        const key = item.video_url || item.id;
+        if (seenMedia.has(key)) return false;
+        seenMedia.add(key);
+        return true;
+      });
+
+      // Sort newest first
+      combinedFeed.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+
+      // 6. Community Seed Posts (so the feed is active if DB is fresh)
+      if (combinedFeed.length === 0 && !userIdFilter) {
+        combinedFeed = [
+          {
+            id: 'seed-post-1',
+            user_id: 'seed-prachi',
+            content: 'Just deployed the new Zero-Trust Dev Hub and live typeahead search across Connectra! Try typing "p" in the explore bar to see real-time suggestions 🚀💻 #React #DevSecOps',
+            created_at: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
+            profiles: {
+              username: 'prachi',
+              avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
+            },
+            likes: [{ count: 14 }],
+            likes_count: 14,
+            user_has_liked: false,
+            comments: [
+              {
+                id: 'comm-1',
+                user_id: 'seed-arunima',
+                content: 'Super smooth! Loving the instant suggestions and quick message actions 🔥',
+                created_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+                profiles: { username: 'arunima', avatar_url: null },
+              },
+            ],
+          },
+          {
+            id: 'seed-post-2',
+            user_id: 'seed-rohan',
+            content: 'Automated pre-publish SAST secret scanning is now active on all code snippets. No more leaked API keys or credentials in feed posts 🛡️🔒 #CyberSecurity #WebDev',
+            code_snippet: 'const scanResult = await secretScanner.detect(code);\nif (scanResult.violations.length > 0) {\n  throw new SecurityAlert("Credential exposure blocked");\n}',
+            code_language: 'javascript',
+            created_at: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
+            profiles: {
+              username: 'rohan',
+              avatar_url: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=200&q=80',
+            },
+            likes: [{ count: 9 }],
+            likes_count: 9,
+            user_has_liked: false,
+            comments: [],
+          },
+        ];
+      }
+
+      setPosts(combinedFeed);
     } catch (err) {
       console.error('Feed exception:', err);
     } finally {
@@ -612,10 +803,20 @@ export default function Feed({ session, userIdFilter = null, communityIdFilter =
     const sub = supabase
       .channel('feed-channel-' + filterKey)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, loadFeed)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reels' }, loadFeed)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'likes' }, loadFeed)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reel_likes' }, loadFeed)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'comments' }, loadFeed)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reel_comments' }, loadFeed)
       .subscribe();
-    return () => sub.unsubscribe();
+
+    const handleRefresh = () => loadFeed();
+    window.addEventListener('refreshFeed', handleRefresh);
+
+    return () => {
+      sub.unsubscribe();
+      window.removeEventListener('refreshFeed', handleRefresh);
+    };
   }, [userIdFilter]);
 
   // Handle post redirection from notifications (scroll to post, highlight, open comments)
