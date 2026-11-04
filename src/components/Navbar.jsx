@@ -4,14 +4,22 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import SecurityHubModal from './security/SecurityHubModal';
 
-export default function Navbar({ onOpenSidebar }) {
+export default function Navbar({ onOpenSidebar, session: propSession, profile: propProfile }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
-  const [pendingNotifCount, setPendingNotifCount] = useState(8);
-  const [userProfile, setUserProfile] = useState(null);
+  const [pendingNotifCount, setPendingNotifCount] = useState(0);
+  const [userProfile, setUserProfile] = useState(propProfile || null);
   const [showSecurityHub, setShowSecurityHub] = useState(false);
-  const [session, setSession] = useState(null);
+  const [session, setSession] = useState(propSession || null);
+
+  useEffect(() => {
+    if (propProfile) setUserProfile(propProfile);
+  }, [propProfile]);
+
+  useEffect(() => {
+    if (propSession) setSession(propSession);
+  }, [propSession]);
 
   // Global Dark Mode state management
   const [isDark, setIsDark] = useState(() => {
@@ -49,47 +57,79 @@ export default function Navbar({ onOpenSidebar }) {
     });
   };
 
-
   useEffect(() => {
+    let activeChannel = null;
+
     const fetchData = async () => {
       try {
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
-        setSession(currentSession);
-        if (!currentSession?.user?.id) return;
+        let currentSession = propSession || session;
+        if (!currentSession) {
+          const { data } = await supabase.auth.getSession();
+          currentSession = data?.session;
+          if (currentSession) setSession(currentSession);
+        }
+
+        const activeUserId = currentSession?.user?.id;
+        if (!activeUserId) return;
 
         // Unread in-app notifications
         const { count: notifCount } = await supabase
           .from('notifications')
           .select('*', { count: 'exact', head: true })
-          .eq('user_id', session.user.id)
+          .eq('user_id', activeUserId)
           .eq('is_read', false);
 
         // Pending connection requests
         const { count: connCount } = await supabase
           .from('connections')
           .select('*', { count: 'exact', head: true })
-          .eq('receiver_id', session.user.id)
+          .eq('receiver_id', activeUserId)
           .eq('status', 'pending');
 
         const totalUnread = (notifCount || 0) + (connCount || 0);
         setPendingNotifCount(totalUnread);
 
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('username, avatar_url')
-          .eq('id', session.user.id)
-          .single();
-        if (profile) setUserProfile(profile);
-      } catch {
-        setPendingNotifCount(0);
+        if (!propProfile) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('username, avatar_url, full_name')
+            .eq('id', activeUserId)
+            .single();
+          if (profile) setUserProfile(profile);
+        }
+      } catch (err) {
+        console.warn('Navbar stats error:', err);
       }
     };
+
     fetchData();
 
     // Listen for refreshStats custom event or route changes
     window.addEventListener('refreshStats', fetchData);
-    return () => window.removeEventListener('refreshStats', fetchData);
-  }, [location.pathname]);
+
+    // Setup realtime subscription for instant notifications when someone likes or comments
+    const activeUserId = propSession?.user?.id || session?.user?.id;
+    if (activeUserId) {
+      activeChannel = supabase
+        .channel(`navbar-notifs-${activeUserId}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${activeUserId}` },
+          () => fetchData()
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'connections', filter: `receiver_id=eq.${activeUserId}` },
+          () => fetchData()
+        )
+        .subscribe();
+    }
+
+    return () => {
+      window.removeEventListener('refreshStats', fetchData);
+      if (activeChannel) activeChannel.unsubscribe();
+    };
+  }, [location.pathname, propSession?.user?.id]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -123,7 +163,16 @@ export default function Navbar({ onOpenSidebar }) {
     return false;
   };
 
-  const authorName = userProfile?.username || 'Alex Morgan';
+  const currentProfile = propProfile || userProfile;
+  const currentSessionUser = propSession?.user || session?.user;
+  const authorName =
+    currentProfile?.username ||
+    currentProfile?.full_name ||
+    currentSessionUser?.user_metadata?.username ||
+    currentSessionUser?.email?.split('@')[0] ||
+    'User';
+  const authorInitial = authorName[0]?.toUpperCase() || 'U';
+  const avatarUrl = currentProfile?.avatar_url || currentSessionUser?.user_metadata?.avatar_url || null;
 
   return (
     <header className="sticky top-0 z-50 bg-[#fffcf7]/95 backdrop-blur-md border-b border-[#f1e4d3] shadow-xs">
@@ -221,20 +270,23 @@ export default function Navbar({ onOpenSidebar }) {
           {/* User Profile Pill */}
           <div className="flex items-center gap-2 pl-2">
             <Link
-              to={`/profile/${userProfile?.username || 'alexmorgan'}`}
-              className="flex items-center gap-2.5 hover:opacity-90 transition-opacity p-1.5 rounded-full hover:bg-[#fff4e6]"
+              to={`/profile/${currentProfile?.username || authorName}`}
+              className="flex items-center gap-2.5 hover:opacity-90 transition-opacity p-1.5 rounded-full hover:bg-[#fff4e6] dark:hover:bg-white/5"
             >
-              <div className="w-9 h-9 rounded-full overflow-hidden bg-gradient-to-tr from-[#ea580c] to-[#fbbf24] p-0.5 shadow-xs">
-                <img
-                  src={
-                    userProfile?.avatar_url ||
-                    'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'
-                  }
-                  alt={authorName}
-                  className="w-full h-full object-cover rounded-full"
-                />
+              <div className="w-9 h-9 rounded-full overflow-hidden bg-gradient-to-tr from-[#ea580c] to-[#fbbf24] p-0.5 shadow-xs flex items-center justify-center">
+                {avatarUrl ? (
+                  <img
+                    src={avatarUrl}
+                    alt={authorName}
+                    className="w-full h-full object-cover rounded-full"
+                  />
+                ) : (
+                  <div className="w-full h-full rounded-full bg-gradient-to-tr from-[#ea580c] to-[#f97316] flex items-center justify-center text-white text-xs font-bold">
+                    {authorInitial}
+                  </div>
+                )}
               </div>
-              <span className="text-xs font-bold text-[#2b1f17] hidden sm:block">
+              <span className="text-xs font-bold text-[#2b1f17] dark:text-stone-100 hidden sm:block">
                 {authorName}
               </span>
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#8d7565" strokeWidth="2.5" className="hidden sm:block">

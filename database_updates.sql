@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS notifications (
 DO $$
 BEGIN
     ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
-    ALTER TABLE notifications ADD CONSTRAINT notifications_type_check CHECK (type IN ('follow', 'connection_request', 'connection_accepted', 'like', 'comment'));
+    ALTER TABLE notifications ADD CONSTRAINT notifications_type_check CHECK (type IN ('follow', 'connection_request', 'connection_accepted', 'like', 'comment', 'post', 'story'));
 EXCEPTION
     WHEN undefined_table THEN NULL;
 END $$;

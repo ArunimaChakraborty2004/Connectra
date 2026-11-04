@@ -14,6 +14,8 @@ import {
   Briefcase,
   Users,
   ExternalLink,
+  Sparkles,
+  FileText,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from '../lib/toast';
@@ -187,12 +189,16 @@ export default function NotificationsPanel({ session, isOpen, onClose }) {
         return '/search';
 
       case 'like':
+      case 'post':
         if (n.entity_id) {
           return `/post/${n.entity_id}`;
         }
         if (rawUsername && rawUsername !== 'developer') {
           return `/profile/${encodeURIComponent(rawUsername)}`;
         }
+        return '/';
+
+      case 'story':
         return '/';
 
       case 'comment':
@@ -245,7 +251,10 @@ export default function NotificationsPanel({ session, isOpen, onClose }) {
     switch (n.type) {
       case 'like':
       case 'comment':
+      case 'post':
         return 'View post';
+      case 'story':
+        return 'View story';
       case 'follow':
       case 'connection_request':
       case 'connection_accepted':
@@ -440,6 +449,8 @@ export default function NotificationsPanel({ session, isOpen, onClose }) {
                             {n.type === 'connection_accepted' && <Check size={12} className="text-emerald-500" />}
                             {n.type === 'like' && <Heart size={12} className="text-rose-500 fill-rose-500" />}
                             {n.type === 'comment' && <MessageSquare size={12} className="text-[#ea580c]" />}
+                            {n.type === 'post' && <FileText size={12} className="text-[#ea580c]" />}
+                            {n.type === 'story' && <Sparkles size={12} className="text-amber-500" />}
                             {(n.type === 'message' || n.type === 'chat') && (
                               <MessageSquare size={12} className="text-blue-600" />
                             )}
@@ -462,6 +473,8 @@ export default function NotificationsPanel({ session, isOpen, onClose }) {
                             {n.type === 'connection_accepted' && 'accepted your connection request.'}
                             {n.type === 'like' && 'liked your post.'}
                             {n.type === 'comment' && 'commented on your post.'}
+                            {n.type === 'post' && 'published a new post.'}
+                            {n.type === 'story' && 'shared a new dev story.'}
                             {(n.type === 'message' || n.type === 'chat') && 'sent you a direct message.'}
                             {(n.type === 'group_announcement' || n.type === 'group') &&
                               'posted an announcement in the group.'}

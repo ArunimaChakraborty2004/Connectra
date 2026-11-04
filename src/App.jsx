@@ -100,7 +100,7 @@ function AppInner({ session }) {
 
   return (
     <>
-      <Navbar onOpenSidebar={() => setShowMobileSidebar(true)} />
+      <Navbar onOpenSidebar={() => setShowMobileSidebar(true)} session={session} profile={profile} />
       <NotificationsPanel session={session} isOpen={showNotifications} onClose={() => setShowNotifications(false)} />
       <div className="pb-16 lg:pb-0">
         <Routes>

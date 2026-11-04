@@ -20,6 +20,7 @@ import { toast } from '../../lib/toast';
 import { reviewCodeAndSecurity, polishPostContent, screenContentSafety } from '../../lib/ai';
 import { scanForSecrets, redactSecrets } from '../../lib/secretScanner';
 import AIAnalysisCard from './AIAnalysisCard';
+import { createNotification } from '../../lib/notifications';
 
 export default function CreatePost({ session, onPostCreated, placeholder }) {
   const [content, setContent] = useState('');
@@ -123,11 +124,32 @@ export default function CreatePost({ session, onPostCreated, placeholder }) {
       code_language: codeLang || null,
     };
 
-    const { error } = await supabase.from('posts').insert(postPayload);
+    const { data: newPost, error } = await supabase.from('posts').insert(postPayload).select('id').single();
     setLoading(false);
     if (error) {
       toast.error(error.message);
     } else {
+      // Notify followers about the new post
+      if (session?.user?.id) {
+        supabase
+          .from('follows')
+          .select('follower_id')
+          .eq('following_id', session.user.id)
+          .then(({ data: followers }) => {
+            if (followers && followers.length > 0) {
+              followers.forEach((f) => {
+                createNotification({
+                  userId: f.follower_id,
+                  actorId: session.user.id,
+                  type: 'post',
+                  entityId: newPost?.id,
+                });
+              });
+            }
+          })
+          .catch(() => {});
+      }
+
       setContent('');
       setImageUrl('');
       setImageFile(null);
