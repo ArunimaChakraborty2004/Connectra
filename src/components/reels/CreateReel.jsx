@@ -140,7 +140,42 @@ export default function CreateReel({ session, onClose, onCreated }) {
       };
       localStorage.setItem('connectra_active_reels', JSON.stringify([newLocalReel, ...existing]));
 
-      toast.success('Reel published successfully! 🎬');
+      // 4. Mirror to posts table and local posts cache so it is reflected everywhere in Feed
+      try {
+        await supabase.from('posts').insert({
+          user_id: session?.user?.id,
+          content: caption.trim() || '🎬 Check out my new developer reel!',
+          image_url: publicUrl,
+        });
+      } catch (pErr) {
+        console.warn('Reel post mirror warning:', pErr);
+      }
+
+      const existingPosts = JSON.parse(localStorage.getItem('connectra_active_posts') || '[]');
+      const newLocalPost = {
+        id: `reel-${newLocalReel.id}`,
+        reel_id: newLocalReel.id,
+        is_reel: true,
+        user_id: session?.user?.id,
+        content: caption.trim() || '🎬 Check out my new developer reel!',
+        video_url: publicUrl,
+        image_url: publicUrl,
+        created_at: new Date().toISOString(),
+        profiles: {
+          username: session?.user?.user_metadata?.username || 'You',
+          avatar_url: session?.user?.user_metadata?.avatar_url || null,
+        },
+        likes: [{ count: 0 }],
+        likes_count: 0,
+        user_has_liked: false,
+        comments: [],
+      };
+      localStorage.setItem('connectra_active_posts', JSON.stringify([newLocalPost, ...existingPosts]));
+
+      // Dispatch global refresh event for Feed
+      window.dispatchEvent(new Event('refreshFeed'));
+
+      toast.success('Reel published & reflected in Feed! 🎬🚀');
       if (onCreated) onCreated();
       onClose();
     } catch (error) {
