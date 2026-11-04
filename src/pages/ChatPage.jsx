@@ -64,9 +64,10 @@ export default function ChatPage({ session }) {
   const [sending, setSending] = useState(false);
   const [loadingConvos, setLoadingConvos] = useState(true);
 
-  // E2EE States (End-to-End Encryption with AES-GCM-256)
-  const [e2eeEnabled, setE2eeEnabled] = useState(true);
+  // E2EE States (End-to-End Encryption with AES-GCM-256) — off by default to avoid plaintext confusion
+  const [e2eeEnabled, setE2eeEnabled] = useState(false);
   const [e2eeCryptoKey, setE2eeCryptoKey] = useState(null);
+  const e2eeCryptoKeyRef = useRef(null); // keep latest key accessible in realtime closures
   const [e2eeFingerprint, setE2eeFingerprint] = useState('');
 
   // Emojis & message reactions
@@ -189,6 +190,11 @@ export default function ChatPage({ session }) {
     loadGroups();
   }, [myId]);
 
+  // Keep ref in sync with state so realtime closures always see the latest key
+  useEffect(() => {
+    e2eeCryptoKeyRef.current = e2eeCryptoKey;
+  }, [e2eeCryptoKey]);
+
   // Load Direct Messages
   useEffect(() => {
     if (!selectedUser || selectedGroup) return;
@@ -213,10 +219,23 @@ export default function ChatPage({ session }) {
             (newMsg.sender_id === myId && newMsg.receiver_id === selectedUser.id);
 
           if (isRelevant) {
-            setMessages(prev => {
-              if (prev.some(m => m.id === newMsg.id)) return prev;
-              return [...prev, newMsg];
-            });
+            // Decrypt the incoming realtime message if it is E2EE-encrypted
+            (async () => {
+              let displayMsg = newMsg;
+              if (isEncryptedMessage(newMsg.content)) {
+                try {
+                  const key = e2eeCryptoKeyRef.current || (await deriveConversationKey(myId, selectedUser.id));
+                  const dec = await decryptMessage(newMsg.content, key);
+                  displayMsg = { ...newMsg, content: dec, isE2EE: true };
+                } catch {
+                  displayMsg = { ...newMsg, content: '🔒 Encrypted message', isE2EE: true };
+                }
+              }
+              setMessages(prev => {
+                if (prev.some(m => m.id === displayMsg.id)) return prev;
+                return [...prev, displayMsg];
+              });
+            })();
           }
         }
       )
@@ -358,6 +377,12 @@ export default function ChatPage({ session }) {
     setLoadingMessages(true);
     try {
       const key = await deriveConversationKey(myId, otherUserId);
+      // Store key so realtime handler (and E2EE toggle) can use it
+      e2eeCryptoKeyRef.current = key;
+      setE2eeCryptoKey(key);
+      const fp = await generateKeyFingerprint(myId, otherUserId);
+      setE2eeFingerprint(fp);
+
       const { data } = await supabase
         .from('messages')
         .select('*')

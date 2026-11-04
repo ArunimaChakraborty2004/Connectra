@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import CreatePost from './feed/CreatePost';
@@ -73,7 +73,7 @@ function StoriesRow({ session }) {
       // 2. Fetch reels as fallback media
       const { data: reelsData } = await supabase
         .from('reels')
-        .select('*, profiles(username, avatar_url)')
+        .select('*, profiles(username, avatar_url), reel_likes(id, user_id), reel_comments(id, user_id, content, created_at, profiles(username, avatar_url))')
         .order('created_at', { ascending: false });
 
       if (reelsData) {
@@ -129,13 +129,19 @@ function StoriesRow({ session }) {
     };
   }, []);
 
-  const handleOpenUserStory = (user) => {
-    // 1. Check if user has an active Story
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+
+  const handleOpenUserStory = (user, storyIndex = 0) => {
+    // 1. Check if user has active Stories
     const userStories = stories.filter((s) => s.user_id === user.id);
     if (userStories.length > 0) {
+      const validIndex = Math.max(0, Math.min(storyIndex, userStories.length - 1));
       setActiveStory({
         user,
-        story: userStories[0],
+        story: userStories[validIndex],
+        storyIndex: validIndex,
+        userStories,
       });
       return;
     }
@@ -146,6 +152,8 @@ function StoriesRow({ session }) {
       setActiveStory({
         user,
         reel: userReels[0],
+        storyIndex: 0,
+        userStories: [],
       });
       return;
     }
@@ -154,6 +162,8 @@ function StoriesRow({ session }) {
     setActiveStory({
       user,
       fallbackText: `${user.username}'s Daily Dev Update: Exploring code and building in Connectra!`,
+      storyIndex: 0,
+      userStories: [],
     });
   };
 
@@ -175,10 +185,22 @@ function StoriesRow({ session }) {
 
   const handleNextStory = () => {
     if (!activeStory) return;
+    // 1. Advance within current user's stories if multiple exist
+    if (activeStory.userStories && activeStory.userStories.length > 0 && activeStory.storyIndex < activeStory.userStories.length - 1) {
+      const nextIndex = activeStory.storyIndex + 1;
+      setActiveStory({
+        ...activeStory,
+        storyIndex: nextIndex,
+        story: activeStory.userStories[nextIndex],
+      });
+      return;
+    }
+
+    // 2. Otherwise advance to the next user in the list
     const allUsers = [currentUser, ...users].filter(Boolean);
     const currentIndex = allUsers.findIndex(u => u.id === activeStory.user.id);
     if (currentIndex >= 0 && currentIndex < allUsers.length - 1) {
-      handleOpenUserStory(allUsers[currentIndex + 1]);
+      handleOpenUserStory(allUsers[currentIndex + 1], 0);
     } else {
       setActiveStory(null);
     }
@@ -186,10 +208,73 @@ function StoriesRow({ session }) {
 
   const handlePrevStory = () => {
     if (!activeStory) return;
+    // 1. Go back within current user's stories if not on first
+    if (activeStory.userStories && activeStory.storyIndex > 0) {
+      const prevIndex = activeStory.storyIndex - 1;
+      setActiveStory({
+        ...activeStory,
+        storyIndex: prevIndex,
+        story: activeStory.userStories[prevIndex],
+      });
+      return;
+    }
+
+    // 2. Otherwise go back to the previous user's last story
     const allUsers = [currentUser, ...users].filter(Boolean);
     const currentIndex = allUsers.findIndex(u => u.id === activeStory.user.id);
     if (currentIndex > 0) {
-      handleOpenUserStory(allUsers[currentIndex - 1]);
+      const prevUser = allUsers[currentIndex - 1];
+      const prevUserStories = stories.filter((s) => s.user_id === prevUser.id);
+      const lastIndex = Math.max(0, prevUserStories.length - 1);
+      handleOpenUserStory(prevUser, lastIndex);
+    }
+  };
+
+  // Keyboard navigation for prior/next story and Escape to exit
+  useEffect(() => {
+    if (!activeStory) return;
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'ArrowRight' || e.key === ' ') {
+        e.preventDefault();
+        handleNextStory();
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handlePrevStory();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setActiveStory(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeStory, users, currentUser, stories, reels]);
+
+  // Touch swipe gesture handlers (mobile & tablet swipe navigation)
+  const handleTouchStart = (e) => {
+    if (!e.touches?.[0]) return;
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e) => {
+    if (!e.changedTouches?.[0]) return;
+    const deltaX = e.changedTouches[0].clientX - touchStartX.current;
+    const deltaY = e.changedTouches[0].clientY - touchStartY.current;
+
+    // Horizontal swipe threshold: 45px
+    if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 45) {
+      if (deltaX < 0) {
+        // Swiped Left -> Next Story
+        handleNextStory();
+      } else {
+        // Swiped Right -> Prior Story
+        handlePrevStory();
+      }
+    } else if (deltaY > 90 && Math.abs(deltaX) < 60) {
+      // Swiped Down -> Close Story
+      setActiveStory(null);
     }
   };
 
@@ -203,6 +288,21 @@ function StoriesRow({ session }) {
 
   const currentUserStory = currentUser ? getUserStory(currentUser.id) : null;
   const currentUserTimeInfo = currentUserStory ? getStoryTimeInfo(currentUserStory) : null;
+
+  const allNavUsers = [currentUser, ...users].filter(Boolean);
+  const currentActiveUserIndex = allNavUsers.findIndex(u => u.id === activeStory?.user?.id);
+  const hasPrior = Boolean(
+    activeStory && (
+      (activeStory.userStories && activeStory.storyIndex > 0) ||
+      currentActiveUserIndex > 0
+    )
+  );
+  const hasNext = Boolean(
+    activeStory && (
+      (activeStory.userStories && activeStory.storyIndex < activeStory.userStories.length - 1) ||
+      currentActiveUserIndex < allNavUsers.length - 1
+    )
+  );
 
   return (
     <>
@@ -332,49 +432,139 @@ function StoriesRow({ session }) {
         </div>
       </div>
 
-      {/* Story Viewer Modal with Progress Bar, Arrow Navigation, and Rich Media Types */}
+      {/* Story Viewer Modal with Swipe Gestures, Prior & Next Navigation, and Segmented Progress */}
       <AnimatePresence>
         {activeStory && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
-            {/* Left Nav Arrow */}
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/90 backdrop-blur-md select-none"
+            onClick={() => setActiveStory(null)}
+          >
+            {/* Prior Navigation Arrow Button (Visible on both mobile & desktop) */}
             <button
-              onClick={handlePrevStory}
-              className="hidden sm:flex absolute left-6 p-3 rounded-full bg-white/10 hover:bg-white/20 text-white cursor-pointer transition-colors z-20"
-              title="Previous Story"
+              onClick={(e) => {
+                e.stopPropagation();
+                handlePrevStory();
+              }}
+              disabled={!hasPrior}
+              className={`flex absolute left-2 sm:left-6 p-2.5 sm:p-3.5 rounded-full z-40 items-center justify-center transition-all ${
+                hasPrior
+                  ? 'bg-black/60 hover:bg-black/85 text-white cursor-pointer hover:scale-110 active:scale-95 shadow-2xl border border-white/20 backdrop-blur-md'
+                  : 'bg-black/20 text-white/25 cursor-not-allowed border border-white/5 opacity-40'
+              }`}
+              title="Prior Story (← or swipe right)"
+              aria-label="Prior Story"
             >
-              <ChevronLeft size={24} />
+              <ChevronLeft size={22} />
             </button>
 
-            {/* Right Nav Arrow */}
+            {/* Next Navigation Arrow Button (Visible on both mobile & desktop) */}
             <button
-              onClick={handleNextStory}
-              className="hidden sm:flex absolute right-6 p-3 rounded-full bg-white/10 hover:bg-white/20 text-white cursor-pointer transition-colors z-20"
-              title="Next Story"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleNextStory();
+              }}
+              className="flex absolute right-2 sm:right-6 p-2.5 sm:p-3.5 rounded-full bg-black/60 hover:bg-black/85 text-white cursor-pointer hover:scale-110 active:scale-95 transition-all z-40 shadow-2xl border border-white/20 backdrop-blur-md items-center justify-center"
+              title="Next Story (→ or swipe left)"
+              aria-label="Next Story"
             >
-              <ChevronRight size={24} />
+              <ChevronRight size={22} />
             </button>
 
+            {/* Story Card Container with Framer-Motion Drag & Native Touch Swipe */}
             <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
+              key={`story-modal-${activeStory.user.id}-${activeStory.storyIndex || 0}`}
+              drag="x"
+              dragConstraints={{ left: 0, right: 0 }}
+              dragElastic={0.35}
+              onDragEnd={(_e, info) => {
+                const swipeThreshold = 45;
+                if (info.offset.x < -swipeThreshold || info.velocity.x < -250) {
+                  // Swiped Left -> Next Story
+                  handleNextStory();
+                } else if (info.offset.x > swipeThreshold || info.velocity.x > 250) {
+                  // Swiped Right -> Prior Story
+                  handlePrevStory();
+                }
+              }}
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+              onClick={(e) => e.stopPropagation()}
+              initial={{ scale: 0.92, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="relative w-full max-w-sm aspect-[9/16] max-h-[85vh] rounded-3xl overflow-hidden bg-black flex flex-col justify-between shadow-2xl border border-white/15"
+              exit={{ scale: 0.92, opacity: 0 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="relative w-full max-w-sm aspect-[9/16] max-h-[85vh] rounded-3xl overflow-hidden bg-black flex flex-col justify-between shadow-2xl border border-white/20 cursor-grab active:cursor-grabbing touch-pan-y"
             >
-              {/* Top Progress Bar */}
-              <div className="absolute top-2 left-3 right-3 z-20 flex gap-1.5">
-                <div className="h-1 flex-1 bg-white/30 rounded-full overflow-hidden">
-                  <motion.div
-                    initial={{ width: 0 }}
-                    animate={{ width: '100%' }}
-                    transition={{ duration: 7, ease: 'linear' }}
-                    onAnimationComplete={handleNextStory}
-                    className="h-full bg-white rounded-full"
-                  />
+              {/* Top Progress Bar - Segmented for Multi-Story Support */}
+              <div className="absolute top-2 left-3 right-3 z-30 flex gap-1.5">
+                {activeStory.userStories && activeStory.userStories.length > 1 ? (
+                  activeStory.userStories.map((s, idx) => (
+                    <div key={s.id || idx} className="h-1 flex-1 bg-white/30 rounded-full overflow-hidden">
+                      {idx < activeStory.storyIndex ? (
+                        <div className="h-full w-full bg-white rounded-full" />
+                      ) : idx === activeStory.storyIndex ? (
+                        <motion.div
+                          key={`prog-${activeStory.user.id}-${idx}`}
+                          initial={{ width: '0%' }}
+                          animate={{ width: '100%' }}
+                          transition={{ duration: 7, ease: 'linear' }}
+                          onAnimationComplete={handleNextStory}
+                          className="h-full bg-white rounded-full"
+                        />
+                      ) : (
+                        <div className="h-full w-0 bg-white rounded-full" />
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <div className="h-1 flex-1 bg-white/30 rounded-full overflow-hidden">
+                    <motion.div
+                      key={`prog-${activeStory.user.id}-${activeStory.story?.id || 'single'}`}
+                      initial={{ width: '0%' }}
+                      animate={{ width: '100%' }}
+                      transition={{ duration: 7, ease: 'linear' }}
+                      onAnimationComplete={handleNextStory}
+                      className="h-full bg-white rounded-full"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Tap-to-Navigate Edge Zones (Prior on Left 25%, Next on Right 25%) */}
+              <div
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handlePrevStory();
+                }}
+                className="absolute left-0 top-16 bottom-20 w-1/4 z-20 cursor-pointer group"
+                title="Tap for Prior Story"
+                aria-label="Tap for Prior Story"
+              >
+                <div className="w-full h-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-start pl-2">
+                  <div className="p-1 rounded-full bg-black/40 text-white/80 backdrop-blur-xs">
+                    <ChevronLeft size={16} />
+                  </div>
                 </div>
               </div>
 
-              {/* Top User Info Bar with exact Timeline */}
-              <div className="pt-5 px-4 pb-3 bg-gradient-to-b from-black/90 to-transparent flex items-center justify-between z-10">
+              <div
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleNextStory();
+                }}
+                className="absolute right-0 top-16 bottom-20 w-1/4 z-20 cursor-pointer group"
+                title="Tap for Next Story"
+                aria-label="Tap for Next Story"
+              >
+                <div className="w-full h-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-end pr-2">
+                  <div className="p-1 rounded-full bg-black/40 text-white/80 backdrop-blur-xs">
+                    <ChevronRight size={16} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Top User Info Bar with exact Timeline & Story Count */}
+              <div className="pt-5 px-4 pb-3 bg-gradient-to-b from-black/95 via-black/70 to-transparent flex items-center justify-between z-30">
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded-full overflow-hidden border border-white/40 bg-[#ea580c] flex items-center justify-center text-xs font-bold text-white shadow-sm">
                     {activeStory.user.avatar_url ? (
@@ -384,14 +574,21 @@ function StoriesRow({ session }) {
                     )}
                   </div>
                   <div>
-                    <span className="text-sm font-bold text-white block leading-tight">@{activeStory.user.username}</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-bold text-white block leading-tight">@{activeStory.user.username}</span>
+                      {activeStory.userStories && activeStory.userStories.length > 1 && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-white/20 text-white">
+                          {activeStory.storyIndex + 1}/{activeStory.userStories.length}
+                        </span>
+                      )}
+                    </div>
                     {activeStory.story ? (
                       (() => {
                         const tInfo = getStoryTimeInfo(activeStory.story);
                         return (
                           <div className="flex items-center gap-1 text-[10px] text-amber-300 font-semibold mt-0.5">
                             <Clock size={10} className="text-amber-400 shrink-0" />
-                            <span>Posted {tInfo?.timeAgo} · ⏳ {tInfo?.timeLeft} before auto-removal</span>
+                            <span>Posted {tInfo?.timeAgo} · ⏳ {tInfo?.timeLeft}</span>
                           </div>
                         );
                       })()
@@ -403,11 +600,14 @@ function StoriesRow({ session }) {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1.5 z-40">
                   {/* Delete button if viewing your own story */}
                   {activeStory.story && activeStory.story.user_id === session?.user?.id && (
                     <button
-                      onClick={() => handleDeleteActiveStory(activeStory.story.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteActiveStory(activeStory.story.id);
+                      }}
                       className="p-1.5 rounded-full bg-white/15 hover:bg-rose-600/80 text-white cursor-pointer transition-colors"
                       title="Delete Story"
                     >
@@ -416,8 +616,12 @@ function StoriesRow({ session }) {
                   )}
 
                   <button
-                    onClick={() => setActiveStory(null)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveStory(null);
+                    }}
                     className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white cursor-pointer transition-colors"
+                    title="Close (Esc)"
                   >
                     <X size={18} />
                   </button>
@@ -425,7 +629,7 @@ function StoriesRow({ session }) {
               </div>
 
               {/* Story Content (Image, Dev Thought/Code, or Video) */}
-              <div className="flex-1 flex items-center justify-center p-4 text-center overflow-hidden">
+              <div className="flex-1 flex items-center justify-center p-4 text-center overflow-hidden z-10 pointer-events-auto">
                 {/* 1. Real Story: Image */}
                 {activeStory.story?.media_type === 'image' && (
                   <div className="w-full h-full flex items-center justify-center">
@@ -433,6 +637,7 @@ function StoriesRow({ session }) {
                       src={activeStory.story.media_url}
                       alt="Dev Story"
                       className="w-full h-full object-contain rounded-2xl"
+                      draggable={false}
                     />
                   </div>
                 )}
@@ -491,7 +696,7 @@ function StoriesRow({ session }) {
                     <Link
                       to={`/profile/${activeStory.user.username}`}
                       onClick={() => setActiveStory(null)}
-                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white font-bold text-xs mt-2 hover:opacity-95 shadow-md"
+                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white font-bold text-xs mt-2 hover:opacity-95 shadow-md z-30"
                     >
                       View Profile
                     </Link>
@@ -499,17 +704,51 @@ function StoriesRow({ session }) {
                 )}
               </div>
 
-              {/* Bottom Caption for stories or reels */}
-              {(activeStory.story?.caption && activeStory.story?.media_type !== 'thought') && (
-                <div className="p-4 bg-gradient-to-t from-black/95 to-transparent z-10 text-white text-xs text-left">
-                  {activeStory.story.caption}
+              {/* Bottom Caption and Swipe / Navigation Controls */}
+              <div className="p-3.5 bg-gradient-to-t from-black/95 via-black/85 to-transparent z-30 flex flex-col gap-1.5 text-center">
+                {activeStory.story?.caption && activeStory.story?.media_type !== 'thought' && (
+                  <div className="text-white text-xs text-left line-clamp-2">
+                    {activeStory.story.caption}
+                  </div>
+                )}
+                {activeStory.reel?.caption && (
+                  <div className="text-white text-xs text-left line-clamp-2">
+                    {activeStory.reel.caption}
+                  </div>
+                )}
+
+                {/* Swipe Guidance & Prior/Next Controls */}
+                <div className="flex items-center justify-between text-[11px] text-white/70 pt-1.5 border-t border-white/10">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handlePrevStory();
+                    }}
+                    disabled={!hasPrior}
+                    className={`flex items-center gap-1 font-semibold px-2 py-0.5 rounded-md transition-colors cursor-pointer ${
+                      hasPrior ? 'text-white hover:bg-white/15' : 'text-white/30 cursor-not-allowed'
+                    }`}
+                    title="Prior Story (←)"
+                  >
+                    <ChevronLeft size={13} /> Prior
+                  </button>
+
+                  <span className="text-[10px] text-white/50 tracking-wider font-medium flex items-center gap-1">
+                    <span>Swipe ↔ or tap sides</span>
+                  </span>
+
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleNextStory();
+                    }}
+                    className="flex items-center gap-1 font-semibold px-2 py-0.5 rounded-md text-white hover:bg-white/15 transition-colors cursor-pointer"
+                    title="Next Story (→)"
+                  >
+                    Next <ChevronRight size={13} />
+                  </button>
                 </div>
-              )}
-              {activeStory.reel?.caption && (
-                <div className="p-4 bg-gradient-to-t from-black/95 to-transparent z-10 text-white text-xs text-left">
-                  {activeStory.reel.caption}
-                </div>
-              )}
+              </div>
             </motion.div>
           </div>
         )}
@@ -560,47 +799,56 @@ export default function Feed({ session, userIdFilter = null, communityIdFilter =
         postsQuery = postsQuery.eq('user_id', userIdFilter);
       }
 
-      // 2. Fetch Reels from Supabase
-      let reelsQuery = supabase
-        .from('reels')
-        .select(`
-          id, user_id, video_url, caption, visibility, allow_comments, created_at, updated_at,
-          profiles(username, avatar_url)
-        `)
-        .order('created_at', { ascending: false });
-
-      if (userIdFilter) {
-        reelsQuery = reelsQuery.eq('user_id', userIdFilter);
+      const { data: postsData, error: postsError } = await postsQuery;
+      if (postsError) {
+        console.warn('Posts query notice:', postsError);
       }
 
-      const [{ data: postsData, error: postsError }, { data: reelsData }] = await Promise.all([
-        postsQuery,
-        reelsQuery.catch(() => ({ data: [] })),
-      ]);
+      let allPosts = postsData || [];
 
-      if (postsError) {
-        console.warn('Posts query notice:', postsError.message);
+      // 2. Safely Fetch Reels with Likes and Comments
+      let reelsData = [];
+      try {
+        let rQ = supabase
+          .from('reels')
+          .select(`
+            id, user_id, video_url, caption, visibility, allow_comments, created_at, updated_at,
+            profiles(username, avatar_url),
+            reel_likes(id, user_id),
+            reel_comments(id, user_id, content, created_at, profiles(username, avatar_url))
+          `)
+          .order('created_at', { ascending: false });
+
+        if (userIdFilter) {
+          rQ = rQ.eq('user_id', userIdFilter);
+        }
+        const { data: rData } = await rQ;
+        if (rData) reelsData = rData;
+      } catch (err) {
+        console.warn('Reels query notice:', err);
       }
 
       // Merge with locally persisted posts
-      const localPosts = JSON.parse(localStorage.getItem('connectra_active_posts') || '[]');
-      const filteredLocalPosts = userIdFilter ? localPosts.filter((p) => p.user_id === userIdFilter) : localPosts;
-      let allPosts = [...(postsData || [])];
-      filteredLocalPosts.forEach((lp) => {
-        if (!allPosts.some((p) => p.id === lp.id)) {
-          allPosts.unshift(lp);
-        }
-      });
+      try {
+        const localPosts = JSON.parse(localStorage.getItem('connectra_active_posts') || '[]');
+        const filteredLocalPosts = userIdFilter ? localPosts.filter((p) => p.user_id === userIdFilter) : localPosts;
+        filteredLocalPosts.forEach((lp) => {
+          if (!allPosts.some((p) => p.id === lp.id)) {
+            allPosts.unshift(lp);
+          }
+        });
+      } catch {}
 
       // Merge with locally persisted reels
-      const localReels = JSON.parse(localStorage.getItem('connectra_active_reels') || '[]');
-      const filteredLocalReels = userIdFilter ? localReels.filter((r) => r.user_id === userIdFilter) : localReels;
-      let allReels = [...(reelsData || [])];
-      filteredLocalReels.forEach((lr) => {
-        if (!allReels.some((r) => r.id === lr.id)) {
-          allReels.unshift(lr);
-        }
-      });
+      try {
+        const localReels = JSON.parse(localStorage.getItem('connectra_active_reels') || '[]');
+        const filteredLocalReels = userIdFilter ? localReels.filter((r) => r.user_id === userIdFilter) : localReels;
+        filteredLocalReels.forEach((lr) => {
+          if (!reelsData.some((r) => r.id === lr.id)) {
+            reelsData.unshift(lr);
+          }
+        });
+      } catch {}
 
       // 3. Fetch Likes and Comments for Posts
       const postIds = allPosts.map((p) => p.id).filter(Boolean);
@@ -619,25 +867,16 @@ export default function Feed({ session, userIdFilter = null, communityIdFilter =
           if (lData) likesData = lData;
           if (cData) commentsData = cData;
         } catch (e) {
-          console.warn('Posts likes/comments query fallback:', e);
+          console.warn('Posts likes/comments fallback:', e);
         }
       }
 
       const likesCountMap = {};
       const userLikedMap = {};
-      const savedUserPostLikes = JSON.parse(
-        localStorage.getItem(`connectra_post_likes_${session?.user?.id}`) || '[]'
-      );
       (likesData || []).forEach((l) => {
         likesCountMap[l.post_id] = (likesCountMap[l.post_id] || 0) + 1;
         if (session?.user?.id && l.user_id === session.user.id) {
           userLikedMap[l.post_id] = true;
-        }
-      });
-      savedUserPostLikes.forEach((pId) => {
-        if (!userLikedMap[pId]) {
-          userLikedMap[pId] = true;
-          likesCountMap[pId] = (likesCountMap[pId] || 0) + 1;
         }
       });
 
@@ -649,8 +888,20 @@ export default function Feed({ session, userIdFilter = null, communityIdFilter =
 
       // Format Posts
       const formattedPosts = allPosts.map((p) => {
-        const localComments = JSON.parse(localStorage.getItem(`connectra_post_comments_${p.id}`) || '[]');
-        const combinedComments = [...(commentsGroupMap[p.id] || p.comments || []), ...localComments];
+        let localComments = [];
+        try {
+          localComments = JSON.parse(localStorage.getItem(`connectra_post_comments_${p.id}`) || '[]');
+        } catch {}
+        const dbComments = commentsGroupMap[p.id] || p.comments || [];
+        // Reconcile: ignore local optimistic comments that have already been persisted to the DB
+        const pendingLocalComments = localComments.filter((lc) => {
+          return !dbComments.some(
+            (dc) =>
+              dc.id === lc.id ||
+              (dc.content === lc.content && (dc.user_id === lc.user_id || dc.user_id === session?.user?.id))
+          );
+        });
+        const combinedComments = [...dbComments, ...pendingLocalComments];
         const uniqueComments = Array.from(new Map(combinedComments.map((c) => [c.id || c.created_at, c])).values());
 
         return {
@@ -662,56 +913,31 @@ export default function Feed({ session, userIdFilter = null, communityIdFilter =
         };
       });
 
-      // 4. Fetch Likes and Comments for Reels
-      const reelIds = allReels.map((r) => r.id).filter(Boolean);
-      let reelLikesData = [];
-      let reelCommentsData = [];
-      if (reelIds.length > 0) {
+      // 4. Format Reels into Feed items with synced Likes and Comments
+      const formattedReels = reelsData.map((r) => {
+        let localComments = [];
         try {
-          const [{ data: rLikes }, { data: rComms }] = await Promise.all([
-            supabase.from('reel_likes').select('id, reel_id, user_id').in('reel_id', reelIds),
-            supabase
-              .from('reel_comments')
-              .select('id, reel_id, user_id, content, created_at, profiles(username, avatar_url)')
-              .in('reel_id', reelIds)
-              .order('created_at', { ascending: true }),
-          ]);
-          if (rLikes) reelLikesData = rLikes;
-          if (rComms) reelCommentsData = rComms;
-        } catch (e) {
-          console.warn('Reels likes/comments query fallback:', e);
-        }
-      }
-
-      const reelLikesCountMap = {};
-      const userLikedReelsMap = {};
-      const savedUserReelLikes = JSON.parse(
-        localStorage.getItem(`connectra_reel_likes_${session?.user?.id}`) || '[]'
-      );
-      (reelLikesData || []).forEach((l) => {
-        reelLikesCountMap[l.reel_id] = (reelLikesCountMap[l.reel_id] || 0) + 1;
-        if (session?.user?.id && l.user_id === session.user.id) {
-          userLikedReelsMap[l.reel_id] = true;
-        }
-      });
-      savedUserReelLikes.forEach((rId) => {
-        if (!userLikedReelsMap[rId]) {
-          userLikedReelsMap[rId] = true;
-          reelLikesCountMap[rId] = (reelLikesCountMap[rId] || 0) + 1;
-        }
-      });
-
-      const reelCommentsGroupMap = {};
-      (reelCommentsData || []).forEach((c) => {
-        if (!reelCommentsGroupMap[c.reel_id]) reelCommentsGroupMap[c.reel_id] = [];
-        reelCommentsGroupMap[c.reel_id].push(c);
-      });
-
-      // Format Reels into Feed-ready post objects
-      const formattedReels = allReels.map((r) => {
-        const localComments = JSON.parse(localStorage.getItem(`connectra_reel_comments_${r.id}`) || '[]');
-        const combinedComments = [...(reelCommentsGroupMap[r.id] || r.reel_comments || []), ...localComments];
+          localComments = JSON.parse(localStorage.getItem(`connectra_reel_comments_${r.id}`) || '[]');
+        } catch {}
+        const dbComments = r.reel_comments || [];
+        // Reconcile: ignore local optimistic comments that have already been persisted to the DB
+        const pendingLocalComments = localComments.filter((lc) => {
+          return !dbComments.some(
+            (dc) =>
+              dc.id === lc.id ||
+              (dc.content === lc.content && (dc.user_id === lc.user_id || dc.user_id === session?.user?.id))
+          );
+        });
+        const combinedComments = [...dbComments, ...pendingLocalComments];
         const uniqueComments = Array.from(new Map(combinedComments.map((c) => [c.id || c.created_at, c])).values());
+
+        const reelLikes = r.reel_likes || [];
+        const localReelLikes = JSON.parse(localStorage.getItem(`connectra_reel_likes_${session?.user?.id}`) || '[]');
+        const userHasLiked = Boolean(
+          (session?.user?.id && reelLikes.some((l) => l.user_id === session.user.id)) ||
+          localReelLikes.includes(r.id)
+        );
+        const totalLikes = Math.max(reelLikes.length, userHasLiked && reelLikes.length === 0 ? 1 : reelLikes.length);
 
         return {
           id: `reel-${r.id}`,
@@ -723,73 +949,26 @@ export default function Feed({ session, userIdFilter = null, communityIdFilter =
           image_url: r.video_url,
           created_at: r.created_at || new Date().toISOString(),
           profiles: r.profiles || { username: 'developer', avatar_url: null },
-          likes: [{ count: reelLikesCountMap[r.id] || r.reel_likes?.length || 0 }],
-          likes_count: reelLikesCountMap[r.id] || r.reel_likes?.length || 0,
-          user_has_liked: Boolean(userLikedReelsMap[r.id]),
+          likes: [{ count: totalLikes }],
+          likes_count: totalLikes,
+          user_has_liked: userHasLiked,
           comments: uniqueComments,
         };
       });
 
       // 5. Merge Posts and Reels into Unified Feed
-      let combinedFeed = [...formattedPosts, ...formattedReels];
-
-      // Remove duplicate videos if mirrored in both tables
+      const combinedFeed = [...formattedPosts, ...formattedReels];
       const seenMedia = new Set();
-      combinedFeed = combinedFeed.filter((item) => {
+      const dedupedFeed = combinedFeed.filter((item) => {
         const key = item.video_url || item.id;
         if (seenMedia.has(key)) return false;
         seenMedia.add(key);
         return true;
       });
 
-      // Sort newest first
-      combinedFeed.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+      dedupedFeed.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 
-      // 6. Community Seed Posts (so the feed is active if DB is fresh)
-      if (combinedFeed.length === 0 && !userIdFilter) {
-        combinedFeed = [
-          {
-            id: 'seed-post-1',
-            user_id: 'seed-prachi',
-            content: 'Just deployed the new Zero-Trust Dev Hub and live typeahead search across Connectra! Try typing "p" in the explore bar to see real-time suggestions 🚀💻 #React #DevSecOps',
-            created_at: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-            profiles: {
-              username: 'prachi',
-              avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
-            },
-            likes: [{ count: 14 }],
-            likes_count: 14,
-            user_has_liked: false,
-            comments: [
-              {
-                id: 'comm-1',
-                user_id: 'seed-arunima',
-                content: 'Super smooth! Loving the instant suggestions and quick message actions 🔥',
-                created_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-                profiles: { username: 'arunima', avatar_url: null },
-              },
-            ],
-          },
-          {
-            id: 'seed-post-2',
-            user_id: 'seed-rohan',
-            content: 'Automated pre-publish SAST secret scanning is now active on all code snippets. No more leaked API keys or credentials in feed posts 🛡️🔒 #CyberSecurity #WebDev',
-            code_snippet: 'const scanResult = await secretScanner.detect(code);\nif (scanResult.violations.length > 0) {\n  throw new SecurityAlert("Credential exposure blocked");\n}',
-            code_language: 'javascript',
-            created_at: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
-            profiles: {
-              username: 'rohan',
-              avatar_url: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=200&q=80',
-            },
-            likes: [{ count: 9 }],
-            likes_count: 9,
-            user_has_liked: false,
-            comments: [],
-          },
-        ];
-      }
-
-      setPosts(combinedFeed);
+      setPosts(dedupedFeed);
     } catch (err) {
       console.error('Feed exception:', err);
     } finally {
@@ -812,10 +991,12 @@ export default function Feed({ session, userIdFilter = null, communityIdFilter =
 
     const handleRefresh = () => loadFeed();
     window.addEventListener('refreshFeed', handleRefresh);
+    window.addEventListener('refreshReels', handleRefresh);
 
     return () => {
       sub.unsubscribe();
       window.removeEventListener('refreshFeed', handleRefresh);
+      window.removeEventListener('refreshReels', handleRefresh);
     };
   }, [userIdFilter]);
 
