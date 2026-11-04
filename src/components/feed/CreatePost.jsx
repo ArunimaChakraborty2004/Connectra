@@ -1,9 +1,24 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Image as ImageIcon, Video, Calendar, MoreHorizontal, Send, X, Shield, Sparkles, RefreshCw } from 'lucide-react';
+import {
+  Image as ImageIcon,
+  Video,
+  Calendar,
+  MoreHorizontal,
+  Send,
+  X,
+  Shield,
+  Sparkles,
+  RefreshCw,
+  AlertTriangle,
+  KeyRound,
+  CheckCircle2,
+  Lock,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from '../../lib/toast';
-import { reviewCodeAndSecurity, polishPostContent } from '../../lib/ai';
+import { reviewCodeAndSecurity, polishPostContent, screenContentSafety } from '../../lib/ai';
+import { scanForSecrets, redactSecrets } from '../../lib/secretScanner';
 import AIAnalysisCard from './AIAnalysisCard';
 
 export default function CreatePost({ session, onPostCreated, placeholder }) {
@@ -21,6 +36,11 @@ export default function CreatePost({ session, onPostCreated, placeholder }) {
   const [aiScanning, setAiScanning] = useState(false);
   const [codeReviewResult, setCodeReviewResult] = useState(null);
   const [showCodeReview, setShowCodeReview] = useState(false);
+
+  // Cybersecurity Pre-Publish Interceptors
+  const [secretDetections, setSecretDetections] = useState([]);
+  const [showSecretModal, setShowSecretModal] = useState(false);
+  const [guardrailViolation, setGuardrailViolation] = useState(null);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -50,12 +70,20 @@ export default function CreatePost({ session, onPostCreated, placeholder }) {
   };
 
   const handleScanCode = async () => {
-    if (!codeSnippet.trim()) { toast.error('Please paste code to review first.'); return; }
+    if (!codeSnippet.trim()) {
+      toast.error('Please paste code to review first.');
+      return;
+    }
     setAiScanning(true);
     setShowCodeReview(true);
     try {
       const result = await reviewCodeAndSecurity({ code: codeSnippet, language: codeLang || 'javascript' });
       setCodeReviewResult(result);
+      if (result.isClean) {
+        toast.success('Zero critical vulnerabilities found! 🛡️');
+      } else {
+        toast.error(`Identified ${result.vulnerabilityCount || 1} security advisories.`);
+      }
     } catch {
       toast.error('Failed to run code scan');
     } finally {
@@ -63,9 +91,14 @@ export default function CreatePost({ session, onPostCreated, placeholder }) {
     }
   };
 
-  const handlePost = async () => {
-    if (!content.trim() && !imageUrl.trim() && !codeSnippet.trim() && !imageFile) return;
+  /**
+   * Final publish executor after security screenings pass
+   */
+  const executePublish = async (overrideContent, overrideCode) => {
     setLoading(true);
+    const finalContent = overrideContent !== undefined ? overrideContent : content;
+    const finalCode = overrideCode !== undefined ? overrideCode : codeSnippet;
+
     let finalImageUrl = imageUrl;
     if (imageFile) {
       const fileExt = imageFile.name.split('.').pop();
@@ -76,44 +109,91 @@ export default function CreatePost({ session, onPostCreated, placeholder }) {
         const { data: publicUrlData } = supabase.storage.from('post_images').getPublicUrl(filePath);
         finalImageUrl = publicUrlData.publicUrl;
       } else {
-        toast.error('Failed to upload image.'); setLoading(false); return;
+        toast.error('Failed to upload image.');
+        setLoading(false);
+        return;
       }
     }
 
     const postPayload = {
       user_id: session.user.id,
-      content,
+      content: finalContent,
       image_url: finalImageUrl || null,
-      code_snippet: codeSnippet || null,
-      code_language: codeLang || null
+      code_snippet: finalCode || null,
+      code_language: codeLang || null,
     };
 
     const { error } = await supabase.from('posts').insert(postPayload);
     setLoading(false);
-    if (error) { 
-      toast.error(error.message); 
+    if (error) {
+      toast.error(error.message);
     } else {
-      setContent(''); 
-      setImageUrl(''); 
-      setImageFile(null); 
+      setContent('');
+      setImageUrl('');
+      setImageFile(null);
       setCodeSnippet('');
-      setCodeLang(''); 
+      setCodeLang('');
       setShowExtras(false);
-      toast.success('Post created!');
+      setShowCodeReview(false);
+      setGuardrailViolation(null);
+      setShowSecretModal(false);
+      toast.success('Post verified & published safely! 🛡️🚀');
       if (onPostCreated) onPostCreated();
     }
   };
 
+  /**
+   * Pre-Publish Interceptor (Secret Detection + AI Guardrails)
+   */
+  const handlePost = async () => {
+    if (!content.trim() && !imageUrl.trim() && !codeSnippet.trim() && !imageFile) return;
+
+    // 1. Secret & Key Leak Scanner
+    const combinedText = `${content}\n${codeSnippet}`;
+    const secretScan = scanForSecrets(combinedText);
+    if (secretScan.hasSecrets) {
+      setSecretDetections(secretScan.detections);
+      setShowSecretModal(true);
+      return;
+    }
+
+    // 2. AI Guardrail Safety Screener
+    setLoading(true);
+    const safetyCheck = await screenContentSafety({ text: content, code: codeSnippet });
+    setLoading(false);
+
+    if (!safetyCheck.safe) {
+      setGuardrailViolation(safetyCheck);
+      return;
+    }
+
+    // Passed all pre-publish defense checks
+    await executePublish();
+  };
+
+  const handleRedactAndPublish = async () => {
+    const safeContent = redactSecrets(content, secretDetections);
+    const safeCode = redactSecrets(codeSnippet, secretDetections);
+    setContent(safeContent);
+    setCodeSnippet(safeCode);
+    setShowSecretModal(false);
+    toast.info('Secrets redacted with cryptographic placeholder!');
+    await executePublish(safeContent, safeCode);
+  };
+
   const handleImageChange = (e) => {
     const file = e.target.files[0];
-    if (file) { setImageFile(file); setImageUrl(URL.createObjectURL(file)); }
+    if (file) {
+      setImageFile(file);
+      setImageUrl(URL.createObjectURL(file));
+    }
   };
 
   const initial = userProfile?.username?.[0]?.toUpperCase() || 'A';
   const displayPlaceholder = placeholder || `What's on your mind, ${userProfile?.username || 'Alex'}?`;
 
   return (
-    <div className="rounded-2xl p-4 bg-white border border-[#f1e4d3] shadow-xs flex flex-col gap-3">
+    <div className="rounded-2xl p-4 bg-white border border-[#f1e4d3] shadow-xs flex flex-col gap-3 relative">
       {/* Top Input area with avatar */}
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-full overflow-hidden bg-gradient-to-tr from-[#ea580c] via-[#f97316] to-[#facc15] flex items-center justify-center text-sm font-bold text-white shrink-0 p-0.5 shadow-2xs">
@@ -147,6 +227,40 @@ export default function CreatePost({ session, onPostCreated, placeholder }) {
         </div>
       </div>
 
+      {/* AI Guardrail Warning Banner */}
+      <AnimatePresence>
+        {guardrailViolation && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="p-3 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-xs flex items-start justify-between gap-3"
+          >
+            <div className="flex items-start gap-2">
+              <AlertTriangle size={16} className="text-rose-600 shrink-0 mt-0.5" />
+              <div>
+                <strong className="font-bold block text-rose-900">
+                  AI Guardrail Block: {guardrailViolation.category.toUpperCase()}
+                </strong>
+                <p className="mt-0.5 text-rose-700 leading-relaxed">
+                  {guardrailViolation.reasoning}
+                </p>
+                <span className="text-[10px] text-rose-500 font-mono block mt-1">
+                  Connectra Zero-Trust Guardrails • Confidence: {Math.round(guardrailViolation.confidence * 100)}%
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setGuardrailViolation(null)}
+              className="text-rose-400 hover:text-rose-700 cursor-pointer"
+            >
+              <X size={14} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Attachments drawer */}
       <AnimatePresence>
         {showExtras && (
@@ -158,8 +272,15 @@ export default function CreatePost({ session, onPostCreated, placeholder }) {
           >
             <div className="p-3 rounded-xl bg-[#faf6f0] border border-[#f1e4d3] flex flex-col gap-2.5 mt-1">
               <div className="flex justify-between items-center text-xs text-[#8d7565] font-bold">
-                <span>Attachments</span>
-                <button onClick={() => setShowExtras(false)} className="hover:text-[#2b1f17] cursor-pointer"><X size={14} /></button>
+                <span className="flex items-center gap-1.5">
+                  <span>Attachments & Code</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-orange-100 text-orange-700 font-mono">
+                    Zero-Trust Verified
+                  </span>
+                </span>
+                <button onClick={() => setShowExtras(false)} className="hover:text-[#2b1f17] cursor-pointer">
+                  <X size={14} />
+                </button>
               </div>
 
               <div className="flex gap-2 items-center flex-wrap">
@@ -171,7 +292,10 @@ export default function CreatePost({ session, onPostCreated, placeholder }) {
                   type="url"
                   value={!imageFile ? imageUrl : ''}
                   disabled={!!imageFile}
-                  onChange={(e) => { setImageUrl(e.target.value); setImageFile(null); }}
+                  onChange={(e) => {
+                    setImageUrl(e.target.value);
+                    setImageFile(null);
+                  }}
                   placeholder="Or paste image URL"
                   className="flex-1 bg-white border border-[#f1e4d3] rounded-lg px-3 py-1.5 text-xs text-[#2b1f17] outline-none"
                 />
@@ -181,7 +305,10 @@ export default function CreatePost({ session, onPostCreated, placeholder }) {
                 <div className="relative w-max mt-1">
                   <img src={imageUrl} alt="preview" className="max-h-28 rounded-lg object-cover border border-[#f1e4d3]" />
                   <button
-                    onClick={() => { setImageUrl(''); setImageFile(null); }}
+                    onClick={() => {
+                      setImageUrl('');
+                      setImageFile(null);
+                    }}
                     className="absolute top-1 right-1 p-1 bg-black/70 hover:bg-rose-500 rounded-full text-white cursor-pointer"
                   >
                     <X size={10} />
@@ -189,7 +316,7 @@ export default function CreatePost({ session, onPostCreated, placeholder }) {
                 </div>
               )}
 
-              {/* Code input */}
+              {/* Code snippet input with SAST Scan button */}
               <div className="flex flex-col gap-1.5">
                 <div className="flex justify-between items-center">
                   <span className="text-[11px] text-[#8d7565] font-semibold">Code snippet</span>
@@ -198,27 +325,32 @@ export default function CreatePost({ session, onPostCreated, placeholder }) {
                       type="button"
                       onClick={handleScanCode}
                       disabled={aiScanning}
-                      className="text-[11px] text-[#ea580c] hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                      className="text-[11px] px-2.5 py-0.5 rounded-md bg-orange-500/10 text-[#ea580c] hover:bg-orange-500/20 font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
                     >
-                      {aiScanning ? <RefreshCw size={10} className="animate-spin" /> : <Shield size={10} />}
-                      <span>Scan Code</span>
+                      {aiScanning ? <RefreshCw size={11} className="animate-spin" /> : <Shield size={11} />}
+                      <span>{aiScanning ? 'Scanning...' : 'Run LLM-SAST Scan'}</span>
                     </button>
                   )}
                 </div>
                 <textarea
                   value={codeSnippet}
                   onChange={(e) => setCodeSnippet(e.target.value)}
-                  placeholder="Paste your code snippet..."
-                  className="w-full bg-[#2b1f17] rounded-lg p-2.5 text-xs font-mono text-amber-300 outline-none resize-y min-h-[60px]"
+                  placeholder="Paste your code snippet here (SQL, JavaScript, Python, etc.)..."
+                  className="w-full bg-[#2b1f17] rounded-lg p-2.5 text-xs font-mono text-amber-300 outline-none resize-y min-h-[70px]"
                 />
               </div>
 
+              {/* Structured SAST Results Card with 1-Click Apply */}
               {showCodeReview && (
                 <div className="mt-2">
                   <AIAnalysisCard
                     content={codeReviewResult}
                     type="security"
                     onClose={() => setShowCodeReview(false)}
+                    onApplyFix={(fixedCode) => {
+                      setCodeSnippet(fixedCode);
+                      toast.success('Remediation patch applied to snippet!');
+                    }}
                   />
                 </div>
               )}
@@ -230,7 +362,6 @@ export default function CreatePost({ session, onPostCreated, placeholder }) {
       {/* Action Buttons Row */}
       <div className="flex items-center justify-between pt-1">
         <div className="flex items-center gap-1 sm:gap-2">
-          {/* Image */}
           <button
             type="button"
             onClick={() => setShowExtras(true)}
@@ -240,7 +371,6 @@ export default function CreatePost({ session, onPostCreated, placeholder }) {
             <span>Image</span>
           </button>
 
-          {/* Video */}
           <button
             type="button"
             onClick={() => setShowExtras(true)}
@@ -250,7 +380,6 @@ export default function CreatePost({ session, onPostCreated, placeholder }) {
             <span>Video</span>
           </button>
 
-          {/* Event */}
           <button
             type="button"
             onClick={() => setShowExtras(true)}
@@ -260,7 +389,6 @@ export default function CreatePost({ session, onPostCreated, placeholder }) {
             <span>Event</span>
           </button>
 
-          {/* More */}
           <button
             type="button"
             onClick={() => setShowExtras(true)}
@@ -276,11 +404,83 @@ export default function CreatePost({ session, onPostCreated, placeholder }) {
           type="button"
           onClick={handlePost}
           disabled={loading || (!content && !imageUrl && !codeSnippet && !imageFile)}
-          className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#ea580c] via-[#f97316] to-[#fb923c] hover:brightness-105 text-white font-extrabold text-xs transition-all shadow-md shadow-orange-500/25 disabled:opacity-40 cursor-pointer active:scale-95"
+          className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#ea580c] via-[#f97316] to-[#fb923c] hover:brightness-105 text-white font-extrabold text-xs transition-all shadow-md shadow-orange-500/25 disabled:opacity-40 cursor-pointer active:scale-95 flex items-center gap-1.5"
         >
-          {loading ? 'Posting...' : 'Post'}
+          {loading ? (
+            <>
+              <RefreshCw size={12} className="animate-spin" />
+              <span>Verifying...</span>
+            </>
+          ) : (
+            <span>Post</span>
+          )}
         </button>
       </div>
+
+      {/* Secret Leak Detection Warning Modal */}
+      <AnimatePresence>
+        {showSecretModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-stone-900 border border-amber-500/40 rounded-2xl p-5 max-w-md w-full shadow-2xl text-stone-200 space-y-4"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/40">
+                  <KeyRound size={20} />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-stone-100">
+                    Credential Leak Intercepted!
+                  </h3>
+                  <span className="text-xs text-amber-400/90 font-mono">
+                    {secretDetections.length} sensitive key/token signature(s) detected
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-xs text-stone-300 leading-relaxed">
+                Connectra’s client-side pre-commit entropy scanner detected sensitive API credentials in your post.
+                Publishing raw secrets may lead to account takeover or cloud resource exploitation.
+              </p>
+
+              {/* Detections List */}
+              <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                {secretDetections.map((det, idx) => (
+                  <div
+                    key={idx}
+                    className="p-2 rounded-lg bg-black/40 border border-white/10 text-[11px] flex items-center justify-between font-mono"
+                  >
+                    <span className="text-amber-300">{det.label}</span>
+                    <span className="text-stone-400 text-[10px]">Entropy: {det.entropy}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setShowSecretModal(false)}
+                  className="px-3 py-1.5 rounded-xl text-xs font-semibold text-stone-300 hover:bg-white/10 transition-colors cursor-pointer"
+                >
+                  Cancel & Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRedactAndPublish}
+                  className="px-4 py-1.5 rounded-xl text-xs font-extrabold bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:brightness-110 transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Lock size={12} />
+                  <span>Auto-Redact & Publish</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

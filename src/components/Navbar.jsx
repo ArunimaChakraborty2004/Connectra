@@ -1,7 +1,8 @@
-import { LogOut, Search, Menu, Bell, Home, Compass, Users, MessageSquare, Sun, Moon } from 'lucide-react';
+import { LogOut, Search, Menu, Bell, Home, Compass, Users, MessageSquare, Sun, Moon, Shield } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
+import SecurityHubModal from './security/SecurityHubModal';
 
 export default function Navbar({ onOpenSidebar }) {
   const location = useLocation();
@@ -9,6 +10,8 @@ export default function Navbar({ onOpenSidebar }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [pendingNotifCount, setPendingNotifCount] = useState(8);
   const [userProfile, setUserProfile] = useState(null);
+  const [showSecurityHub, setShowSecurityHub] = useState(false);
+  const [session, setSession] = useState(null);
 
   // Global Dark Mode state management
   const [isDark, setIsDark] = useState(() => {
@@ -50,8 +53,9 @@ export default function Navbar({ onOpenSidebar }) {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session?.user?.id) return;
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        setSession(currentSession);
+        if (!currentSession?.user?.id) return;
 
         // Unread in-app notifications
         const { count: notifCount } = await supabase
@@ -238,6 +242,16 @@ export default function Navbar({ onOpenSidebar }) {
               </svg>
             </Link>
 
+            {/* Zero-Trust Security & Research Hub Button */}
+            <button
+              onClick={() => setShowSecurityHub(true)}
+              className="p-2 rounded-xl text-[#8d7565] hover:text-emerald-500 hover:bg-emerald-500/10 transition-colors cursor-pointer relative"
+              title="Zero-Trust Security & Research Benchmark Hub"
+            >
+              <Shield size={18} className="text-emerald-500" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            </button>
+
             {/* Global Dark / Light Mode Toggle Button */}
             <button
               onClick={toggleGlobalTheme}
@@ -263,6 +277,12 @@ export default function Navbar({ onOpenSidebar }) {
         </div>
       </div>
 
+      {/* Security Hub Modal */}
+      <SecurityHubModal
+        isOpen={showSecurityHub}
+        onClose={() => setShowSecurityHub(false)}
+        session={session}
+      />
     </header>
   );
 }

@@ -1,18 +1,42 @@
 import { useState } from 'react';
-import { Shield, Sparkles, Check, Copy, X, AlertTriangle, CheckCircle2, Zap, Lightbulb, Code2 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import {
+  Shield,
+  Sparkles,
+  Check,
+  Copy,
+  X,
+  AlertTriangle,
+  CheckCircle2,
+  Zap,
+  Lightbulb,
+  Code2,
+  Wrench,
+  Percent,
+  FileCode2,
+  ExternalLink,
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
-export default function AIAnalysisCard({ content, type = 'security', onClose }) {
+export default function AIAnalysisCard({ content, type = 'security', onClose, onApplyFix }) {
   const [copiedCodeIndex, setCopiedCodeIndex] = useState(null);
-  const [activeTab, setActiveTab] = useState('all'); // 'all' | 'security' | 'quality' | 'fix'
+  const [appliedFix, setAppliedFix] = useState(false);
+  const [showRefactored, setShowRefactored] = useState(false);
 
   if (!content) return null;
 
-  // Determine overall security status
-  const isClean =
-    content.toLowerCase().includes('no critical vulnerabilities') ||
-    content.toLowerCase().includes('no vulnerabilities detected') ||
-    content.toLowerCase().includes('secure') && !content.toLowerCase().includes('high vulnerability');
+  // Determine if content is structured object or string
+  const isStructured = typeof content === 'object' && content !== null && ('findings' in content || 'isClean' in content);
+
+  const isClean = isStructured
+    ? content.isClean
+    : content.toLowerCase().includes('no critical vulnerabilities') ||
+      content.toLowerCase().includes('no vulnerabilities detected') ||
+      (content.toLowerCase().includes('secure') && !content.toLowerCase().includes('high vulnerability'));
+
+  const findings = isStructured ? content.findings || [] : [];
+  const refactoredCode = isStructured ? content.refactoredCode : null;
+  const qualityNotes = isStructured ? content.qualityNotes || [] : [];
+  const summary = isStructured ? content.summary : null;
 
   const handleCopyCode = (codeText, idx) => {
     navigator.clipboard.writeText(codeText);
@@ -20,134 +44,56 @@ export default function AIAnalysisCard({ content, type = 'security', onClose }) 
     setTimeout(() => setCopiedCodeIndex(null), 2200);
   };
 
-  // Helper to parse markdown-like bolding, inline code, and lists
-  const renderInlineFormatted = (text) => {
-    if (!text) return null;
-
-    // Split on inline code `...`
-    const codeParts = text.split(/(`[^`]+`)/g);
-
-    return codeParts.map((cPart, cIdx) => {
-      if (cPart.startsWith('`') && cPart.endsWith('`') && cPart.length > 2) {
-        return (
-          <code
-            key={cIdx}
-            className="px-1.5 py-0.5 mx-0.5 rounded bg-black/40 text-amber-300 font-mono text-[11px] border border-amber-500/20"
-          >
-            {cPart.slice(1, -1)}
-          </code>
-        );
-      }
-
-      // Split on **bold**
-      const boldParts = cPart.split(/(\*\*[^*]+\*\*)/g);
-      return boldParts.map((bPart, bIdx) => {
-        if (bPart.startsWith('**') && bPart.endsWith('**') && bPart.length > 4) {
-          return (
-            <strong key={`${cIdx}-${bIdx}`} className="font-bold text-amber-100">
-              {bPart.slice(2, -2)}
-            </strong>
-          );
-        }
-        return bPart;
-      });
-    });
-  };
-
-  // Parse structured blocks from AI output
-  const parseBlocks = (rawText) => {
-    const lines = rawText.split('\n');
-    const blocks = [];
-    let currentBlock = null;
-    let codeBuffer = [];
-    let inCode = false;
-    let codeLang = 'code';
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-
-      // Handle Code Block start/end
-      if (line.trim().startsWith('```')) {
-        if (!inCode) {
-          inCode = true;
-          codeLang = line.trim().replace(/^```/, '').trim() || 'code';
-          codeBuffer = [];
-        } else {
-          inCode = false;
-          if (currentBlock) {
-            currentBlock.items.push({
-              type: 'code',
-              lang: codeLang,
-              code: codeBuffer.join('\n'),
-            });
-          } else {
-            blocks.push({
-              title: 'Code Snippet',
-              icon: 'code',
-              items: [{ type: 'code', lang: codeLang, code: codeBuffer.join('\n') }],
-            });
-          }
-          codeBuffer = [];
-        }
-        continue;
-      }
-
-      if (inCode) {
-        codeBuffer.push(line);
-        continue;
-      }
-
-      // Headings: #, ##, ###
-      if (line.trim().startsWith('#')) {
-        const cleanTitle = line.replace(/^#+\s*/, '').trim();
-        let iconType = 'info';
-        if (cleanTitle.toLowerCase().includes('security') || cleanTitle.toLowerCase().includes('safety')) iconType = 'security';
-        else if (cleanTitle.toLowerCase().includes('quality') || cleanTitle.toLowerCase().includes('performance')) iconType = 'quality';
-        else if (cleanTitle.toLowerCase().includes('fix') || cleanTitle.toLowerCase().includes('refactor') || cleanTitle.toLowerCase().includes('suggested')) iconType = 'fix';
-
-        currentBlock = {
-          title: cleanTitle,
-          icon: iconType,
-          items: [],
-        };
-        blocks.push(currentBlock);
-        continue;
-      }
-
-      // Bullets: *, -, •
-      if (line.trim().match(/^[*•-]\s+/)) {
-        const bulletContent = line.trim().replace(/^[*•-]\s+/, '').trim();
-        if (currentBlock) {
-          currentBlock.items.push({ type: 'bullet', text: bulletContent });
-        } else {
-          currentBlock = {
-            title: 'Key Findings',
-            icon: 'info',
-            items: [{ type: 'bullet', text: bulletContent }],
-          };
-          blocks.push(currentBlock);
-        }
-        continue;
-      }
-
-      // Regular text / paragraph
-      if (line.trim().length > 0) {
-        if (!currentBlock) {
-          currentBlock = {
-            title: type === 'security' ? 'Executive Summary' : 'Overview',
-            icon: 'info',
-            items: [],
-          };
-          blocks.push(currentBlock);
-        }
-        currentBlock.items.push({ type: 'text', text: line.trim() });
-      }
+  const handleApply = () => {
+    if (onApplyFix && refactoredCode) {
+      onApplyFix(refactoredCode);
+      setAppliedFix(true);
+      setTimeout(() => setAppliedFix(false), 3000);
     }
-
-    return blocks;
   };
 
-  const sections = parseBlocks(content);
+  // Severity styling lookup
+  const getSeverityBadge = (severity) => {
+    const s = (severity || 'MEDIUM').toUpperCase();
+    if (s === 'CRITICAL') {
+      return 'bg-rose-500/20 text-rose-400 border-rose-500/40';
+    }
+    if (s === 'HIGH') {
+      return 'bg-amber-500/20 text-amber-400 border-amber-500/40';
+    }
+    if (s === 'MEDIUM') {
+      return 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40';
+    }
+    return 'bg-blue-500/20 text-blue-300 border-blue-500/40';
+  };
+
+  // Helper to parse diff lines into colored additions/deletions
+  const renderDiffSnippet = (diffText) => {
+    if (!diffText) return null;
+    const lines = diffText.split('\n');
+    return (
+      <div className="font-mono text-[11px] p-2.5 rounded-lg bg-black/60 border border-white/10 overflow-x-auto space-y-0.5">
+        {lines.map((line, idx) => {
+          const isAdd = line.startsWith('+');
+          const isDel = line.startsWith('-');
+          return (
+            <div
+              key={idx}
+              className={`px-1.5 py-0.5 rounded ${
+                isAdd
+                  ? 'bg-emerald-950/60 text-emerald-300 border-l-2 border-emerald-500'
+                  : isDel
+                  ? 'bg-rose-950/60 text-rose-300 border-l-2 border-rose-500 line-through opacity-85'
+                  : 'text-stone-400'
+              }`}
+            >
+              <code>{line}</code>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
   return (
     <motion.div
@@ -161,55 +107,42 @@ export default function AIAnalysisCard({ content, type = 'security', onClose }) 
         <div className="flex items-center gap-2.5">
           <div
             className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 shadow-sm ${
-              type === 'security'
-                ? isClean
-                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                  : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                : 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
+              isClean
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
             }`}
           >
-            {type === 'security' ? (
-              isClean ? (
-                <Shield size={15} className="text-emerald-400" />
-              ) : (
-                <AlertTriangle size={15} className="text-amber-400" />
-              )
-            ) : (
-              <Sparkles size={15} className="text-orange-400" />
-            )}
+            {isClean ? <Shield size={15} className="text-emerald-400" /> : <AlertTriangle size={15} className="text-amber-400" />}
           </div>
 
           <div>
             <div className="flex items-center gap-2">
               <span className="font-extrabold text-xs uppercase tracking-wider text-orange-400">
-                {type === 'security' ? 'AI Security & Vulnerability Audit' : 'AI Code Intelligence Breakdown'}
+                LLM-SAST Vulnerability Pipeline
               </span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-orange-500/10 text-orange-400/90 border border-orange-500/20 font-mono">
-                AppSec v2
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/30 font-mono font-bold">
+                OWASP & CWE Certified
               </span>
             </div>
             <div className="text-[11px] text-stone-400 flex items-center gap-2">
-              <span>Automated static inspection & runtime telemetry</span>
+              <span>Automated static inspection with Groq Llama 3</span>
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Security Status Pill */}
-          {type === 'security' && (
-            <div
-              className={`px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1.5 shadow-xs ${
-                isClean
-                  ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/40'
-                  : 'bg-amber-950/80 text-amber-300 border border-amber-600/40'
-              }`}
-            >
-              {isClean ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
-              <span>{isClean ? 'Clean / No Critical Bugs' : 'Security Advisory'}</span>
-            </div>
-          )}
+          {/* Status Pill */}
+          <div
+            className={`px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1.5 shadow-xs ${
+              isClean
+                ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/40'
+                : 'bg-amber-950/80 text-amber-300 border border-amber-600/40'
+            }`}
+          >
+            {isClean ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
+            <span>{isClean ? 'Clean / Zero Critical Flaws' : `${findings.length || 1} Security Advisory`}</span>
+          </div>
 
-          {/* Close button */}
           {onClose && (
             <button
               onClick={onClose}
@@ -222,138 +155,148 @@ export default function AIAnalysisCard({ content, type = 'security', onClose }) 
         </div>
       </div>
 
-      {/* Main Content Body */}
-      <div className="p-4 space-y-4 text-xs">
-        {sections.length === 0 ? (
-          <div className="text-stone-400 py-2">{content}</div>
-        ) : (
-          sections.map((section, sIdx) => {
-            const isSecuritySection = section.icon === 'security';
-            const isQualitySection = section.icon === 'quality';
-            const isFixSection = section.icon === 'fix';
+      {/* Main Body */}
+      <div className="p-4 space-y-3.5 text-xs">
+        {/* Executive Summary */}
+        {summary && (
+          <div className="p-3 rounded-xl bg-white/5 border border-white/10 text-stone-300 leading-relaxed text-xs">
+            <strong className="text-orange-400 font-bold block mb-0.5">Executive Verdict</strong>
+            {summary}
+          </div>
+        )}
 
-            return (
+        {/* Structured SAST Findings */}
+        {isStructured && findings.length > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                <AlertTriangle size={12} /> Vulnerability Findings & CWE Classification
+              </span>
+              <span className="text-[10px] text-stone-400 font-mono">
+                {findings.length} issue(s) detected
+              </span>
+            </div>
+
+            {findings.map((finding, idx) => (
               <div
-                key={sIdx}
-                className={`p-3.5 rounded-xl border transition-all ${
-                  isSecuritySection
-                    ? isClean
-                      ? 'bg-emerald-950/20 border-emerald-800/30 shadow-xs'
-                      : 'bg-amber-950/20 border-amber-800/30 shadow-xs'
-                    : isQualitySection
-                    ? 'bg-[#221710]/70 border-[#3d2a1d]'
-                    : isFixSection
-                    ? 'bg-[#1a110a] border-orange-500/30'
-                    : 'bg-[#20150e]/60 border-[#38261a]'
-                }`}
+                key={idx}
+                className="p-3.5 rounded-xl border border-amber-500/30 bg-[#1c120a] space-y-2.5 shadow-sm"
               >
-                {/* Section Header */}
-                <div className="flex items-center justify-between gap-2 mb-2.5 pb-1.5 border-b border-white/5">
+                {/* Finding Header */}
+                <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2">
-                    <span
-                      className={`p-1 rounded-md text-[13px] ${
-                        isSecuritySection
-                          ? isClean
-                            ? 'bg-emerald-500/20 text-emerald-400'
-                            : 'bg-amber-500/20 text-amber-400'
-                          : isQualitySection
-                          ? 'bg-blue-500/20 text-blue-400'
-                          : isFixSection
-                          ? 'bg-orange-500/20 text-orange-400'
-                          : 'bg-stone-500/20 text-stone-300'
-                      }`}
-                    >
-                      {isSecuritySection ? (
-                        <Shield size={13} />
-                      ) : isQualitySection ? (
-                        <Zap size={13} />
-                      ) : isFixSection ? (
-                        <Lightbulb size={13} />
-                      ) : (
-                        <Code2 size={13} />
-                      )}
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold border ${getSeverityBadge(finding.severity)}`}>
+                      {finding.severity || 'HIGH'}
                     </span>
-                    <h4 className="font-bold text-[12px] text-stone-100 tracking-wide">
-                      {section.title}
-                    </h4>
+                    <span className="px-2 py-0.5 rounded bg-black/50 text-amber-300 font-mono text-[10px] border border-amber-500/20 font-bold">
+                      {finding.cweId || 'CWE-Unknown'}
+                    </span>
+                    {finding.owaspCategory && (
+                      <span className="text-[10px] text-stone-400 font-mono hidden sm:inline">
+                        {finding.owaspCategory}
+                      </span>
+                    )}
                   </div>
+
+                  {finding.confidence && (
+                    <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-mono">
+                      <Percent size={10} /> {Math.round(finding.confidence * 100)}% Confidence
+                    </span>
+                  )}
                 </div>
 
-                {/* Section Items */}
-                <div className="space-y-2">
-                  {section.items.map((item, iIdx) => {
-                    if (item.type === 'code') {
-                      return (
-                        <div
-                          key={iIdx}
-                          className="rounded-xl overflow-hidden border border-orange-500/20 bg-[#0c0906] shadow-md my-2"
-                        >
-                          <div className="px-3 py-1.5 bg-[#17100b] border-b border-orange-500/10 flex items-center justify-between text-[11px] text-orange-300">
-                            <span className="font-mono uppercase font-bold text-[10px] tracking-wider text-orange-400/90 flex items-center gap-1.5">
-                              <Code2 size={11} /> {item.lang || 'code'}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleCopyCode(item.code, `${sIdx}-${iIdx}`)}
-                              className="flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded bg-orange-500/15 text-orange-300 hover:bg-orange-500/25 transition-colors cursor-pointer"
-                            >
-                              {copiedCodeIndex === `${sIdx}-${iIdx}` ? (
-                                <>
-                                  <Check size={11} className="text-emerald-400" /> Copied!
-                                </>
-                              ) : (
-                                <>
-                                  <Copy size={11} /> Copy Code
-                                </>
-                              )}
-                            </button>
-                          </div>
-                          <pre className="p-3 text-xs font-mono text-amber-200 overflow-x-auto leading-relaxed">
-                            <code>{item.code}</code>
-                          </pre>
-                        </div>
-                      );
-                    }
-
-                    if (item.type === 'bullet') {
-                      return (
-                        <div key={iIdx} className="flex items-start gap-2.5 text-stone-300 leading-relaxed text-[12px]">
-                          <span
-                            className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${
-                              isSecuritySection
-                                ? isClean
-                                  ? 'bg-emerald-400'
-                                  : 'bg-amber-400'
-                                : isQualitySection
-                                ? 'bg-orange-400'
-                                : 'bg-stone-400'
-                            }`}
-                          />
-                          <div className="flex-1">{renderInlineFormatted(item.text)}</div>
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <p key={iIdx} className="text-stone-300 leading-relaxed text-[12px]">
-                        {renderInlineFormatted(item.text)}
-                      </p>
-                    );
-                  })}
+                {/* Finding Details */}
+                <div>
+                  <h4 className="font-bold text-stone-100 text-xs mb-1">
+                    {finding.cweTitle || finding.description}
+                  </h4>
+                  {finding.cweTitle && (
+                    <p className="text-stone-300 text-[11px] leading-relaxed">
+                      {finding.description}
+                    </p>
+                  )}
                 </div>
+
+                {/* Remediation Diff */}
+                {finding.remediationDiff && (
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-orange-400 flex items-center gap-1 uppercase tracking-wider">
+                      <Wrench size={10} /> Remediation Diff
+                    </span>
+                    {renderDiffSnippet(finding.remediationDiff)}
+                  </div>
+                )}
               </div>
-            );
-          })
+            ))}
+          </div>
+        )}
+
+        {/* 1-Click Fix & Refactored Code Section */}
+        {refactoredCode && !isClean && (
+          <div className="p-3.5 rounded-xl bg-orange-950/20 border border-orange-500/30 space-y-2.5">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <Wrench size={14} className="text-orange-400" />
+                <span className="font-bold text-orange-300 text-xs">Automated Code Patch Available</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowRefactored(prev => !prev)}
+                  className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white/5 hover:bg-white/10 text-stone-300 transition-colors cursor-pointer"
+                >
+                  {showRefactored ? 'Hide Clean Code' : 'Preview Patch'}
+                </button>
+                {onApplyFix && (
+                  <button
+                    type="button"
+                    onClick={handleApply}
+                    className="px-3 py-1 rounded-lg text-[11px] font-bold bg-gradient-to-r from-emerald-600 to-teal-600 hover:brightness-110 text-white flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                  >
+                    {appliedFix ? <Check size={12} /> : <Wrench size={12} />}
+                    <span>{appliedFix ? 'Fix Applied!' : '1-Click Apply Fix'}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {showRefactored && (
+              <pre className="p-3 text-[11px] font-mono text-emerald-200 bg-black/80 rounded-lg overflow-x-auto border border-emerald-500/30">
+                <code>{refactoredCode}</code>
+              </pre>
+            )}
+          </div>
+        )}
+
+        {/* Quality & Performance Notes */}
+        {qualityNotes.length > 0 && (
+          <div className="p-3 rounded-xl bg-stone-900/60 border border-stone-800 space-y-1.5">
+            <span className="text-[11px] font-bold text-stone-300 flex items-center gap-1.5">
+              <Zap size={11} className="text-orange-400" /> Code Quality & Best Practice Telemetry
+            </span>
+            <ul className="space-y-1 text-[11px] text-stone-400 list-disc list-inside">
+              {qualityNotes.map((note, idx) => (
+                <li key={idx}>{note}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Backwards-compatible raw string rendering if not structured */}
+        {!isStructured && (
+          <div className="p-3 rounded-xl bg-stone-900/40 border border-stone-800 text-stone-300 whitespace-pre-wrap leading-relaxed text-xs">
+            {typeof content === 'string' ? content : JSON.stringify(content, null, 2)}
+          </div>
         )}
       </div>
 
       {/* Footer Info */}
-      <div className="px-4 py-2 bg-[#170f0a] border-t border-[#2e1f15] text-[10px] text-stone-400 flex items-center justify-between">
+      <div className="px-4 py-2.5 bg-[#170f0a] border-t border-[#2e1f15] text-[10px] text-stone-400 flex items-center justify-between flex-wrap gap-2">
         <span className="flex items-center gap-1.5">
           <Shield size={10} className="text-emerald-400" />
-          <span>Verified by Connectra AppSec Auditor</span>
+          <span>Connectra LLM-SAST • Continuous Zero-Trust Verification</span>
         </span>
-        <span className="opacity-75">AI Security Agent • Continuous Scan</span>
+        <span className="opacity-75 font-mono">Evaluated on Groq LPU</span>
       </div>
     </motion.div>
   );

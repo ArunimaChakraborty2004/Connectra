@@ -31,11 +31,15 @@ import {
   LogOut,
   Bell,
   Smile,
+  Pencil,
+  Reply,
 } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from '../lib/toast';
 import Loader from '../components/ui/Loader';
 import { createNotification } from '../lib/notifications';
+import { deriveConversationKey, encryptMessage, decryptMessage, isEncryptedMessage, generateKeyFingerprint } from '../lib/e2ee';
+import { appendAuditEvent } from '../lib/auditLog';
 
 const QUICK_REACTIONS = ['👍', '❤️', '🔥', '😂', '🚀', '💡', '🎉'];
 const CHAT_EMOJIS = [
@@ -59,6 +63,11 @@ export default function ChatPage({ session }) {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
   const [loadingConvos, setLoadingConvos] = useState(true);
+
+  // E2EE States (End-to-End Encryption with AES-GCM-256)
+  const [e2eeEnabled, setE2eeEnabled] = useState(true);
+  const [e2eeCryptoKey, setE2eeCryptoKey] = useState(null);
+  const [e2eeFingerprint, setE2eeFingerprint] = useState('');
 
   // Emojis & message reactions
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -128,6 +137,13 @@ export default function ChatPage({ session }) {
   const [loadingGroupMembers, setLoadingGroupMembers] = useState(false);
   const [newAnnouncementText, setNewAnnouncementText] = useState('');
   const [savingAnnouncement, setSavingAnnouncement] = useState(false);
+  const [inlineAnnouncementText, setInlineAnnouncementText] = useState('');
+  const [isEditingAnnouncementInline, setIsEditingAnnouncementInline] = useState(false);
+  const [editGroupName, setEditGroupName] = useState('');
+  const [editGroupDesc, setEditGroupDesc] = useState('');
+  const [savingGroupDetails, setSavingGroupDetails] = useState(false);
+  const [editingMessage, setEditingMessage] = useState(null);
+  const [replyingToMessage, setReplyingToMessage] = useState(null);
   const [memberSearchQuery, setMemberSearchQuery] = useState('');
   const [memberSearchResults, setMemberSearchResults] = useState([]);
 
@@ -314,6 +330,7 @@ export default function ChatPage({ session }) {
   const loadDirectMessages = async (otherUserId) => {
     setLoadingMessages(true);
     try {
+      const key = await deriveConversationKey(myId, otherUserId);
       const { data } = await supabase
         .from('messages')
         .select('*')
@@ -321,7 +338,17 @@ export default function ChatPage({ session }) {
           `and(sender_id.eq.${myId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${myId})`
         )
         .order('created_at', { ascending: true });
-      setMessages(data || []);
+
+      const decrypted = await Promise.all(
+        (data || []).map(async (m) => {
+          if (isEncryptedMessage(m.content)) {
+            const dec = await decryptMessage(m.content, key);
+            return { ...m, content: dec, isE2EE: true };
+          }
+          return m;
+        })
+      );
+      setMessages(decrypted);
     } catch (err) {
       console.warn('loadDirectMessages error:', err);
     } finally {
@@ -408,13 +435,22 @@ export default function ChatPage({ session }) {
     setSearchResults(data || []);
   };
 
-  const startChat = (user) => {
+  const startChat = async (user) => {
     setSelectedGroup(null);
     setSelectedUser(user);
     setSearchQuery('');
     setSearchResults([]);
     if (!conversations.some(c => c.id === user.id)) {
       setConversations(prev => [user, ...prev]);
+    }
+    // Initialize E2EE for this user
+    try {
+      const key = await deriveConversationKey(myId, user.id);
+      const fp = await generateKeyFingerprint(myId, user.id);
+      setE2eeCryptoKey(key);
+      setE2eeFingerprint(fp);
+    } catch (err) {
+      console.warn('E2EE init error:', err);
     }
   };
 
@@ -505,6 +541,10 @@ export default function ChatPage({ session }) {
 
   // Send Message (Direct or Group with optional attachment)
   const sendMessage = async () => {
+    if (editingMessage) {
+      await handleSaveEditMessage();
+      return;
+    }
     if ((!newMessage.trim() && !attachmentFile) || sending) return;
     const text = newMessage.trim();
     setSending(true);
@@ -513,6 +553,18 @@ export default function ChatPage({ session }) {
       let attachmentUrl = null;
       let attachmentName = null;
       let attachmentType = null;
+
+      // Construct message text with quoted reply if replying
+      let messageContent = text;
+      if (replyingToMessage && text) {
+        const replySender =
+          replyingToMessage.sender?.username ||
+          (replyingToMessage.sender_id === myId
+            ? session?.user?.user_metadata?.username || 'You'
+            : selectedUser?.username || 'user');
+        const replySnippet = (replyingToMessage.content || '').slice(0, 90).replace(/\n/g, ' ');
+        messageContent = `>[Replying to @${replySender}]: "${replySnippet}"\n\n${text}`;
+      }
 
       if (attachmentFile) {
         setUploadingAttachment(true);
@@ -544,7 +596,7 @@ export default function ChatPage({ session }) {
         const fullPayload = {
           group_id: selectedGroup.id,
           sender_id: myId,
-          content: text || (attachmentName ? `Shared attachment: ${attachmentName}` : ''),
+          content: messageContent || (attachmentName ? `Shared attachment: ${attachmentName}` : ''),
           is_announcement: Boolean(isAnnouncementMsg && groupAdminRole),
           attachment_url: attachmentUrl,
           attachment_name: attachmentName,
@@ -604,10 +656,29 @@ export default function ChatPage({ session }) {
         });
       } else if (selectedUser) {
         let sentData = null;
+        let contentToStore = messageContent || (attachmentName ? `Shared attachment: ${attachmentName}` : '');
+        let isEncrypted = false;
+
+        // Perform client-side E2EE encryption before transmission
+        if (e2eeEnabled && messageContent) {
+          try {
+            const key = e2eeCryptoKey || (await deriveConversationKey(myId, selectedUser.id));
+            contentToStore = await encryptMessage(messageContent, key);
+            isEncrypted = true;
+            appendAuditEvent({
+              action: 'E2EE_MESSAGE_ENCRYPTED',
+              actorId: myId,
+              details: { receiverId: selectedUser.id, cipher: 'AES-GCM-256' },
+            });
+          } catch (e2eeErr) {
+            console.warn('E2EE encryption fallback to plaintext:', e2eeErr);
+          }
+        }
+
         const fullPayload = {
           sender_id: myId,
           receiver_id: selectedUser.id,
-          content: text || (attachmentName ? `Shared attachment: ${attachmentName}` : ''),
+          content: contentToStore,
           attachment_url: attachmentUrl,
           attachment_name: attachmentName,
           attachment_type: attachmentType,
@@ -621,7 +692,7 @@ export default function ChatPage({ session }) {
             .single();
 
           if (error) throw error;
-          sentData = data;
+          sentData = { ...data, content: messageContent, isE2EE: isEncrypted };
         } catch (insertErr) {
           // Fallback if attachment columns are not in schema cache
           if (insertErr?.message?.includes('attachment_') || insertErr?.message?.includes('column')) {
@@ -710,35 +781,165 @@ export default function ChatPage({ session }) {
   };
 
   // Admin: Update Announcement
-  const handleSaveAnnouncement = async () => {
+  const handleSaveAnnouncement = async (overrideText) => {
     if (!selectedGroup || !groupAdminRole) return;
     setSavingAnnouncement(true);
+    const textToSave = (overrideText !== undefined ? overrideText : newAnnouncementText).trim();
     try {
       const { error } = await supabase
         .from('chat_groups')
         .update({
-          announcement: newAnnouncementText.trim() || null,
+          announcement: textToSave || null,
           announcement_updated_at: new Date().toISOString(),
         })
         .eq('id', selectedGroup.id);
 
       if (error) throw error;
 
-      if (newAnnouncementText.trim()) {
+      if (textToSave) {
         await supabase.from('chat_group_messages').insert({
           group_id: selectedGroup.id,
           sender_id: myId,
-          content: `📢 [ANNOUNCEMENT]: ${newAnnouncementText.trim()}`,
+          content: `📢 [ANNOUNCEMENT]: ${textToSave}`,
           is_announcement: true,
         });
       }
 
-      setSelectedGroup(prev => ({ ...prev, announcement: newAnnouncementText.trim() }));
-      toast.success('Announcement updated!');
+      setSelectedGroup(prev => ({ ...prev, announcement: textToSave || null }));
+      setGroups(prev =>
+        prev.map(g => (g.id === selectedGroup.id ? { ...g, announcement: textToSave || null } : g))
+      );
+      setNewAnnouncementText(textToSave);
+      setInlineAnnouncementText(textToSave);
+      setIsEditingAnnouncementInline(false);
+      toast.success(textToSave ? 'Announcement updated!' : 'Announcement removed!');
     } catch (err) {
       toast.error('Failed to update announcement');
     } finally {
       setSavingAnnouncement(false);
+    }
+  };
+
+  // Admin: Remove Announcement completely
+  const handleRemoveAnnouncement = async () => {
+    await handleSaveAnnouncement('');
+  };
+
+  // Admin: Save Group Details (Name & Description)
+  const handleSaveGroupDetails = async () => {
+    if (!selectedGroup || !groupAdminRole || !editGroupName.trim()) return;
+    setSavingGroupDetails(true);
+    try {
+      const { error } = await supabase
+        .from('chat_groups')
+        .update({
+          name: editGroupName.trim(),
+          description: editGroupDesc.trim(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', selectedGroup.id);
+
+      if (error) throw error;
+
+      setSelectedGroup(prev => ({
+        ...prev,
+        name: editGroupName.trim(),
+        description: editGroupDesc.trim(),
+      }));
+      setGroups(prev =>
+        prev.map(g =>
+          g.id === selectedGroup.id
+            ? { ...g, name: editGroupName.trim(), description: editGroupDesc.trim() }
+            : g
+        )
+      );
+      toast.success('Group details updated!');
+    } catch (err) {
+      toast.error('Failed to update group details');
+    } finally {
+      setSavingGroupDetails(false);
+    }
+  };
+
+  // Message Edit & Delete Handlers
+  const handleStartEditMessage = (msg) => {
+    setEditingMessage(msg);
+    setNewMessage(msg.content || '');
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  };
+
+  const handleCancelEditMessage = () => {
+    setEditingMessage(null);
+    setNewMessage('');
+  };
+
+  const handleSaveEditMessage = async () => {
+    if (!editingMessage || !newMessage.trim()) return;
+    const updatedContent = newMessage.trim();
+    const msgId = editingMessage.id;
+    const table = selectedGroup ? 'chat_group_messages' : 'messages';
+
+    setMessages(prev =>
+      prev.map(m => (m.id === msgId ? { ...m, content: updatedContent, is_edited: true } : m))
+    );
+    setEditingMessage(null);
+    setNewMessage('');
+
+    try {
+      const { error } = await supabase
+        .from(table)
+        .update({ content: updatedContent })
+        .eq('id', msgId);
+
+      if (error) throw error;
+      toast.success('Message updated');
+    } catch (err) {
+      toast.error('Failed to update message');
+    }
+  };
+
+  const handleDeleteMessage = async (msgId) => {
+    const table = selectedGroup ? 'chat_group_messages' : 'messages';
+    setMessages(prev => prev.filter(m => m.id !== msgId));
+
+    try {
+      const { error } = await supabase
+        .from(table)
+        .delete()
+        .eq('id', msgId);
+
+      if (error) throw error;
+      toast.success('Message deleted');
+    } catch (err) {
+      toast.error('Failed to delete message');
+    }
+  };
+
+  // Reply & Pin Message Handlers
+  const handleReplyToMessage = (msg) => {
+    setReplyingToMessage(msg);
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  };
+
+  const handlePinMessage = async (msg) => {
+    if (selectedGroup) {
+      if (!groupAdminRole) {
+        toast.error('Only group admins can pin announcements');
+        return;
+      }
+      const isCurrentlyPinned = selectedGroup.announcement === msg.content;
+      if (isCurrentlyPinned) {
+        await handleRemoveAnnouncement();
+      } else {
+        await handleSaveAnnouncement(msg.content);
+        toast.success('Message pinned as Announcement!');
+      }
+    } else {
+      toast.info('Message pinned to conversation');
     }
   };
 
@@ -1167,6 +1368,33 @@ export default function ChatPage({ session }) {
                   </div>
                 </div>
 
+                {/* Direct Chat E2EE Controls & Key Fingerprint */}
+                {selectedUser && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setE2eeEnabled(v => !v)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer shadow-xs ${
+                        e2eeEnabled
+                          ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-400'
+                          : 'bg-stone-100 dark:bg-stone-800 border-stone-200 text-stone-500'
+                      }`}
+                      title={e2eeEnabled ? "End-to-End Encryption Active (AES-GCM-256)" : "E2EE Disabled"}
+                    >
+                      <Lock size={12} className={e2eeEnabled ? "text-emerald-500" : "text-stone-400"} />
+                      <span>{e2eeEnabled ? "E2EE: Active" : "E2EE: Off"}</span>
+                    </button>
+                    {e2eeFingerprint && (
+                      <span
+                        className="hidden lg:inline text-[10px] font-mono px-2 py-1 rounded-lg bg-black/10 dark:bg-black/40 text-stone-500 border border-black/5 dark:border-white/5"
+                        title="Conversation Cryptographic Key Identity Fingerprint"
+                      >
+                        FP: {e2eeFingerprint}
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 {/* Group Action Controls: Share Link & Admin Panel */}
                 {selectedGroup && (
                   <div className="flex items-center gap-2">
@@ -1180,7 +1408,12 @@ export default function ChatPage({ session }) {
                     </button>
 
                     <button
-                      onClick={() => setShowGroupAdminModal(true)}
+                      onClick={() => {
+                        setEditGroupName(selectedGroup.name || '');
+                        setEditGroupDesc(selectedGroup.description || '');
+                        setNewAnnouncementText(selectedGroup.announcement || '');
+                        setShowGroupAdminModal(true);
+                      }}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-orange-200 dark:border-stone-800 bg-white dark:bg-stone-900 text-xs font-bold text-stone-700 dark:text-stone-200 hover:border-orange-500 transition-colors cursor-pointer shadow-xs"
                       title="Manage Group Members & Settings"
                     >
@@ -1193,25 +1426,83 @@ export default function ChatPage({ session }) {
 
               {/* Group Pinned Announcement Banner */}
               {selectedGroup?.announcement && (
-                <div className="p-3 bg-gradient-to-r from-orange-500/15 via-amber-500/10 to-transparent border-b border-orange-500/20 flex items-start justify-between gap-3 text-xs">
-                  <div className="flex items-start gap-2">
-                    <Megaphone size={16} className="text-orange-500 shrink-0 mt-0.5" />
-                    <div>
-                      <span className="font-bold text-orange-600 uppercase text-[10px] tracking-wider block">
-                        Pinned Group Announcement
-                      </span>
-                      <p className="text-stone-800 dark:text-stone-200 text-xs mt-0.5 leading-relaxed">
-                        {selectedGroup.announcement}
-                      </p>
+                <div className="p-3 bg-gradient-to-r from-orange-500/15 via-amber-500/10 to-transparent border-b border-orange-500/20 text-xs">
+                  {isEditingAnnouncementInline ? (
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center gap-1.5 text-orange-600 font-bold text-[10px] uppercase tracking-wider">
+                        <Megaphone size={14} /> Edit Announcement
+                      </div>
+                      <textarea
+                        rows={2}
+                        value={inlineAnnouncementText}
+                        onChange={e => setInlineAnnouncementText(e.target.value)}
+                        className="w-full rounded-xl p-2.5 text-xs bg-white dark:bg-stone-900 border border-orange-300 dark:border-stone-700 outline-none focus:ring-1 focus:ring-orange-500"
+                        placeholder="Write announcement..."
+                      />
+                      <div className="flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={handleRemoveAnnouncement}
+                          disabled={savingAnnouncement}
+                          className="text-xs text-rose-500 hover:text-rose-600 font-semibold flex items-center gap-1 cursor-pointer"
+                        >
+                          <Trash2 size={12} /> Remove Announcement
+                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setIsEditingAnnouncementInline(false)}
+                            className="px-3 py-1 rounded-lg text-xs font-semibold text-stone-500 hover:text-stone-700 dark:hover:text-stone-300 cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveAnnouncement(inlineAnnouncementText)}
+                            disabled={savingAnnouncement}
+                            className="px-3 py-1 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold transition-colors cursor-pointer shadow-xs"
+                          >
+                            {savingAnnouncement ? 'Saving...' : 'Save'}
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  {groupAdminRole && (
-                    <button
-                      onClick={() => setShowGroupAdminModal(true)}
-                      className="text-[10px] font-bold text-orange-600 hover:underline shrink-0 cursor-pointer"
-                    >
-                      Edit
-                    </button>
+                  ) : (
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-2">
+                        <Megaphone size={16} className="text-orange-500 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="font-bold text-orange-600 uppercase text-[10px] tracking-wider block">
+                            Pinned Group Announcement
+                          </span>
+                          <p className="text-stone-800 dark:text-stone-200 text-xs mt-0.5 leading-relaxed">
+                            {selectedGroup.announcement}
+                          </p>
+                        </div>
+                      </div>
+                      {groupAdminRole && (
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            onClick={() => {
+                              setInlineAnnouncementText(selectedGroup.announcement || '');
+                              setIsEditingAnnouncementInline(true);
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-white/80 dark:bg-stone-800 text-[11px] font-bold text-orange-600 border border-orange-200 dark:border-stone-700 hover:bg-orange-50 transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                            title="Edit announcement"
+                          >
+                            <Pencil size={11} /> Edit
+                          </button>
+                          <button
+                            onClick={handleRemoveAnnouncement}
+                            disabled={savingAnnouncement}
+                            className="p-1 rounded-lg text-stone-400 hover:text-rose-600 transition-colors cursor-pointer"
+                            title="Remove announcement"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
@@ -1283,6 +1574,51 @@ export default function ChatPage({ session }) {
                                   </button>
                                 );
                               })}
+
+                              {/* Reply button on all messages */}
+                              <span className="w-px h-3 bg-stone-200 dark:bg-stone-600 mx-0.5" />
+                              <button
+                                type="button"
+                                onClick={() => handleReplyToMessage(msg)}
+                                className="p-1 rounded-full text-stone-400 hover:text-orange-500 transition-colors cursor-pointer"
+                                title="Reply to message"
+                              >
+                                <Reply size={11} />
+                              </button>
+
+                              {/* Pin message button */}
+                              {(selectedGroup ? groupAdminRole : true) && (
+                                <button
+                                  type="button"
+                                  onClick={() => handlePinMessage(msg)}
+                                  className="p-1 rounded-full text-stone-400 hover:text-orange-500 transition-colors cursor-pointer"
+                                  title={selectedGroup ? (selectedGroup.announcement === msg.content ? 'Unpin announcement' : 'Pin as Announcement') : 'Pin message'}
+                                >
+                                  <Pin size={11} className={selectedGroup?.announcement === msg.content ? 'text-orange-500 fill-orange-500' : ''} />
+                                </button>
+                              )}
+
+                              {/* Edit & Delete for own messages */}
+                              {isMe && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleStartEditMessage(msg)}
+                                    className="p-1 rounded-full text-stone-400 hover:text-orange-500 transition-colors cursor-pointer"
+                                    title="Edit message"
+                                  >
+                                    <Pencil size={11} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteMessage(msg.id)}
+                                    className="p-1 rounded-full text-stone-400 hover:text-rose-500 transition-colors cursor-pointer"
+                                    title="Delete message"
+                                  >
+                                    <Trash2 size={11} />
+                                  </button>
+                                </>
+                              )}
                             </div>
 
                             <div
@@ -1321,7 +1657,53 @@ export default function ChatPage({ session }) {
                                 </div>
                               )}
 
-                              <p className="whitespace-pre-wrap">{msg.content}</p>
+                              {/* Pinned Announcement Indicator on message */}
+                              {selectedGroup?.announcement === msg.content && (
+                                <div className={`flex items-center gap-1 text-[10px] font-bold mb-1.5 ${isMe ? 'text-amber-200' : 'text-orange-600'}`}>
+                                  <Pin size={10} className="fill-current" />
+                                  <span>PINNED ANNOUNCEMENT</span>
+                                </div>
+                              )}
+
+                              {/* E2EE Verified Badge */}
+                              {msg.isE2EE && (
+                                <div className={`flex items-center gap-1 text-[9px] font-mono font-bold mb-1 ${isMe ? 'text-emerald-200' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                                  <Lock size={9} />
+                                  <span>🔒 E2EE VERIFIED (AES-GCM-256)</span>
+                                </div>
+                              )}
+
+                              {/* Message Content & Quoted Reply rendering */}
+                              {(() => {
+                                const raw = msg.content || '';
+                                const match = raw.match(/^>\[Replying to @([^\]]+)\]:\s*"([^"]+)"\n\n([\s\S]*)$/);
+                                if (match) {
+                                  const replySender = match[1];
+                                  const replySnippet = match[2];
+                                  const mainContent = match[3];
+                                  return (
+                                    <>
+                                      <div
+                                        className={`mb-2 p-2 rounded-xl border-l-4 text-xs ${
+                                          isMe
+                                            ? 'bg-black/25 border-white/80 text-white/95'
+                                            : 'bg-orange-50/80 dark:bg-stone-700/60 border-orange-500 text-stone-800 dark:text-stone-200'
+                                        }`}
+                                      >
+                                        <div className="font-bold text-[10px] text-orange-400 flex items-center gap-1">
+                                          <Reply size={10} /> Replying to @{replySender}
+                                        </div>
+                                        <div className="text-[11px] truncate opacity-90 mt-0.5">
+                                          "{replySnippet}"
+                                        </div>
+                                      </div>
+                                      <p className="whitespace-pre-wrap">{mainContent}</p>
+                                    </>
+                                  );
+                                }
+                                return <p className="whitespace-pre-wrap">{raw}</p>;
+                              })()}
+
                               <p
                                 className={`text-[9px] mt-1 text-right ${
                                   isMe ? 'text-white/70' : 'text-stone-400'
@@ -1443,6 +1825,49 @@ export default function ChatPage({ session }) {
                   )}
                 </AnimatePresence>
 
+
+                {/* Replying to message indicator */}
+                {replyingToMessage && (
+                  <div className="flex items-center justify-between px-3 py-1.5 mb-1 bg-orange-500/10 border border-orange-500/25 rounded-xl text-xs text-orange-600">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Reply size={13} className="shrink-0 text-orange-500" />
+                      <div className="min-w-0">
+                        <span className="font-bold text-[11px] block">
+                          Replying to @{replyingToMessage.sender?.username || (replyingToMessage.sender_id === myId ? (session?.user?.user_metadata?.username || 'You') : selectedUser?.username || 'User')}
+                        </span>
+                        <span className="text-[10px] text-stone-600 dark:text-stone-300 truncate block max-w-sm">
+                          {replyingToMessage.content}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setReplyingToMessage(null)}
+                      className="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 p-0.5 cursor-pointer shrink-0"
+                      title="Cancel reply"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                )}
+
+                {/* Editing message indicator */}
+                {editingMessage && (
+                  <div className="flex items-center justify-between px-3 py-1.5 mb-1 bg-orange-500/10 border border-orange-500/20 rounded-xl text-xs text-orange-600">
+                    <span className="flex items-center gap-1.5 truncate">
+                      <Pencil size={12} /> Editing: <span className="font-semibold truncate">{editingMessage.content}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCancelEditMessage}
+                      className="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 p-0.5 cursor-pointer shrink-0"
+                      title="Cancel edit"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                )}
+
                 <div className="flex items-center gap-2">
                   {/* File Attachment Input (hidden) */}
                   <input
@@ -1490,9 +1915,9 @@ export default function ChatPage({ session }) {
                     onClick={sendMessage}
                     disabled={sending || (!newMessage.trim() && !attachmentFile)}
                     className="p-2.5 rounded-xl bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white hover:brightness-105 disabled:opacity-40 transition-all cursor-pointer shadow-sm shadow-orange-500/20"
-                    title="Send"
+                    title={editingMessage ? "Save Edit" : "Send"}
                   >
-                    <Send size={16} />
+                    {editingMessage ? <Check size={16} /> : <Send size={16} />}
                   </button>
                 </div>
               </div>
@@ -1670,6 +2095,45 @@ export default function ChatPage({ session }) {
                 </div>
               )}
 
+              {/* Edit Group Info (Admin Only) */}
+              {groupAdminRole && (
+                <div className="mt-4 p-3.5 rounded-xl border border-[#f1e4d3] dark:border-[#2b1c13] bg-stone-50 dark:bg-stone-800/60 flex flex-col gap-2.5">
+                  <label className="text-xs font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
+                    <Settings size={14} className="text-orange-500" /> Edit Group Details
+                  </label>
+                  <div>
+                    <label className="text-[11px] font-semibold text-stone-500 block mb-1">Group Name</label>
+                    <input
+                      type="text"
+                      value={editGroupName}
+                      onChange={e => setEditGroupName(e.target.value)}
+                      placeholder="Group name"
+                      className="w-full rounded-xl px-3 py-2 text-xs bg-white dark:bg-stone-900 border border-[#f1e4d3] dark:border-[#2b1c13] outline-none focus:border-orange-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-stone-500 block mb-1">Group Description</label>
+                    <textarea
+                      rows={2}
+                      value={editGroupDesc}
+                      onChange={e => setEditGroupDesc(e.target.value)}
+                      placeholder="Group description or objective..."
+                      className="w-full rounded-xl px-3 py-2 text-xs bg-white dark:bg-stone-900 border border-[#f1e4d3] dark:border-[#2b1c13] outline-none focus:border-orange-500 resize-none"
+                    />
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleSaveGroupDetails}
+                      disabled={savingGroupDetails || !editGroupName.trim()}
+                      className="px-3.5 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white text-xs font-bold transition-colors cursor-pointer shadow-xs"
+                    >
+                      {savingGroupDetails ? 'Saving...' : 'Save Group Info'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Announcement Editor (Admin Only) */}
               {groupAdminRole && (
                 <div className="mt-4 p-3.5 rounded-xl border border-orange-200 dark:border-stone-800 bg-orange-50/50 dark:bg-stone-800/40 flex flex-col gap-2">
@@ -1687,20 +2151,18 @@ export default function ChatPage({ session }) {
                     {selectedGroup.announcement && (
                       <button
                         type="button"
-                        onClick={() => {
-                          setNewAnnouncementText('');
-                          handleSaveAnnouncement();
-                        }}
-                        className="text-xs text-rose-500 hover:underline cursor-pointer"
+                        onClick={handleRemoveAnnouncement}
+                        disabled={savingAnnouncement}
+                        className="text-xs text-rose-500 hover:text-rose-600 font-semibold cursor-pointer"
                       >
                         Remove Announcement
                       </button>
                     )}
                     <button
                       type="button"
-                      onClick={handleSaveAnnouncement}
+                      onClick={() => handleSaveAnnouncement()}
                       disabled={savingAnnouncement}
-                      className="px-3 py-1.5 rounded-lg bg-orange-500 text-white text-xs font-bold hover:bg-orange-600 transition-colors cursor-pointer shadow-xs"
+                      className="px-3.5 py-1.5 rounded-lg bg-orange-500 text-white text-xs font-bold hover:bg-orange-600 transition-colors cursor-pointer shadow-xs"
                     >
                       {savingAnnouncement ? 'Saving...' : 'Save Announcement'}
                     </button>

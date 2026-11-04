@@ -21,11 +21,13 @@ import {
   ChevronDown,
   Plus,
   History,
-  MessageSquare,
   Clock,
+  BookOpen,
+  Database,
 } from 'lucide-react';
 import { chatWithCopilot } from '../../lib/ai';
 import { supabase } from '../../lib/supabase';
+import { buildDocumentIndex, searchIndex, formatRAGContextForPrompt, extractProjectKnowledgeChunks } from '../../lib/rag';
 
 const QUICK_PROMPT_CATEGORIES = {
   Cybersecurity: [
@@ -59,6 +61,9 @@ export default function AICopilotWidget({ session }) {
   const [selectedModel, setSelectedModel] = useState('qwen/qwen3.8-27b');
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showHistoryDrawer, setShowHistoryDrawer] = useState(false);
+  const [ragEnabled, setRagEnabled] = useState(true);
+  const [ragIndex, setRagIndex] = useState(null);
+  const [ragDocumentCount, setRagDocumentCount] = useState(0);
 
   // Dedicated Copilot Dark/Light Theme with persistent memory
   const [isDark, setIsDark] = useState(() => {
@@ -92,6 +97,42 @@ export default function AICopilotWidget({ session }) {
     };
     fetchUser();
   }, [session?.user?.id]);
+
+  // Load and index workspace knowledge base for RAG (projects, tasks, discussions)
+  useEffect(() => {
+    const initRAG = async () => {
+      try {
+        const { data: projects } = await supabase
+          .from('projects')
+          .select('id, title, description, tech_stack, status')
+          .limit(8);
+
+        const { data: posts } = await supabase
+          .from('posts')
+          .select('id, content, code_snippet, code_language, profiles(username)')
+          .limit(12);
+
+        const chunks = [];
+        (projects || []).forEach(p => chunks.push(...extractProjectKnowledgeChunks(p)));
+        (posts || []).forEach(post => chunks.push({
+          id: `post-${post.id}`,
+          title: `Discussion by @${post.profiles?.username || 'member'}`,
+          type: 'discussion',
+          content: `${post.content || ''}\n${post.code_snippet ? `Code Snippet (${post.code_language || 'code'}):\n${post.code_snippet}` : ''}`,
+          metadata: { author: post.profiles?.username },
+        }));
+
+        if (chunks.length > 0) {
+          const idx = buildDocumentIndex(chunks);
+          setRagIndex(idx);
+          setRagDocumentCount(chunks.length);
+        }
+      } catch (err) {
+        console.warn('RAG initialization skipped:', err.message);
+      }
+    };
+    initRAG();
+  }, []);
 
   const devName = userProfile?.username || session?.user?.email?.split('@')[0] || 'Developer';
   const devStack = userProfile?.tech_stack || 'Full-Stack Web & Cybersecurity';
@@ -219,11 +260,30 @@ export default function AICopilotWidget({ session }) {
     setLoading(true);
 
     try {
+      // 1. Contextual RAG Retrieval across indexed workspace items
+      let ragContext = '';
+      let retrievedSources = [];
+
+      if (ragEnabled && ragIndex && ragIndex.totalDocs > 0) {
+        const hits = searchIndex(ragIndex, textToSend, 3);
+        if (hits.length > 0) {
+          ragContext = formatRAGContextForPrompt(hits);
+          retrievedSources = hits.map(h => ({
+            id: h.document.id,
+            title: h.document.title,
+            type: h.document.type,
+            score: h.score,
+          }));
+        }
+      }
+
       const reply = await chatWithCopilot({
         messages: updatedMessages.map(m => ({ role: m.role, content: m.content })),
+        model: selectedModel,
         context: {
           username: devName,
           techStack: devStack,
+          ragContext,
         },
       });
 
@@ -232,7 +292,14 @@ export default function AICopilotWidget({ session }) {
           s.id === activeSession.id
             ? {
                 ...s,
-                messages: [...updatedMessages, { role: 'assistant', content: reply }],
+                messages: [
+                  ...updatedMessages,
+                  {
+                    role: 'assistant',
+                    content: reply,
+                    sources: retrievedSources,
+                  },
+                ],
               }
             : s
         )
@@ -510,6 +577,21 @@ export default function AICopilotWidget({ session }) {
                       {AVAILABLE_MODELS.find(m => m.id === selectedModel)?.name || 'Qwen 3.8'}
                       <ChevronDown size={10} />
                     </button>
+                    <span>·</span>
+                    {/* RAG Toggle Pill */}
+                    <button
+                      type="button"
+                      onClick={() => setRagEnabled(p => !p)}
+                      className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-1 cursor-pointer transition-colors border ${
+                        ragEnabled
+                          ? 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30'
+                          : 'bg-stone-500/15 text-stone-400 border-stone-500/30'
+                      }`}
+                      title={ragEnabled ? `RAG Active: Indexing ${ragDocumentCount} workspace records` : 'RAG Disabled (Zero-Shot)'}
+                    >
+                      <Database size={9} />
+                      <span>{ragEnabled ? 'RAG: ON' : 'RAG: OFF'}</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -708,6 +790,25 @@ export default function AICopilotWidget({ session }) {
                     <div className="whitespace-pre-wrap select-text leading-relaxed font-sans">
                       {renderFormattedContent(m.content)}
                     </div>
+
+                    {/* Cited RAG Knowledge Sources */}
+                    {m.sources && m.sources.length > 0 && (
+                      <div className="mt-2.5 pt-2 border-t border-orange-500/15 text-[10px] space-y-1">
+                        <span className="font-bold text-orange-500 flex items-center gap-1">
+                          <BookOpen size={10} /> Grounded with {m.sources.length} Workspace Reference(s):
+                        </span>
+                        <div className="flex flex-wrap gap-1">
+                          {m.sources.map((src, sIdx) => (
+                            <span
+                              key={sIdx}
+                              className="px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-400 font-mono text-[9px] border border-orange-500/20"
+                            >
+                              [Ref {sIdx + 1}]: {src.title}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {m.role === 'assistant' && (
                       <button
