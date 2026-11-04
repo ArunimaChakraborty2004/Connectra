@@ -254,7 +254,8 @@ export default function Navbar({ onOpenSidebar, session: propSession, profile: p
   };
 
   return (
-    <header className="sticky top-0 z-50 bg-[#fffcf7]/95 backdrop-blur-md border-b border-[#f1e4d3] shadow-xs">
+    <>
+      <header className="sticky top-0 z-50 bg-[#fffcf7]/95 backdrop-blur-md border-b border-[#f1e4d3] shadow-xs">
       <div className="max-w-[1440px] mx-auto px-4 lg:px-6 h-18 flex items-center justify-between gap-4">
         {/* LEFT: Logo & Mobile Hamburger */}
         <div className="flex items-center gap-3 shrink-0">
@@ -527,13 +528,14 @@ export default function Navbar({ onOpenSidebar, session: propSession, profile: p
           </div>
         </div>
       </div>
-
-      {/* Security Hub Modal */}
-      <SecurityHubModal
-        isOpen={showSecurityHub}
-        onClose={() => setShowSecurityHub(false)}
-        session={session}
-      />
     </header>
+
+    {/* Security Hub Modal (Rendered outside header for clean viewport centering) */}
+    <SecurityHubModal
+      isOpen={showSecurityHub}
+      onClose={() => setShowSecurityHub(false)}
+      session={session}
+    />
+  </>
   );
 }
