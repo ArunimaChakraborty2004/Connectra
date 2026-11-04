@@ -1053,6 +1053,127 @@ VALUES
 )
 ON CONFLICT DO NOTHING;
 
+-- ==============================================================================
+-- 9. STORIES & REELS SCHEMA UPDATES AND STORAGE BUCKETS
+-- ==============================================================================
 
+-- 9.1 STORIES TABLE (24h ephemeral developer stories: image, dev thought, code, video)
+CREATE TABLE IF NOT EXISTS public.stories (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+    media_url TEXT,
+    media_type TEXT NOT NULL DEFAULT 'image' CHECK (media_type IN ('image', 'thought', 'video')),
+    caption TEXT,
+    bg_color TEXT,
+    code_snippet TEXT,
+    expires_at TIMESTAMP WITH TIME ZONE DEFAULT (timezone('utc'::text, now()) + INTERVAL '24 hours'),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
 
+ALTER TABLE public.stories ENABLE ROW LEVEL SECURITY;
 
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Active stories are viewable by everyone') THEN
+        CREATE POLICY "Active stories are viewable by everyone" 
+        ON public.stories FOR SELECT 
+        USING (expires_at > timezone('utc'::text, now()));
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Authenticated users can insert stories') THEN
+        CREATE POLICY "Authenticated users can insert stories" 
+        ON public.stories FOR INSERT 
+        WITH CHECK (auth.uid() = user_id);
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can delete their own stories') THEN
+        CREATE POLICY "Users can delete their own stories" 
+        ON public.stories FOR DELETE 
+        USING (auth.uid() = user_id);
+    END IF;
+END $$;
+
+-- 9.2 REELS TABLE (Ensure table exists and has all required columns)
+CREATE TABLE IF NOT EXISTS public.reels (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+    video_url TEXT NOT NULL,
+    caption TEXT,
+    visibility TEXT DEFAULT 'public' CHECK (visibility IN ('public', 'private', 'followers')),
+    allow_comments BOOLEAN DEFAULT true,
+    likes_count INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- Ensure columns exist if reels was created with minimal schema
+ALTER TABLE public.reels
+ADD COLUMN IF NOT EXISTS visibility TEXT DEFAULT 'public',
+ADD COLUMN IF NOT EXISTS allow_comments BOOLEAN DEFAULT true,
+ADD COLUMN IF NOT EXISTS likes_count INTEGER DEFAULT 0,
+ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
+
+ALTER TABLE public.reels ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public reels are viewable by everyone') THEN
+        CREATE POLICY "Public reels are viewable by everyone" 
+        ON public.reels FOR SELECT 
+        USING (visibility = 'public' OR auth.uid() = user_id);
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can insert their own reels') THEN
+        CREATE POLICY "Users can insert their own reels" 
+        ON public.reels FOR INSERT 
+        WITH CHECK (auth.uid() = user_id);
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can update their own reels') THEN
+        CREATE POLICY "Users can update their own reels" 
+        ON public.reels FOR UPDATE 
+        USING (auth.uid() = user_id);
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can delete their own reels') THEN
+        CREATE POLICY "Users can delete their own reels" 
+        ON public.reels FOR DELETE 
+        USING (auth.uid() = user_id);
+    END IF;
+END $$;
+
+-- 9.3 STORAGE BUCKETS (stories, reels, post_images)
+INSERT INTO storage.buckets (id, name, public)
+VALUES 
+    ('stories', 'stories', true),
+    ('reels', 'reels', true),
+    ('post_images', 'post_images', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+-- Storage Policies for stories & reels
+DO $$
+BEGIN
+    -- Stories Bucket Policies
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public Access to Stories') THEN
+        CREATE POLICY "Public Access to Stories" ON storage.objects FOR SELECT USING (bucket_id = 'stories');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Authenticated Users Upload Stories') THEN
+        CREATE POLICY "Authenticated Users Upload Stories" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'stories' AND auth.role() = 'authenticated');
+    END IF;
+
+    -- Reels Bucket Policies
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public Access to Reels') THEN
+        CREATE POLICY "Public Access to Reels" ON storage.objects FOR SELECT USING (bucket_id = 'reels');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Authenticated Users Upload Reels') THEN
+        CREATE POLICY "Authenticated Users Upload Reels" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'reels' AND auth.role() = 'authenticated');
+    END IF;
+
+    -- Post Images Bucket Policies
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public Access to Post Images') THEN
+        CREATE POLICY "Public Access to Post Images" ON storage.objects FOR SELECT USING (bucket_id = 'post_images');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Authenticated Users Upload Post Images') THEN
+        CREATE POLICY "Authenticated Users Upload Post Images" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'post_images' AND auth.role() = 'authenticated');
+    END IF;
+END $$;

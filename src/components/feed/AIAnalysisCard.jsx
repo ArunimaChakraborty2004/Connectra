@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   Shield,
   Sparkles,
@@ -12,10 +12,133 @@ import {
   Code2,
   Wrench,
   Percent,
-  FileCode2,
-  ExternalLink,
+  Info,
+  Terminal,
+  HelpCircle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+
+/**
+ * Parses inline markdown:
+ * - `code` -> inline code chip
+ * - **bold** -> strong tag
+ * - cleans stray double asterisks
+ */
+function renderInlineMarkdown(text) {
+  if (!text) return null;
+
+  // Split on code spans `...`
+  const codeParts = text.split(/(`[^`]+`)/g);
+
+  return codeParts.map((codePart, cIdx) => {
+    if (codePart.startsWith('`') && codePart.endsWith('`') && codePart.length > 2) {
+      return (
+        <code
+          key={cIdx}
+          className="px-1.5 py-0.5 mx-0.5 rounded font-mono text-[11px] bg-black/60 text-amber-300 border border-amber-500/25 shadow-2xs inline-block align-baseline"
+        >
+          {codePart.slice(1, -1)}
+        </code>
+      );
+    }
+
+    // Split on **bold**
+    const boldParts = codePart.split(/(\*\*[^*]+\*\*)/g);
+
+    return boldParts.map((bPart, bIdx) => {
+      if (bPart.startsWith('**') && bPart.endsWith('**') && bPart.length >= 4) {
+        return (
+          <strong key={`${cIdx}-${bIdx}`} className="font-bold text-amber-200">
+            {bPart.slice(2, -2)}
+          </strong>
+        );
+      }
+
+      // Also clean any rogue stray double asterisks
+      const cleaned = bPart.replace(/\*\*/g, '');
+      return <span key={`${cIdx}-${bIdx}`}>{cleaned}</span>;
+    });
+  });
+}
+
+/**
+ * Parses markdown text into structured semantic sections
+ */
+function parseMarkdownToSections(rawText) {
+  if (!rawText || typeof rawText !== 'string') return { intro: '', sections: [] };
+
+  const lines = rawText.split('\n');
+  const sections = [];
+  let introLines = [];
+  let currentSection = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (!trimmed) continue;
+
+    // Detect section header:
+    // e.g. "1. 💡 **What it does**", "2. ⚡ **Key concepts / tricks used**", "### ⚠️ What it does", "1. What it does"
+    const headerMatch = trimmed.match(/^(?:(?:\d+\.|\*|-|#+)\s*)?([💡⚡⚠️🚀🔍💡🛠️🔒]*)\s*\**([A-Za-z0-9\s/&,.\-_]+?)\**\s*$/);
+    const isExplicitNumberedHeader = trimmed.match(/^\d+\.\s+([💡⚡⚠️🚀🔍💡🛠️🔒]?)\s*\**([^*]+)\**/);
+
+    if (isExplicitNumberedHeader || (headerMatch && (trimmed.startsWith('#') || trimmed.match(/^\d+\./)))) {
+      const icon = (isExplicitNumberedHeader ? isExplicitNumberedHeader[1] : headerMatch[1]) || '💡';
+      const rawTitle = (isExplicitNumberedHeader ? isExplicitNumberedHeader[2] : headerMatch[2]) || 'Overview';
+      const cleanTitle = rawTitle.replace(/\*\*/g, '').replace(/^[💡⚡⚠️🚀🔍💡🛠️🔒\s]+/, '').trim();
+
+      currentSection = {
+        icon,
+        title: cleanTitle,
+        items: [],
+      };
+      sections.push(currentSection);
+      continue;
+    }
+
+    // Detect bullets: "* **Title**: body" or "* text" or "- text"
+    const bulletMatch = trimmed.match(/^[*•-]\s+(.*)$/);
+    if (bulletMatch) {
+      const bulletContent = bulletMatch[1];
+      // Check if bullet starts with bold title: "**useOptimistic**: body"
+      const boldTitleMatch = bulletContent.match(/^\*\*([^*]+)\*\*:\s*(.*)$/);
+
+      const bulletItem = boldTitleMatch
+        ? {
+            type: 'bullet_titled',
+            title: boldTitleMatch[1].replace(/\*\*/g, '').trim(),
+            text: boldTitleMatch[2],
+          }
+        : {
+            type: 'bullet',
+            text: bulletContent,
+          };
+
+      if (currentSection) {
+        currentSection.items.push(bulletItem);
+      } else {
+        introLines.push(trimmed);
+      }
+      continue;
+    }
+
+    // Regular paragraph line
+    if (currentSection) {
+      currentSection.items.push({
+        type: 'paragraph',
+        text: trimmed,
+      });
+    } else {
+      introLines.push(trimmed);
+    }
+  }
+
+  return {
+    intro: introLines.join(' ').replace(/\*\*/g, ''),
+    sections,
+  };
+}
 
 export default function AIAnalysisCard({ content, type = 'security', onClose, onApplyFix }) {
   const [copiedCodeIndex, setCopiedCodeIndex] = useState(null);
@@ -24,19 +147,30 @@ export default function AIAnalysisCard({ content, type = 'security', onClose, on
 
   if (!content) return null;
 
-  // Determine if content is structured object or string
+  // Determine if content is structured object (SAST JSON) or string
   const isStructured = typeof content === 'object' && content !== null && ('findings' in content || 'isClean' in content);
+
+  const isExplainType = type === 'explain';
 
   const isClean = isStructured
     ? content.isClean
-    : content.toLowerCase().includes('no critical vulnerabilities') ||
-      content.toLowerCase().includes('no vulnerabilities detected') ||
-      (content.toLowerCase().includes('secure') && !content.toLowerCase().includes('high vulnerability'));
+    : typeof content === 'string' &&
+      (content.toLowerCase().includes('no critical vulnerabilities') ||
+        content.toLowerCase().includes('no vulnerabilities detected') ||
+        (content.toLowerCase().includes('secure') && !content.toLowerCase().includes('high vulnerability')));
 
   const findings = isStructured ? content.findings || [] : [];
   const refactoredCode = isStructured ? content.refactoredCode : null;
   const qualityNotes = isStructured ? content.qualityNotes || [] : [];
   const summary = isStructured ? content.summary : null;
+
+  // Parse markdown for non-structured string responses (like code explanation)
+  const parsedMarkdown = useMemo(() => {
+    if (!isStructured && typeof content === 'string') {
+      return parseMarkdownToSections(content);
+    }
+    return null;
+  }, [content, isStructured]);
 
   const handleCopyCode = (codeText, idx) => {
     navigator.clipboard.writeText(codeText);
@@ -55,16 +189,36 @@ export default function AIAnalysisCard({ content, type = 'security', onClose, on
   // Severity styling lookup
   const getSeverityBadge = (severity) => {
     const s = (severity || 'MEDIUM').toUpperCase();
-    if (s === 'CRITICAL') {
-      return 'bg-rose-500/20 text-rose-400 border-rose-500/40';
-    }
-    if (s === 'HIGH') {
-      return 'bg-amber-500/20 text-amber-400 border-amber-500/40';
-    }
-    if (s === 'MEDIUM') {
-      return 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40';
-    }
+    if (s === 'CRITICAL') return 'bg-rose-500/20 text-rose-400 border-rose-500/40';
+    if (s === 'HIGH') return 'bg-amber-500/20 text-amber-400 border-amber-500/40';
+    if (s === 'MEDIUM') return 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40';
     return 'bg-blue-500/20 text-blue-300 border-blue-500/40';
+  };
+
+  const getSectionTheme = (title = '', icon = '') => {
+    const lower = `${title} ${icon}`.toLowerCase();
+    if (lower.includes('concept') || lower.includes('trick') || lower.includes('⚡')) {
+      return {
+        cardBg: 'bg-blue-950/20 border-blue-500/30',
+        iconBg: 'bg-blue-500/20 text-blue-400',
+        dotBg: 'bg-blue-400',
+        titleColor: 'text-blue-300',
+      };
+    }
+    if (lower.includes('edge') || lower.includes('caveat') || lower.includes('⚠️') || lower.includes('risk')) {
+      return {
+        cardBg: 'bg-amber-950/20 border-amber-500/30',
+        iconBg: 'bg-amber-500/20 text-amber-400',
+        dotBg: 'bg-amber-400',
+        titleColor: 'text-amber-300',
+      };
+    }
+    return {
+      cardBg: 'bg-orange-950/20 border-orange-500/30',
+      iconBg: 'bg-orange-500/20 text-orange-400',
+      dotBg: 'bg-orange-400',
+      titleColor: 'text-orange-300',
+    };
   };
 
   // Helper to parse diff lines into colored additions/deletions
@@ -107,41 +261,62 @@ export default function AIAnalysisCard({ content, type = 'security', onClose, on
         <div className="flex items-center gap-2.5">
           <div
             className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 shadow-sm ${
-              isClean
+              isExplainType
+                ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
+                : isClean
                 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                 : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
             }`}
           >
-            {isClean ? <Shield size={15} className="text-emerald-400" /> : <AlertTriangle size={15} className="text-amber-400" />}
+            {isExplainType ? (
+              <Sparkles size={15} className="text-orange-400" />
+            ) : isClean ? (
+              <Shield size={15} className="text-emerald-400" />
+            ) : (
+              <AlertTriangle size={15} className="text-amber-400" />
+            )}
           </div>
 
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="font-extrabold text-xs uppercase tracking-wider text-orange-400">
-                LLM-SAST Vulnerability Pipeline
+                {isExplainType ? 'AI Code Intelligence & Explanation' : 'LLM-SAST Vulnerability Pipeline'}
               </span>
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-400 border border-orange-500/30 font-mono font-bold">
-                OWASP & CWE Certified
+                {isExplainType ? '✨ Interactive Breakdown' : 'OWASP & CWE Certified'}
               </span>
             </div>
             <div className="text-[11px] text-stone-400 flex items-center gap-2">
-              <span>Automated static inspection with Groq Llama 3</span>
+              <span>
+                {isExplainType
+                  ? 'Key concepts, idioms, and edge cases explained'
+                  : 'Automated static inspection with Groq LPU acceleration'}
+              </span>
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
           {/* Status Pill */}
-          <div
-            className={`px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1.5 shadow-xs ${
-              isClean
-                ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/40'
-                : 'bg-amber-950/80 text-amber-300 border border-amber-600/40'
-            }`}
-          >
-            {isClean ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
-            <span>{isClean ? 'Clean / Zero Critical Flaws' : `${findings.length || 1} Security Advisory`}</span>
-          </div>
+          {!isExplainType && (
+            <div
+              className={`px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1.5 shadow-xs ${
+                isClean
+                  ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/40'
+                  : 'bg-amber-950/80 text-amber-300 border border-amber-600/40'
+              }`}
+            >
+              {isClean ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
+              <span>{isClean ? 'Clean / Zero Critical Flaws' : `${findings.length || 1} Security Advisory`}</span>
+            </div>
+          )}
+
+          {isExplainType && (
+            <div className="px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1.5 bg-orange-950/60 text-orange-300 border border-orange-500/30 shadow-xs">
+              <Lightbulb size={12} className="text-orange-400" />
+              <span>Senior Dev Insights</span>
+            </div>
+          )}
 
           {onClose && (
             <button
@@ -157,7 +332,7 @@ export default function AIAnalysisCard({ content, type = 'security', onClose, on
 
       {/* Main Body */}
       <div className="p-4 space-y-3.5 text-xs">
-        {/* Executive Summary */}
+        {/* Executive Summary (SAST mode) */}
         {summary && (
           <div className="p-3 rounded-xl bg-white/5 border border-white/10 text-stone-300 leading-relaxed text-xs">
             <strong className="text-orange-400 font-bold block mb-0.5">Executive Verdict</strong>
@@ -165,7 +340,7 @@ export default function AIAnalysisCard({ content, type = 'security', onClose, on
           </div>
         )}
 
-        {/* Structured SAST Findings */}
+        {/* Structured SAST Findings (Security mode) */}
         {isStructured && findings.length > 0 && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -182,7 +357,6 @@ export default function AIAnalysisCard({ content, type = 'security', onClose, on
                 key={idx}
                 className="p-3.5 rounded-xl border border-amber-500/30 bg-[#1c120a] space-y-2.5 shadow-sm"
               >
-                {/* Finding Header */}
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2">
                     <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold border ${getSeverityBadge(finding.severity)}`}>
@@ -205,7 +379,6 @@ export default function AIAnalysisCard({ content, type = 'security', onClose, on
                   )}
                 </div>
 
-                {/* Finding Details */}
                 <div>
                   <h4 className="font-bold text-stone-100 text-xs mb-1">
                     {finding.cweTitle || finding.description}
@@ -217,7 +390,6 @@ export default function AIAnalysisCard({ content, type = 'security', onClose, on
                   )}
                 </div>
 
-                {/* Remediation Diff */}
                 {finding.remediationDiff && (
                   <div className="space-y-1">
                     <span className="text-[10px] font-bold text-orange-400 flex items-center gap-1 uppercase tracking-wider">
@@ -282,10 +454,76 @@ export default function AIAnalysisCard({ content, type = 'security', onClose, on
           </div>
         )}
 
-        {/* Backwards-compatible raw string rendering if not structured */}
-        {!isStructured && (
-          <div className="p-3 rounded-xl bg-stone-900/40 border border-stone-800 text-stone-300 whitespace-pre-wrap leading-relaxed text-xs">
-            {typeof content === 'string' ? content : JSON.stringify(content, null, 2)}
+        {/* BEAUTIFIED MARKDOWN RENDERER (NO RAW ASTERISKS) */}
+        {!isStructured && parsedMarkdown && (
+          <div className="space-y-3">
+            {/* Friendly Intro Callout */}
+            {parsedMarkdown.intro && (
+              <div className="p-3 rounded-xl bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-transparent border border-orange-500/20 text-stone-200 leading-relaxed text-xs flex items-start gap-2.5">
+                <Sparkles size={16} className="text-orange-400 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p>{renderInlineMarkdown(parsedMarkdown.intro)}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Parsed Sections rendered as sleek cards */}
+            {parsedMarkdown.sections.map((section, sIdx) => {
+              const theme = getSectionTheme(section.title, section.icon);
+
+              return (
+                <div
+                  key={sIdx}
+                  className={`p-3.5 rounded-xl border ${theme.cardBg} space-y-2.5 shadow-sm`}
+                >
+                  {/* Section Title Header */}
+                  <div className="flex items-center gap-2 pb-1.5 border-b border-white/5">
+                    <span className="text-base leading-none">{section.icon || '💡'}</span>
+                    <h3 className={`font-bold text-xs uppercase tracking-wide ${theme.titleColor}`}>
+                      {section.title}
+                    </h3>
+                  </div>
+
+                  {/* Section Items */}
+                  <div className="space-y-2">
+                    {section.items.map((item, iIdx) => {
+                      if (item.type === 'bullet_titled') {
+                        return (
+                          <div key={iIdx} className="flex items-start gap-2 text-stone-300 leading-relaxed text-[12px]">
+                            <span className={`w-1.5 h-1.5 rounded-full ${theme.dotBg} shrink-0 mt-1.5`} />
+                            <div className="flex-1">
+                              <span className="font-bold text-amber-200 mr-1.5 inline">
+                                {item.title}:
+                              </span>
+                              <span className="text-stone-300">
+                                {renderInlineMarkdown(item.text)}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      if (item.type === 'bullet') {
+                        return (
+                          <div key={iIdx} className="flex items-start gap-2 text-stone-300 leading-relaxed text-[12px]">
+                            <span className={`w-1.5 h-1.5 rounded-full ${theme.dotBg} shrink-0 mt-1.5`} />
+                            <div className="flex-1">
+                              {renderInlineMarkdown(item.text)}
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <p key={iIdx} className="text-stone-300 leading-relaxed text-[12px]">
+                          {renderInlineMarkdown(item.text)}
+                        </p>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -294,9 +532,9 @@ export default function AIAnalysisCard({ content, type = 'security', onClose, on
       <div className="px-4 py-2.5 bg-[#170f0a] border-t border-[#2e1f15] text-[10px] text-stone-400 flex items-center justify-between flex-wrap gap-2">
         <span className="flex items-center gap-1.5">
           <Shield size={10} className="text-emerald-400" />
-          <span>Connectra LLM-SAST • Continuous Zero-Trust Verification</span>
+          <span>Connectra AppSec & Code Intelligence Engine</span>
         </span>
-        <span className="opacity-75 font-mono">Evaluated on Groq LPU</span>
+        <span className="opacity-75 font-mono">Powered by Groq LPUs</span>
       </div>
     </motion.div>
   );
