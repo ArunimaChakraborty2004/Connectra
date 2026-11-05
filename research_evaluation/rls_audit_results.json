@@ -1,0 +1,53 @@
+{
+  "timestamp": "2026-11-05T07:16:34Z",
+  "defense_rate_pct": 100.0,
+  "passed_tests": 5,
+  "total_tests": 5,
+  "test_cases": [
+    {
+      "id": "RLS-01",
+      "name": "Unauthenticated Private Message Exfiltration",
+      "passed": true,
+      "status_code": 200,
+      "latency_ms": 1618.52,
+      "leaked_rows": 0,
+      "response_summary": "None"
+    },
+    {
+      "id": "RLS-02",
+      "name": "Cross-Tenant Unauthorized Profile Modification",
+      "passed": true,
+      "status_code": 200,
+      "latency_ms": 911.56,
+      "leaked_rows": 0,
+      "response_summary": "None"
+    },
+    {
+      "id": "RLS-03",
+      "name": "Unauthorized Post Deletion (IDOR)",
+      "passed": true,
+      "status_code": 200,
+      "latency_ms": 535.95,
+      "leaked_rows": 0,
+      "response_summary": "None"
+    },
+    {
+      "id": "RLS-04",
+      "name": "Direct Message Sender Spoofing",
+      "passed": true,
+      "status_code": 401,
+      "latency_ms": 629.59,
+      "leaked_rows": 0,
+      "response_summary": "{\"code\":\"42501\",\"details\":null,\"hint\":null,\"message\":\"new row violates row-level"
+    },
+    {
+      "id": "RLS-05",
+      "name": "Tamper-Evident Audit Log Deletion",
+      "passed": true,
+      "status_code": 404,
+      "latency_ms": 823.24,
+      "leaked_rows": 0,
+      "response_summary": "{\"code\":\"PGRST205\",\"details\":null,\"hint\":null,\"message\":\"Could not find the tabl"
+    }
+  ]
+}
