@@ -22,8 +22,113 @@ export function tokenize(text) {
     .filter(token => token.length > 1 && !STOP_WORDS.has(token));
 }
 
+// 32-dimensional software engineering semantic domain clusters for dense vector projection
+export const SEMANTIC_CLUSTERS = [
+  // 0-3: Security & Vulnerabilities
+  ['vulnerability', 'owasp', 'cwe', 'cve', 'exploit', 'security', 'threat', 'pentest'],
+  ['sqli', 'xss', 'csrf', 'ssrf', 'injection', 'rce', 'command', 'payload', 'sanitization'],
+  ['auth', 'authentication', 'jwt', 'token', 'session', 'oauth', 'credential', 'password', 'mfa'],
+  ['crypto', 'cryptography', 'aes', 'rsa', 'encryption', 'hash', 'signature', 'tls', 'ssl'],
+  // 4-7: Architecture & Distributed Systems
+  ['architecture', 'microservices', 'distributed', 'monolith', 'system', 'pattern', 'design'],
+  ['concurrency', 'async', 'thread', 'race', 'mutex', 'deadlock', 'parallel', 'worker'],
+  ['cache', 'caching', 'redis', 'memcached', 'cdn', 'ttl', 'invalidation'],
+  ['queue', 'kafka', 'rabbitmq', 'pubsub', 'event', 'streaming', 'message', 'broker'],
+  // 8-11: Database & Persistence
+  ['database', 'sql', 'postgres', 'postgresql', 'supabase', 'relational', 'mysql'],
+  ['nosql', 'mongodb', 'dynamodb', 'document', 'kv', 'graph', 'vector', 'pgvector'],
+  ['orm', 'prisma', 'schema', 'migration', 'index', 'foreign', 'join', 'rls', 'policy'],
+  ['transaction', 'acid', 'rollback', 'isolation', 'consistency', 'replica', 'sharding'],
+  // 12-15: Frontend & Client
+  ['frontend', 'ui', 'ux', 'client', 'browser', 'dom', 'css', 'html', 'web'],
+  ['react', 'vue', 'angular', 'svelte', 'nextjs', 'component', 'jsx', 'tsx'],
+  ['state', 'redux', 'zustand', 'hook', 'context', 'props', 'lifecycle', 'signal'],
+  ['styling', 'tailwind', 'framer', 'motion', 'animation', 'responsive', 'glassmorphism'],
+  // 16-19: Backend & APIs
+  ['backend', 'server', 'api', 'endpoint', 'rest', 'graphql', 'grpc', 'webhook'],
+  ['node', 'nodejs', 'express', 'fastify', 'deno', 'bun', 'javascript', 'typescript'],
+  ['python', 'fastapi', 'django', 'flask', 'asyncio', 'pydantic'],
+  ['golang', 'rust', 'csharp', 'java', 'spring', 'compiler', 'memory', 'borrow'],
+  // 20-23: DevOps & Cloud
+  ['devops', 'docker', 'container', 'image', 'dockerfile', 'compose'],
+  ['kubernetes', 'k8s', 'helm', 'pod', 'cluster', 'service', 'ingress'],
+  ['cloud', 'aws', 'gcp', 'azure', 'serverless', 'lambda', 's3', 'bucket'],
+  ['cicd', 'pipeline', 'github', 'actions', 'deploy', 'terraform', 'ansible'],
+  // 24-27: Quality & Testing
+  ['testing', 'test', 'unit', 'integration', 'e2e', 'mock', 'stub', 'suite'],
+  ['jest', 'vitest', 'cypress', 'playwright', 'assert', 'coverage', 'triage'],
+  ['lint', 'prettier', 'eslint', 'static', 'analysis', 'sast', 'dast', 'scanner'],
+  ['refactor', 'clean', 'dry', 'solid', 'debug', 'profiler', 'bug', 'patch'],
+  // 28-31: Performance & Reliability
+  ['performance', 'optimization', 'speed', 'latency', 'throughput', 'bench', 'fast'],
+  ['memory', 'leak', 'heap', 'garbage', 'collection', 'profiling', 'cpu'],
+  ['monitoring', 'observability', 'prometheus', 'grafana', 'tracing', 'logging'],
+  ['resilience', 'circuit', 'breaker', 'retry', 'fault', 'tolerance', 'health', 'probe'],
+];
+
+/**
+ * Generates an L2-normalized 32D dense semantic concept vector for any text
+ */
+export function generateDenseEmbedding(text) {
+  if (!text) return new Array(SEMANTIC_CLUSTERS.length).fill(0);
+  const tokens = tokenize(text);
+  const vector = new Array(SEMANTIC_CLUSTERS.length).fill(0);
+
+  if (tokens.length === 0) return vector;
+
+  // Project token presence into semantic cluster centroids
+  for (const token of tokens) {
+    for (let cIdx = 0; cIdx < SEMANTIC_CLUSTERS.length; cIdx++) {
+      const cluster = SEMANTIC_CLUSTERS[cIdx];
+      for (const word of cluster) {
+        if (token === word) {
+          vector[cIdx] += 1.0;
+        } else if (token.includes(word) || word.includes(token)) {
+          vector[cIdx] += 0.5;
+        }
+      }
+    }
+  }
+
+  // L2 Vector Normalization
+  let sumSq = 0;
+  for (let i = 0; i < vector.length; i++) {
+    sumSq += vector[i] * vector[i];
+  }
+  const norm = Math.sqrt(sumSq);
+  if (norm > 0) {
+    for (let i = 0; i < vector.length; i++) {
+      vector[i] = Number((vector[i] / norm).toFixed(4));
+    }
+  }
+
+  return vector;
+}
+
+/**
+ * Computes cosine similarity between two dense embedding vectors (0.0 to 1.0)
+ * cos(v1, v2) = (v1 . v2) / (||v1|| * ||v2||)
+ */
+export function cosineSimilarity(v1, v2) {
+  if (!v1 || !v2 || v1.length !== v2.length) return 0;
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+
+  for (let i = 0; i < v1.length; i++) {
+    dotProduct += v1[i] * v2[i];
+    normA += v1[i] * v1[i];
+    normB += v2[i] * v2[i];
+  }
+
+  const denominator = Math.sqrt(normA) * Math.sqrt(normB);
+  if (denominator === 0) return 0;
+  return Math.max(0, Math.min(1, Number((dotProduct / denominator).toFixed(4))));
+}
+
 /**
  * Builds a searchable index over an array of document chunks
+ * Generates both lexical term frequencies (BM25) and dense semantic embeddings.
  * Each document: { id, title, content, type: 'task' | 'milestone' | 'discussion' | 'doc', metadata }
  */
 export function buildDocumentIndex(documents) {
@@ -54,11 +159,15 @@ export function buildDocumentIndex(documents) {
     index.docLengths.push(tokens.length);
     totalLength += tokens.length;
 
+    // Generate dense semantic vector embedding for this document
+    const denseEmbedding = generateDenseEmbedding(combinedText);
+
     return {
       ...doc,
       docIdx,
       tokens,
       tf,
+      denseEmbedding,
     };
   });
 
@@ -68,21 +177,22 @@ export function buildDocumentIndex(documents) {
 }
 
 /**
- * Scores documents against a query using BM25 ranking function
- * BM25 Formula: IDF * (TF * (k1 + 1)) / (TF + k1 * (1 - b + b * (|D| / avgDL)))
+ * Scores documents against a query using Hybrid Dense-Sparse Ranking:
+ * Score(q, d) = lambda * BM25_norm(q, d) + (1 - lambda) * Cosine(e_q, e_d)
  */
-export function searchIndex(index, query, topK = 3) {
+export function searchIndex(index, query, topK = 3, lambdaWeight = 0.55) {
   if (!index || !index.totalDocs || !query) return [];
 
   const queryTokens = tokenize(query);
-  if (queryTokens.length === 0) return [];
+  const denseQueryEmbedding = generateDenseEmbedding(query);
 
   const k1 = 1.5;
   const b = 0.75;
   const N = index.totalDocs;
 
-  const scores = index.documents.map((doc, i) => {
-    let score = 0;
+  // 1. Calculate raw BM25 scores
+  const rawBm25Scores = index.documents.map((doc, i) => {
+    let bm25 = 0;
     const docLength = index.docLengths[i];
 
     for (const token of queryTokens) {
@@ -90,31 +200,46 @@ export function searchIndex(index, query, topK = 3) {
       if (tf === 0) continue;
 
       const df = index.df[token] || 0;
-      // Inverse Document Frequency with smoothing
       const idf = Math.log(1 + (N - df + 0.5) / (df + 0.5));
-
-      // BM25 term weighting
       const numerator = tf * (k1 + 1);
       const denominator = tf + k1 * (1 - b + b * (docLength / Math.max(1, index.avgDocLength)));
-      score += idf * (numerator / denominator);
+      bm25 += idf * (numerator / denominator);
     }
 
     // Boost exact title keyword match
     for (const token of queryTokens) {
       if (doc.title && doc.title.toLowerCase().includes(token)) {
-        score += 1.2;
+        bm25 += 1.0;
       }
     }
 
+    return Math.max(0, bm25);
+  });
+
+  const maxBm25 = Math.max(0.001, ...rawBm25Scores);
+
+  // 2. Calculate Dense Semantic Cosine Similarity and Hybrid Score
+  const scores = index.documents.map((doc, i) => {
+    const normBm25 = Number((rawBm25Scores[i] / maxBm25).toFixed(3));
+    const denseSimilarity = doc.denseEmbedding
+      ? cosineSimilarity(denseQueryEmbedding, doc.denseEmbedding)
+      : 0;
+
+    // Hybrid formula: lambda * BM25 + (1 - lambda) * DenseSimilarity
+    const hybridScore = Number((lambdaWeight * normBm25 + (1 - lambdaWeight) * denseSimilarity).toFixed(3));
+
     return {
       document: doc,
-      score: Number(score.toFixed(3)),
+      score: hybridScore,
+      bm25Score: normBm25,
+      denseScore: denseSimilarity,
+      method: 'hybrid_dense_sparse',
     };
   });
 
   // Filter out zero-score docs and sort descending
   return scores
-    .filter(item => item.score > 0.05)
+    .filter(item => item.score > 0.08)
     .sort((a, b) => b.score - a.score)
     .slice(0, topK);
 }

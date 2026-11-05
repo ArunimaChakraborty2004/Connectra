@@ -24,10 +24,12 @@ import {
   Clock,
   BookOpen,
   Database,
+  FlaskConical,
 } from 'lucide-react';
 import { chatWithCopilot } from '../../lib/ai';
 import { supabase } from '../../lib/supabase';
 import { buildDocumentIndex, searchIndex, formatRAGContextForPrompt, extractProjectKnowledgeChunks, fetchRealtimeConnectraContext } from '../../lib/rag';
+import AIBenchmarkModal from './AIBenchmarkModal';
 
 const QUICK_PROMPT_CATEGORIES = {
   Cybersecurity: [
@@ -64,6 +66,7 @@ export default function AICopilotWidget({ session }) {
   const [ragEnabled, setRagEnabled] = useState(true);
   const [ragIndex, setRagIndex] = useState(null);
   const [ragDocumentCount, setRagDocumentCount] = useState(0);
+  const [showBenchmarkModal, setShowBenchmarkModal] = useState(false);
 
   // Dedicated Copilot Dark/Light Theme with persistent memory
   const [isDark, setIsDark] = useState(() => {
@@ -605,6 +608,15 @@ export default function AICopilotWidget({ session }) {
               <div className="flex items-center gap-1">
                 <button
                   type="button"
+                  onClick={() => setShowBenchmarkModal(true)}
+                  className="p-1.5 rounded-lg text-amber-500 hover:text-amber-400 hover:bg-amber-500/10 transition-colors cursor-pointer"
+                  title="Empirical AI Benchmark & Telemetry Runner (Paper Section 6)"
+                >
+                  <FlaskConical size={15} />
+                </button>
+
+                <button
+                  type="button"
                   onClick={toggleTheme}
                   className="p-1.5 rounded-lg text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
                   title={isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
@@ -947,6 +959,12 @@ export default function AICopilotWidget({ session }) {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Empirical AI Benchmark Suite Modal */}
+      <AIBenchmarkModal
+        isOpen={showBenchmarkModal}
+        onClose={() => setShowBenchmarkModal(false)}
+      />
     </>
   );
 }

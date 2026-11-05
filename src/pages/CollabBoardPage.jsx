@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom';
 import Loader from '../components/ui/Loader';
 
 import { computeTeamSynergy, getSynergyRationale } from '../lib/skillGraph';
+import SkillRadarChart from '../components/ui/SkillRadarChart';
 
 function CollabCard({ post, session, onUpdate, userTechStack }) {
   const isOwner = post.user_id === session?.user?.id;
@@ -112,21 +113,35 @@ function CollabCard({ post, session, onUpdate, userTechStack }) {
 
       {/* Expandable Synergy Rationale & Vector Breakdown */}
       {showSynergyBreakdown && !isOwner && (
-        <div className="p-3 rounded-xl bg-orange-500/10 border border-orange-500/30 text-xs space-y-2">
+        <div className="p-3.5 rounded-2xl bg-orange-500/10 border border-orange-500/30 text-xs space-y-3">
           <div className="flex items-center justify-between">
-            <span className="font-bold text-orange-600 dark:text-orange-400 text-[11px] uppercase tracking-wider">
-              Skill Graph Synergy Breakdown
+            <span className="font-bold text-orange-600 dark:text-orange-400 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+              <span>🕸️</span> 4D Skill Graph & Synergy
             </span>
-            <span className="text-[10px] font-mono text-stone-500">Jaccard Overlap: {synergy.breakdown.directOverlap}%</span>
+            <span className="text-[10px] font-mono text-stone-500 dark:text-stone-400">
+              Jaccard Overlap: {synergy.breakdown.directOverlap}%
+            </span>
           </div>
+
+          {/* Interactive 4D Radar Chart */}
+          <div className="py-2 flex justify-center bg-white/50 dark:bg-stone-900/50 rounded-xl p-2 border border-orange-500/15">
+            <SkillRadarChart
+              requiredSkills={post.skills_needed || ''}
+              candidateSkills={userTechStack || 'Full-Stack Web Development'}
+              size={210}
+              showLegend={true}
+            />
+          </div>
+
           <p className="text-stone-700 dark:text-stone-300 text-xs leading-relaxed">
             {getSynergyRationale({ synergy, projectTitle: post.title })}
           </p>
+
           {synergy.matchedSkills.length > 0 && (
-            <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-orange-500/20 text-[10px]">
-              <span className="text-stone-500">Direct Overlap:</span>
+            <div className="flex items-center gap-1.5 flex-wrap pt-2 border-t border-orange-500/20 text-[10px]">
+              <span className="text-stone-500 font-medium">Direct Overlap:</span>
               {synergy.matchedSkills.map((ms, i) => (
-                <span key={i} className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-mono">
+                <span key={i} className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-mono font-semibold">
                   ✓ {ms}
                 </span>
               ))}
