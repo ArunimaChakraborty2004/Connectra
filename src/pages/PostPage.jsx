@@ -14,7 +14,7 @@ export default function PostPage({ session }) {
   const [post, setPost] = useState(null);
   const [loading, setLoading] = useState(true);
   const [currentUserProfile, setCurrentUserProfile] = useState(null);
-  const [stats, setStats] = useState({ followers: 0, following: 0, connections: 0 });
+  const [stats, setStats] = useState({ followers: 0, following: 0 });
 
   const loadPost = async () => {
     if (!id) return;
@@ -84,16 +84,9 @@ export default function PostPage({ session }) {
         .select('*', { count: 'exact', head: true })
         .eq('follower_id', session.user.id);
 
-      const { count: accCount } = await supabase
-        .from('connections')
-        .select('*', { count: 'exact', head: true })
-        .or(`requester_id.eq.${session.user.id},receiver_id.eq.${session.user.id}`)
-        .eq('status', 'accepted');
-
       setStats({
         followers: fCount || 0,
         following: foCount || 0,
-        connections: accCount || 0,
       });
     } catch (err) {
       console.warn('Error loading profile in PostPage:', err);

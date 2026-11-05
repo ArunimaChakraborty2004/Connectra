@@ -57,17 +57,10 @@ function AppInner({ session }) {
 
         const { count: fCount } = await supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', session.user.id);
         const { count: foCount } = await supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', session.user.id);
-        const { count: accCount } = await supabase
-          .from('connections')
-          .select('*', { count: 'exact', head: true })
-          .or(`requester_id.eq.${session.user.id},receiver_id.eq.${session.user.id}`)
-          .eq('status', 'accepted');
 
-        const netConns = accCount || 0;
         setStats({
-          followers: (fCount || 0) + netConns,
-          following: (foCount || 0) + netConns,
-          connections: netConns,
+          followers: fCount || 0,
+          following: foCount || 0,
         });
       } catch (err) {
         setProfile({ id: session.user.id, username: 'User', xp: 0, level: 1 });

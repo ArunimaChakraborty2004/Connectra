@@ -13,9 +13,9 @@ const BADGES = [
     id: 'networker',
     icon: '🤝',
     label: 'Networker',
-    desc: '10+ connections made',
+    desc: '10+ followers gained',
     color: 'from-blue-500/20 to-cyan-500/10 border-blue-500/30',
-    check: ({ connections }) => connections >= 10,
+    check: ({ connections, followers }) => (followers || connections || 0) >= 10,
   },
   {
     id: 'star_contributor',

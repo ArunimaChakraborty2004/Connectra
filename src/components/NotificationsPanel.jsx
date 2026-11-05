@@ -308,7 +308,18 @@ export default function NotificationsPanel({ session, isOpen, onClose }) {
     if (error) {
       toast.error('Failed to accept request');
     } else {
-      toast.success('Connection accepted!');
+      // Also add follower to follows table
+      if (requesterId && session?.user?.id) {
+        try {
+          await supabase.from('follows').insert({
+            follower_id: requesterId,
+            following_id: session.user.id,
+          });
+        } catch (followErr) {
+          console.warn('Note on follow insert:', followErr);
+        }
+      }
+      toast.success('Follow request accepted!');
       setNotifications((prev) => prev.filter((n) => n.connection_id !== connId));
       if (requesterId) {
         createNotification({
@@ -326,8 +337,9 @@ export default function NotificationsPanel({ session, isOpen, onClose }) {
     e.stopPropagation();
     const { error } = await supabase.from('connections').delete().eq('id', connId);
     if (error) {
-      toast.error('Failed to reject request');
+      toast.error('Failed to decline request');
     } else {
+      toast.success('Follow request declined');
       setNotifications((prev) => prev.filter((n) => n.connection_id !== connId));
       window.dispatchEvent(new Event('refreshStats'));
     }
@@ -469,8 +481,8 @@ export default function NotificationsPanel({ session, isOpen, onClose }) {
                               @{username}
                             </span>
                             {n.type === 'follow' && 'started following you.'}
-                            {n.type === 'connection_request' && 'sent you a connection request.'}
-                            {n.type === 'connection_accepted' && 'accepted your connection request.'}
+                            {n.type === 'connection_request' && 'requested to follow you.'}
+                            {n.type === 'connection_accepted' && 'accepted your follow request.'}
                             {n.type === 'like' && 'liked your post.'}
                             {n.type === 'comment' && 'commented on your post.'}
                             {n.type === 'post' && 'published a new post.'}

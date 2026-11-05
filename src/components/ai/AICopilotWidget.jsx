@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { chatWithCopilot } from '../../lib/ai';
 import { supabase } from '../../lib/supabase';
-import { buildDocumentIndex, searchIndex, formatRAGContextForPrompt, extractProjectKnowledgeChunks } from '../../lib/rag';
+import { buildDocumentIndex, searchIndex, formatRAGContextForPrompt, extractProjectKnowledgeChunks, fetchRealtimeConnectraContext } from '../../lib/rag';
 
 const QUICK_PROMPT_CATEGORIES = {
   Cybersecurity: [
@@ -46,8 +46,8 @@ const QUICK_PROMPT_CATEGORIES = {
 
 const AVAILABLE_MODELS = [
   { id: 'qwen/qwen3.8-27b', name: 'Qwen 3.8 27B', tag: 'Fast & Smart' },
-  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B', tag: 'Most Capable' },
-  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B', tag: 'Ultra Fast' },
+  { id: 'openai/gpt-oss-120b', name: 'GPT-OSS 120B', tag: 'Most Capable' },
+  { id: 'openai/gpt-oss-20b', name: 'GPT-OSS 20B', tag: 'Ultra Fast' },
 ];
 
 export default function AICopilotWidget({ session }) {
@@ -109,17 +109,18 @@ export default function AICopilotWidget({ session }) {
 
         const { data: posts } = await supabase
           .from('posts')
-          .select('id, content, code_snippet, code_language, profiles(username)')
-          .limit(12);
+          .select('id, content, code_snippet, code_language, created_at, profiles(username, full_name)')
+          .order('created_at', { ascending: false })
+          .limit(30);
 
         const chunks = [];
         (projects || []).forEach(p => chunks.push(...extractProjectKnowledgeChunks(p)));
         (posts || []).forEach(post => chunks.push({
           id: `post-${post.id}`,
-          title: `Discussion by @${post.profiles?.username || 'member'}`,
+          title: `Post by @${post.profiles?.username || 'member'} (${new Date(post.created_at).toLocaleDateString()})`,
           type: 'discussion',
-          content: `${post.content || ''}\n${post.code_snippet ? `Code Snippet (${post.code_language || 'code'}):\n${post.code_snippet}` : ''}`,
-          metadata: { author: post.profiles?.username },
+          content: `Author: @${post.profiles?.username || 'member'} (${post.profiles?.full_name || ''})\nPublished: ${new Date(post.created_at).toLocaleString()}\n${post.content || ''}\n${post.code_snippet ? `Code Snippet (${post.code_language || 'code'}):\n${post.code_snippet}` : ''}`,
+          metadata: { author: post.profiles?.username, createdAt: post.created_at },
         }));
 
         if (chunks.length > 0) {
@@ -260,20 +261,35 @@ export default function AICopilotWidget({ session }) {
     setLoading(true);
 
     try {
-      // 1. Contextual RAG Retrieval across indexed workspace items
+      // 1. Contextual RAG Retrieval across indexed workspace items & Live Database
       let ragContext = '';
       let retrievedSources = [];
 
-      if (ragEnabled && ragIndex && ragIndex.totalDocs > 0) {
-        const hits = searchIndex(ragIndex, textToSend, 3);
-        if (hits.length > 0) {
-          ragContext = formatRAGContextForPrompt(hits);
-          retrievedSources = hits.map(h => ({
-            id: h.document.id,
-            title: h.document.title,
-            type: h.document.type,
-            score: h.score,
-          }));
+      if (ragEnabled) {
+        if (ragIndex && ragIndex.totalDocs > 0) {
+          const hits = searchIndex(ragIndex, textToSend, 3);
+          if (hits.length > 0) {
+            ragContext = formatRAGContextForPrompt(hits);
+            retrievedSources = hits.map(h => ({
+              id: h.document.id,
+              title: h.document.title,
+              type: h.document.type,
+              score: h.score,
+            }));
+          }
+        }
+
+        // 2. Real-time Live Supabase Database Query for specific users, recent posts, or projects
+        try {
+          const liveDb = await fetchRealtimeConnectraContext(textToSend);
+          if (liveDb.contextText) {
+            ragContext = ragContext ? `${ragContext}\n\n${liveDb.contextText}` : liveDb.contextText;
+            if (liveDb.sources && liveDb.sources.length > 0) {
+              retrievedSources.push(...liveDb.sources);
+            }
+          }
+        } catch (dbErr) {
+          console.warn('Realtime database context lookup error:', dbErr);
         }
       }
 

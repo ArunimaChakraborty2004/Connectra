@@ -5,7 +5,7 @@ import Sidebar from '../components/Sidebar';
 import Loader from '../components/ui/Loader';
 import EmptyState from '../components/ui/EmptyState';
 import { toast } from '../lib/toast';
-import { Settings, MapPin, Link as LinkIcon, Code2, Briefcase, Grid, FileText, FolderGit2, GitBranch, ExternalLink, MessageCircle, Trophy, CheckCircle2, Clock, UserPlus, UserCheck, UserMinus } from 'lucide-react';
+import { Settings, MapPin, Link as LinkIcon, Code2, Briefcase, Grid, FileText, FolderGit2, GitBranch, ExternalLink, MessageCircle, Trophy, CheckCircle2, Clock, UserPlus, UserCheck, UserMinus, Lock, Globe } from 'lucide-react';
 import Feed from '../components/Feed';
 import EditProfileModal from '../components/profile/EditProfileModal';
 import BadgesPanel from '../components/profile/BadgesPanel';
@@ -81,10 +81,10 @@ export default function ProfilePage({ session }) {
   const [repoCount, setRepoCount] = useState(0);
   const [postCount, setPostCount] = useState(0);
   const [totalLikes, setTotalLikes] = useState(0);
-  const [connectionsCount, setConnectionsCount] = useState(0);
 
   const [isFollowing, setIsFollowing] = useState(false);
   const [isFollower, setIsFollower] = useState(false);
+  const [hasPendingRequest, setHasPendingRequest] = useState(false);
   const [profileStats, setProfileStats] = useState({ followers: 0, following: 0 });
   const [actionLoading, setActionLoading] = useState(false);
   const [showFollowsModal, setShowFollowsModal] = useState(false);
@@ -158,6 +158,17 @@ export default function ProfilePage({ session }) {
 
           setIsFollowing(Boolean(followingRecord));
           setIsFollower(Boolean(followerRecord));
+
+          // Check for pending follow request to target profile
+          const { data: pendingRecord } = await supabase
+            .from('connections')
+            .select('id')
+            .eq('requester_id', session.user.id)
+            .eq('receiver_id', targetProfile.id)
+            .eq('status', 'pending')
+            .maybeSingle();
+
+          setHasPendingRequest(Boolean(pendingRecord));
         }
 
         // Load repo count for badges
@@ -183,22 +194,56 @@ export default function ProfilePage({ session }) {
         }
         setTotalLikes(likesSum);
 
-        // Real connections count
-        const { count: cCount } = await supabase
-          .from('connections')
-          .select('*', { count: 'exact', head: true })
-          .eq('status', 'accepted')
-          .or(`requester_id.eq.${targetProfile.id},receiver_id.eq.${targetProfile.id}`);
-        setConnectionsCount(cCount || 0);
       }
       setLoading(false);
     };
     loadData();
   }, [username, session.user.id]);
 
+  const isTargetPrivate = profile
+    ? (Boolean(profile.is_private) ||
+       localStorage.getItem('connectra_privacy_' + profile.id) === 'private' ||
+       localStorage.getItem('connectra_privacy_' + profile.id) === 'true' ||
+       localStorage.getItem('connectra_private_' + profile.id) === 'true')
+    : false;
+  const isOwnProfile = profile?.id === session.user.id;
+  const isPrivateAndLocked = isTargetPrivate && !isOwnProfile && !isFollowing;
+
   const handleFollow = async () => {
     if (!profile || actionLoading) return;
     setActionLoading(true);
+
+    // If target profile is private, send a follow request rather than instant follow
+    if (isTargetPrivate) {
+      try {
+        const { error } = await supabase.from('connections').insert({
+          requester_id: session.user.id,
+          receiver_id: profile.id,
+          status: 'pending',
+        });
+
+        if (error) {
+          toast.error(error.message);
+        } else {
+          setHasPendingRequest(true);
+          toast.success(`Follow request sent to @${profile.username}! 🔒`);
+          createNotification({
+            userId: profile.id,
+            actorId: session.user.id,
+            type: 'connection_request',
+            entityId: profile.id,
+          });
+          window.dispatchEvent(new Event('refreshStats'));
+        }
+      } catch {
+        toast.error('Failed to send follow request');
+      } finally {
+        setActionLoading(false);
+      }
+      return;
+    }
+
+    // Public profile: Instant follow
     setIsFollowing(true);
     setProfileStats(prev => ({ ...prev, followers: prev.followers + 1 }));
 
@@ -213,7 +258,7 @@ export default function ProfilePage({ session }) {
         setProfileStats(prev => ({ ...prev, followers: Math.max(0, prev.followers - 1) }));
         toast.error(error.message);
       } else {
-        toast.success(`Following ${profile.username}!`);
+        toast.success(`Following @${profile.username}!`);
         createNotification({
           userId: profile.id,
           actorId: session.user.id,
@@ -226,6 +271,26 @@ export default function ProfilePage({ session }) {
       setIsFollowing(false);
       setProfileStats(prev => ({ ...prev, followers: Math.max(0, prev.followers - 1) }));
       toast.error('Failed to follow');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCancelRequest = async () => {
+    if (!profile || actionLoading) return;
+    setActionLoading(true);
+    try {
+      await supabase
+        .from('connections')
+        .delete()
+        .eq('requester_id', session.user.id)
+        .eq('receiver_id', profile.id)
+        .eq('status', 'pending');
+      setHasPendingRequest(false);
+      toast.info('Follow request cancelled');
+      window.dispatchEvent(new Event('refreshStats'));
+    } catch {
+      toast.error('Failed to cancel request');
     } finally {
       setActionLoading(false);
     }
@@ -352,6 +417,16 @@ export default function ProfilePage({ session }) {
                           @{profile.username}
                         </span>
                       )}
+                      {/* Privacy Badge */}
+                      {isTargetPrivate ? (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-600 border border-orange-500/20 flex items-center gap-1">
+                          <Lock size={10} /> Private
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 flex items-center gap-1">
+                          <Globe size={10} /> Public
+                        </span>
+                      )}
                     </div>
                     <p className="text-muted mt-1 text-[15px]">{profile.bio || 'No bio provided.'}</p>
                     
@@ -381,10 +456,6 @@ export default function ProfilePage({ session }) {
 
                       <span className="text-main font-semibold">
                         {postCount} <span className="font-normal text-muted">Posts</span>
-                      </span>
-
-                      <span className="text-main font-semibold">
-                        {connectionsCount} <span className="font-normal text-muted">Connections</span>
                       </span>
                     </div>
                   </div>
@@ -465,13 +536,36 @@ export default function ProfilePage({ session }) {
                 </button>
               </div>
               
-              {activeTab === 'posts' ? (
+              {isPrivateAndLocked ? (
+                <div className="py-16 px-6 text-center flex flex-col items-center justify-center gap-3 bg-surface border border-border rounded-2xl shadow-xs my-4">
+                  <div className="w-16 h-16 rounded-2xl bg-orange-500/10 border border-orange-500/20 text-orange-500 flex items-center justify-center">
+                    <Lock size={30} />
+                  </div>
+                  <h3 className="text-lg font-bold text-main">This Account is Private</h3>
+                  <p className="text-sm text-muted max-w-sm">
+                    Follow @{profile.username} to see their posts, code snippets, and developer projects.
+                  </p>
+                  {!hasPendingRequest ? (
+                    <button
+                      onClick={handleFollow}
+                      disabled={actionLoading}
+                      className="mt-2 px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 bg-primary hover:opacity-90 text-white shadow-sm cursor-pointer"
+                    >
+                      <UserPlus size={14} /> Follow @{profile.username}
+                    </button>
+                  ) : (
+                    <span className="mt-2 text-xs font-semibold text-orange-500 flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-orange-500/10 border border-orange-500/20">
+                      <Clock size={13} /> Follow Request Pending Approval
+                    </span>
+                  )}
+                </div>
+              ) : activeTab === 'posts' ? (
                 <Feed session={session} userIdFilter={profile.id} />
               ) : activeTab === 'repos' ? (
                 <ProfileRepos userId={profile.id} />
               ) : (
                 <div className="flex flex-col gap-4">
-                  <BadgesPanel stats={{ postCount, repoCount, totalLikes, connections: connectionsCount, githubUrl: profile.github_url }} />
+                  <BadgesPanel stats={{ postCount, repoCount, totalLikes, connections: profileStats.followers, githubUrl: profile.github_url }} />
                   {session.user.id === profile.id && (
                     <AIReviewPanel profile={profile} repoCount={repoCount} />
                   )}
