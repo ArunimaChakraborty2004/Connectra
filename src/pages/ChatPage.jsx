@@ -148,6 +148,18 @@ export default function ChatPage({ session }) {
   const [memberSearchQuery, setMemberSearchQuery] = useState('');
   const [memberSearchResults, setMemberSearchResults] = useState([]);
 
+  // Message Deletion states (Delete for me vs Delete for everyone)
+  const [messageToDelete, setMessageToDelete] = useState(null);
+  const [isDeletingMessage, setIsDeletingMessage] = useState(false);
+  const [deletedForMeIds, setDeletedForMeIds] = useState(() => {
+    try {
+      const saved = localStorage.getItem(`connectra_deleted_for_me_${session?.user?.id}`);
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const myId = session?.user?.id;
@@ -188,6 +200,16 @@ export default function ChatPage({ session }) {
   useEffect(() => {
     loadConversations();
     loadGroups();
+  }, [myId]);
+
+  useEffect(() => {
+    if (!myId) return;
+    try {
+      const saved = localStorage.getItem(`connectra_deleted_for_me_${myId}`);
+      setDeletedForMeIds(saved ? new Set(JSON.parse(saved)) : new Set());
+    } catch {
+      setDeletedForMeIds(new Set());
+    }
   }, [myId]);
 
   // Keep ref in sync with state so realtime closures always see the latest key
@@ -239,6 +261,20 @@ export default function ChatPage({ session }) {
           }
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'messages',
+        },
+        payload => {
+          const deletedId = payload.old?.id;
+          if (deletedId) {
+            setMessages(prev => prev.filter(m => m.id !== deletedId));
+          }
+        }
+      )
       .subscribe();
 
     return () => supabase.removeChannel(channel);
@@ -267,6 +303,21 @@ export default function ChatPage({ session }) {
           });
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'chat_group_messages',
+          filter: `group_id=eq.${selectedGroup.id}`,
+        },
+        payload => {
+          const deletedId = payload.old?.id;
+          if (deletedId) {
+            setMessages(prev => prev.filter(m => m.id !== deletedId));
+          }
+        }
+      )
       .subscribe();
 
     return () => supabase.removeChannel(channel);
@@ -290,17 +341,21 @@ export default function ChatPage({ session }) {
     return () => document.removeEventListener('startChat', handleStartChat);
   }, []);
 
-  // Escape key handler: closes active direct or group chat to return to hub overview
+  // Escape key handler: closes modal or active direct/group chat to return to hub overview
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
+        if (messageToDelete) {
+          setMessageToDelete(null);
+          return;
+        }
         setSelectedUser(null);
         setSelectedGroup(null);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [messageToDelete]);
 
   const loadConversations = async () => {
     setLoadingConvos(true);
@@ -320,6 +375,7 @@ export default function ChatPage({ session }) {
       const seen = new Set();
       const rawConvos = [];
       for (const msg of data) {
+        if (deletedForMeIds.has(msg.id)) continue;
         const otherId = msg.sender_id === myId ? msg.receiver_id : msg.sender_id;
         if (!seen.has(otherId)) {
           seen.add(otherId);
@@ -952,8 +1008,35 @@ export default function ChatPage({ session }) {
     }
   };
 
-  const handleDeleteMessage = async (msgId) => {
+  // Delete message for ME ONLY
+  const handleDeleteForMe = (msg) => {
+    if (!msg?.id) return;
+    const msgId = msg.id;
+
+    setDeletedForMeIds(prev => {
+      const next = new Set(prev);
+      next.add(msgId);
+      try {
+        localStorage.setItem(`connectra_deleted_for_me_${myId}`, JSON.stringify([...next]));
+      } catch (err) {
+        console.warn('Failed to save deleted for me message:', err);
+      }
+      return next;
+    });
+
+    setMessages(prev => prev.filter(m => m.id !== msgId));
+    setMessageToDelete(null);
+    toast.success('Message deleted for you');
+  };
+
+  // Delete message for EVERYONE
+  const handleDeleteForEveryone = async (msg) => {
+    if (!msg?.id) return;
+    const msgId = msg.id;
+    setIsDeletingMessage(true);
+
     const table = selectedGroup ? 'chat_group_messages' : 'messages';
+    // Optimistically remove from view
     setMessages(prev => prev.filter(m => m.id !== msgId));
 
     try {
@@ -963,9 +1046,15 @@ export default function ChatPage({ session }) {
         .eq('id', msgId);
 
       if (error) throw error;
-      toast.success('Message deleted');
+      toast.success('Message deleted for everyone');
     } catch (err) {
-      toast.error('Failed to delete message');
+      console.warn('Delete for everyone error:', err);
+      // Fallback: also ensure hidden for me locally
+      handleDeleteForMe(msg);
+      toast.info('Message removed from your view');
+    } finally {
+      setIsDeletingMessage(false);
+      setMessageToDelete(null);
     }
   };
 
@@ -1588,118 +1677,121 @@ export default function ChatPage({ session }) {
               )}
 
               {/* Messages Flow */}
-              <div
-                className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 custom-scrollbar text-sm"
-                style={{ backgroundColor: 'var(--bg-color)' }}
-              >
-                {loadingMessages ? (
-                  <Loader />
-                ) : messages.length === 0 ? (
-                  <div className="flex-1 flex flex-col items-center justify-center text-xs text-stone-400 gap-2">
-                    <span>👋 No messages yet. Say hello and kick off collaboration!</span>
-                  </div>
-                ) : (
-                  <AnimatePresence>
-                    {messages.map(msg => {
-                      const isMe = msg.sender_id === myId;
-                      const isAnnouncement = msg.is_announcement;
+              {(() => {
+                const visibleMessages = messages.filter(m => !deletedForMeIds.has(m.id));
+                return (
+                  <div
+                    className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 custom-scrollbar text-sm"
+                    style={{ backgroundColor: 'var(--bg-color)' }}
+                  >
+                    {loadingMessages ? (
+                      <Loader />
+                    ) : visibleMessages.length === 0 ? (
+                      <div className="flex-1 flex flex-col items-center justify-center text-xs text-stone-400 gap-2">
+                        <span>👋 No messages yet. Say hello and kick off collaboration!</span>
+                      </div>
+                    ) : (
+                      <AnimatePresence>
+                        {visibleMessages.map(msg => {
+                          const isMe = msg.sender_id === myId;
+                          const isAnnouncement = msg.is_announcement;
 
-                      if (isAnnouncement) {
-                        return (
-                          <div key={msg.id} className="flex justify-center my-1.5">
-                            <div className="max-w-[85%] px-3.5 py-2 rounded-xl bg-orange-500/10 border border-orange-500/30 text-orange-600 text-xs font-semibold flex items-center gap-2 shadow-2xs">
-                              <Megaphone size={14} className="shrink-0" />
-                              <span>{msg.content}</span>
-                            </div>
-                          </div>
-                        );
-                      }
+                          if (isAnnouncement) {
+                            return (
+                              <div key={msg.id} className="flex justify-center my-1.5">
+                                <div className="max-w-[85%] px-3.5 py-2 rounded-xl bg-orange-500/10 border border-orange-500/30 text-orange-600 text-xs font-semibold flex items-center gap-2 shadow-2xs">
+                                  <Megaphone size={14} className="shrink-0" />
+                                  <span>{msg.content}</span>
+                                </div>
+                              </div>
+                            );
+                          }
 
-                      const hasReactions = messageReactions[msg.id] && Object.keys(messageReactions[msg.id]).length > 0;
+                          const hasReactions = messageReactions[msg.id] && Object.keys(messageReactions[msg.id]).length > 0;
 
-                      return (
-                        <motion.div
-                          key={msg.id}
-                          initial={{ opacity: 0, y: 6 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className={`flex flex-col group/msg relative ${isMe ? 'items-end' : 'items-start'}`}
-                        >
-                          {/* Sender name for group messages */}
-                          {selectedGroup && !isMe && msg.sender?.username && (
-                            <span className="text-[10px] font-bold text-stone-500 ml-1 mb-0.5">
-                              @{msg.sender.username}
-                            </span>
-                          )}
-
-                          <div className="relative max-w-[82%]">
-                            {/* Floating hover reaction bar */}
-                            <div
-                              className={`absolute -top-3.5 z-20 opacity-0 group-hover/msg:opacity-100 transition-opacity bg-white dark:bg-stone-800 border border-[#f1e4d3] dark:border-stone-700 shadow-md rounded-full px-1.5 py-0.5 flex items-center gap-0.5 ${
-                                isMe ? 'right-2' : 'left-2'
-                              }`}
+                          return (
+                            <motion.div
+                              key={msg.id}
+                              initial={{ opacity: 0, y: 6 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              className={`flex flex-col group/msg relative ${isMe ? 'items-end' : 'items-start'}`}
                             >
-                              {QUICK_REACTIONS.map(emoji => {
-                                const hasReacted = messageReactions[msg.id]?.[emoji]?.includes(myId);
-                                return (
-                                  <button
-                                    key={emoji}
-                                    type="button"
-                                    onClick={() => handleToggleReaction(msg.id, emoji)}
-                                    className={`px-1 py-0.5 text-xs rounded-full hover:scale-125 transition-transform cursor-pointer ${
-                                      hasReacted ? 'bg-orange-100 dark:bg-orange-950/80 scale-110' : ''
-                                    }`}
-                                    title={`React ${emoji}`}
-                                  >
-                                    {emoji}
-                                  </button>
-                                );
-                              })}
-
-                              {/* Reply button on all messages */}
-                              <span className="w-px h-3 bg-stone-200 dark:bg-stone-600 mx-0.5" />
-                              <button
-                                type="button"
-                                onClick={() => handleReplyToMessage(msg)}
-                                className="p-1 rounded-full text-stone-400 hover:text-orange-500 transition-colors cursor-pointer"
-                                title="Reply to message"
-                              >
-                                <Reply size={11} />
-                              </button>
-
-                              {/* Pin message button */}
-                              {(selectedGroup ? groupAdminRole : true) && (
-                                <button
-                                  type="button"
-                                  onClick={() => handlePinMessage(msg)}
-                                  className="p-1 rounded-full text-stone-400 hover:text-orange-500 transition-colors cursor-pointer"
-                                  title={selectedGroup ? (selectedGroup.announcement === msg.content ? 'Unpin announcement' : 'Pin as Announcement') : 'Pin message'}
-                                >
-                                  <Pin size={11} className={selectedGroup?.announcement === msg.content ? 'text-orange-500 fill-orange-500' : ''} />
-                                </button>
+                              {/* Sender name for group messages */}
+                              {selectedGroup && !isMe && msg.sender?.username && (
+                                <span className="text-[10px] font-bold text-stone-500 ml-1 mb-0.5">
+                                  @{msg.sender.username}
+                                </span>
                               )}
 
-                              {/* Edit & Delete for own messages */}
-                              {isMe && (
-                                <>
+                              <div className="relative max-w-[82%]">
+                                {/* Floating hover reaction bar */}
+                                <div
+                                  className={`absolute -top-3.5 z-20 opacity-0 group-hover/msg:opacity-100 transition-opacity bg-white dark:bg-stone-800 border border-[#f1e4d3] dark:border-stone-700 shadow-md rounded-full px-1.5 py-0.5 flex items-center gap-0.5 ${
+                                    isMe ? 'right-2' : 'left-2'
+                                  }`}
+                                >
+                                  {QUICK_REACTIONS.map(emoji => {
+                                    const hasReacted = messageReactions[msg.id]?.[emoji]?.includes(myId);
+                                    return (
+                                      <button
+                                        key={emoji}
+                                        type="button"
+                                        onClick={() => handleToggleReaction(msg.id, emoji)}
+                                        className={`px-1 py-0.5 text-xs rounded-full hover:scale-125 transition-transform cursor-pointer ${
+                                          hasReacted ? 'bg-orange-100 dark:bg-orange-950/80 scale-110' : ''
+                                        }`}
+                                        title={`React ${emoji}`}
+                                      >
+                                        {emoji}
+                                      </button>
+                                    );
+                                  })}
+
+                                  {/* Reply button on all messages */}
+                                  <span className="w-px h-3 bg-stone-200 dark:bg-stone-600 mx-0.5" />
                                   <button
                                     type="button"
-                                    onClick={() => handleStartEditMessage(msg)}
+                                    onClick={() => handleReplyToMessage(msg)}
                                     className="p-1 rounded-full text-stone-400 hover:text-orange-500 transition-colors cursor-pointer"
-                                    title="Edit message"
+                                    title="Reply to message"
                                   >
-                                    <Pencil size={11} />
+                                    <Reply size={11} />
                                   </button>
+
+                                  {/* Pin message button */}
+                                  {(selectedGroup ? groupAdminRole : true) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handlePinMessage(msg)}
+                                      className="p-1 rounded-full text-stone-400 hover:text-orange-500 transition-colors cursor-pointer"
+                                      title={selectedGroup ? (selectedGroup.announcement === msg.content ? 'Unpin announcement' : 'Pin as Announcement') : 'Pin message'}
+                                    >
+                                      <Pin size={11} className={selectedGroup?.announcement === msg.content ? 'text-orange-500 fill-orange-500' : ''} />
+                                    </button>
+                                  )}
+
+                                  {/* Edit for own messages */}
+                                  {isMe && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleStartEditMessage(msg)}
+                                      className="p-1 rounded-full text-stone-400 hover:text-orange-500 transition-colors cursor-pointer"
+                                      title="Edit message"
+                                    >
+                                      <Pencil size={11} />
+                                    </button>
+                                  )}
+
+                                  {/* Delete message (Delete for me & Delete for everyone) */}
                                   <button
                                     type="button"
-                                    onClick={() => handleDeleteMessage(msg.id)}
+                                    onClick={() => setMessageToDelete(msg)}
                                     className="p-1 rounded-full text-stone-400 hover:text-rose-500 transition-colors cursor-pointer"
                                     title="Delete message"
                                   >
                                     <Trash2 size={11} />
                                   </button>
-                                </>
-                              )}
-                            </div>
+                                </div>
 
                             <div
                               className={`px-4 py-2.5 rounded-2xl text-xs sm:text-[13px] leading-relaxed relative shadow-2xs ${
@@ -1836,6 +1928,8 @@ export default function ChatPage({ session }) {
                 )}
                 <div ref={messagesEndRef} />
               </div>
+            );
+          })()}
 
               {/* Input Bar & Attachment Preview */}
               <div className="p-3 border-t border-[#f1e4d3] dark:border-[#2b1c13] bg-white dark:bg-stone-900 flex flex-col gap-2">
@@ -2382,6 +2476,72 @@ export default function ChatPage({ session }) {
                   </button>
                 </div>
               )}
+            </motion.div>
+          </div>
+        )}
+
+        {/* Delete Message Options Modal (Delete for me vs Delete for everyone) */}
+        {messageToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="w-full max-w-sm rounded-3xl bg-white dark:bg-[#1a120c] border border-[#f1e4d3] dark:border-[#382416] p-5 shadow-2xl space-y-4 text-left"
+            >
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-rose-500/10 text-rose-500 flex items-center justify-center shrink-0">
+                  <Trash2 size={20} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-bold text-base text-stone-900 dark:text-stone-100">
+                    Delete message?
+                  </h3>
+                  <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5 line-clamp-2 italic">
+                    "{messageToDelete.content || (messageToDelete.attachment_name ? `Attachment: ${messageToDelete.attachment_name}` : 'Message')}"
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2 pt-1">
+                {/* Delete for everyone option: available if sent by me OR if admin in group */}
+                {(messageToDelete.sender_id === myId || (selectedGroup && groupAdminRole)) ? (
+                  <button
+                    type="button"
+                    disabled={isDeletingMessage}
+                    onClick={() => handleDeleteForEveryone(messageToDelete)}
+                    className="w-full py-2.5 px-4 rounded-xl text-xs font-bold bg-rose-500 hover:bg-rose-600 active:scale-98 text-white flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm shadow-rose-500/25"
+                  >
+                    <Users size={14} />
+                    <span>Delete for everyone</span>
+                  </button>
+                ) : (
+                  <div className="px-3 py-2 rounded-xl bg-stone-100 dark:bg-stone-800/60 text-[11px] text-stone-500 dark:text-stone-400 text-center">
+                    Only the sender or group admin can delete for everyone.
+                  </div>
+                )}
+
+                {/* Delete for me option: always available */}
+                <button
+                  type="button"
+                  disabled={isDeletingMessage}
+                  onClick={() => handleDeleteForMe(messageToDelete)}
+                  className="w-full py-2.5 px-4 rounded-xl text-xs font-bold bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 active:scale-98 text-stone-800 dark:text-stone-100 flex items-center justify-center gap-2 transition-all cursor-pointer border border-stone-200 dark:border-stone-700"
+                >
+                  <UserCheck size={14} />
+                  <span>Delete for me</span>
+                </button>
+
+                {/* Cancel */}
+                <button
+                  type="button"
+                  disabled={isDeletingMessage}
+                  onClick={() => setMessageToDelete(null)}
+                  className="w-full py-2 px-4 rounded-xl text-xs font-semibold text-stone-400 hover:text-stone-600 dark:hover:text-stone-300 transition-colors cursor-pointer text-center"
+                >
+                  Cancel
+                </button>
+              </div>
             </motion.div>
           </div>
         )}

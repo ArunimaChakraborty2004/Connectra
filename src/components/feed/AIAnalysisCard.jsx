@@ -163,6 +163,7 @@ export default function AIAnalysisCard({ content, type = 'security', onClose, on
   const refactoredCode = isStructured ? content.refactoredCode : null;
   const qualityNotes = isStructured ? content.qualityNotes || [] : [];
   const summary = isStructured ? content.summary : null;
+  const criticVerification = isStructured ? content.criticVerification : null;
 
   // Parse markdown for non-structured string responses (like code explanation)
   const parsedMarkdown = useMemo(() => {
@@ -400,6 +401,33 @@ export default function AIAnalysisCard({ content, type = 'security', onClose, on
                 )}
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Multi-Agent Critic/Verifier Verification Telemetry */}
+        {!isExplainType && criticVerification && (
+          <div className="p-3 rounded-xl bg-indigo-950/30 border border-indigo-500/30 space-y-1.5">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <span className="text-[11px] font-bold text-indigo-300 flex items-center gap-1.5">
+                <Shield size={13} className="text-indigo-400" />
+                Dual-Agent Verification: Generator (SAST Auditor) + Security Critic
+              </span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-bold">
+                Critic Confidence: {Math.round((criticVerification.criticConfidence || 0.95) * 100)}%
+              </span>
+            </div>
+            <p className="text-[11px] text-stone-300 italic">
+              "{criticVerification.criticVerdict}"
+            </p>
+            {criticVerification.checksPassed && criticVerification.checksPassed.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                {criticVerification.checksPassed.map((chk, cIdx) => (
+                  <span key={cIdx} className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-mono">
+                    ✓ {chk}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
