@@ -1183,3 +1183,34 @@ END $$;
 -- 10. ACCOUNT PRIVACY (PUBLIC VS PRIVATE PROFILES)
 -- ==============================================================================
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS is_private BOOLEAN DEFAULT FALSE;
+
+-- ==============================================================================
+-- 11. MESSAGE DELETION RLS POLICIES (DELETE FOR EVERYONE)
+-- ==============================================================================
+DO $$
+BEGIN
+    -- Direct messages deletion policy for senders
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Senders can delete direct messages' AND tablename = 'messages') THEN
+        CREATE POLICY "Senders can delete direct messages" ON public.messages FOR DELETE USING (auth.uid() = sender_id);
+    END IF;
+
+    -- Group messages deletion policy for senders or group admins
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Senders or admins can delete group messages' AND tablename = 'chat_group_messages') THEN
+        CREATE POLICY "Senders or admins can delete group messages" ON public.chat_group_messages FOR DELETE 
+        USING (
+            auth.uid() = sender_id 
+            OR EXISTS (
+                SELECT 1 FROM chat_group_members 
+                WHERE group_id = chat_group_messages.group_id 
+                AND user_id = auth.uid() 
+                AND role = 'admin'
+            )
+            OR EXISTS (
+                SELECT 1 FROM chat_groups
+                WHERE id = chat_group_messages.group_id
+                AND creator_id = auth.uid()
+            )
+        );
+    END IF;
+END $$;
+
