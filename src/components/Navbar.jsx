@@ -186,7 +186,7 @@ export default function Navbar({ onOpenSidebar, session: propSession, profile: p
 
   const navLinks = [
     { label: 'Home', path: '/', icon: Home },
-    { label: 'Explore', path: '/search', icon: Compass },
+    { label: 'Explore', path: '/explore', icon: Compass },
     { label: 'Communities', path: '/communities', icon: Users },
     {
       label: 'Notifications',
