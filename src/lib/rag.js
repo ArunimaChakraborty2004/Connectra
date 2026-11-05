@@ -1,10 +1,5 @@
-/**
- * Connectra RAG (Retrieval-Augmented Generation) Engine
- * Implements client-side BM25 / TF-IDF vector & keyword indexing over:
- * - Project Workspace (Kanban tasks, milestones, file metadata, tech stack)
- * - Developer Communities (discussions, forum threads, answers)
- * - Developer profiles and code repositories
- */
+import { supabase } from './supabase';
+
 
 const STOP_WORDS = new Set([
   'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'has', 'he',
@@ -207,4 +202,192 @@ export function formatRAGContextForPrompt(retrievedItems) {
   }).join('\n\n---\n\n');
 
   return `\n\n=== RETRIEVED KNOWLEDGE BASE CONTEXT (RAG ACTIVE) ===\nUse the following verified context from the active workspace to ground your answers. When you reference facts from these records, explicitly cite them as [Ref 1], [Ref 2], etc.\n\n${references}\n=== END RETRIEVED CONTEXT ===\n`;
+}
+
+/**
+ * Automatically inspects the user query for mentions of specific developers, posts, projects, or feed activities
+ * and queries Supabase in real-time to provide factual grounding for the LLM.
+ * Returns: { contextText: string, sources: Array<{ id, title, type, score }> }
+ */
+export async function fetchRealtimeConnectraContext(query) {
+  if (!query) return { contextText: '', sources: [] };
+  const lower = query.toLowerCase();
+  const contextBlocks = [];
+  const sources = [];
+
+  try {
+    // 1. Detect if the query is asking about a specific person or username
+    // Examples: "by sarah", "@sarah", "what did sarah post", "sarah's last post", "posts by alex"
+    let targetUsername = null;
+    const atMatch = query.match(/@([a-zA-Z0-9_]+)/);
+    if (atMatch) {
+      targetUsername = atMatch[1];
+    } else {
+      const byMatch = query.match(/(?:by|from|of|for|about)\s+([a-zA-Z0-9_]+)/i);
+      const apostropheMatch = query.match(/([a-zA-Z0-9_]+)'s\s+(?:post|last\s+post|latest\s+post|code|project|update)/i);
+      const stopNames = ['the', 'a', 'an', 'me', 'my', 'him', 'her', 'them', 'us', 'you', 'this', 'that', 'someone', 'anyone', 'all', 'specific', 'person', 'user'];
+      
+      if (apostropheMatch && !stopNames.includes(apostropheMatch[1].toLowerCase())) {
+        targetUsername = apostropheMatch[1];
+      } else if (byMatch && !stopNames.includes(byMatch[1].toLowerCase())) {
+        targetUsername = byMatch[1];
+      }
+    }
+
+    if (targetUsername) {
+      // Look up target profile in profiles table
+      const { data: matchedProfiles } = await supabase
+        .from('profiles')
+        .select('id, username, full_name, bio, tech_stack, created_at')
+        .or(`username.ilike.%${targetUsername}%,full_name.ilike.%${targetUsername}%`)
+        .limit(3);
+
+      if (matchedProfiles && matchedProfiles.length > 0) {
+        for (const p of matchedProfiles) {
+          // Fetch their latest posts in reverse-chronological order
+          const { data: userPosts } = await supabase
+            .from('posts')
+            .select('id, content, code_snippet, code_language, created_at, likes_count, comments_count')
+            .eq('user_id', p.id)
+            .order('created_at', { ascending: false })
+            .limit(5);
+
+          sources.push({
+            id: `profile-${p.id}`,
+            title: `Live Database: @${p.username}'s Profile & Latest Posts`,
+            type: 'database',
+            score: 0.98,
+          });
+
+          const postSummaries = userPosts && userPosts.length > 0
+            ? userPosts.map((post, idx) => `
+[Post #${idx + 1} - ID: ${post.id}]
+- Published: ${new Date(post.created_at).toLocaleString()} (${post.created_at})
+- Text Content: "${post.content || '(No text content)'}"
+${post.code_snippet ? `- Code Snippet (${post.code_language || 'code'}):\n\`\`\`${post.code_language || ''}\n${post.code_snippet}\n\`\`\`` : ''}
+- Likes: ${post.likes_count || 0} | Comments: ${post.comments_count || 0}
+`).join('\n')
+            : `(No posts published yet by @${p.username}.)`;
+
+          contextBlocks.push(`=== VERIFIED DATABASE RECORD: @${p.username} ===
+Developer: @${p.username} (Display Name: ${p.full_name || p.username})
+Bio: ${p.bio || 'None provided'}
+Tech Stack: ${p.tech_stack || 'None specified'}
+Account Created: ${new Date(p.created_at).toLocaleDateString()}
+
+Posts by @${p.username} (Ordered strictly newest first):
+${postSummaries}
+=== END RECORD FOR @${p.username} ===`);
+        }
+      }
+    }
+
+    // 2. If query asks about general feed posts, latest posts, or what's new
+    const isAskingAboutFeed =
+      lower.includes('post') ||
+      lower.includes('feed') ||
+      lower.includes('latest') ||
+      lower.includes('recent') ||
+      lower.includes('what did') ||
+      lower.includes('shared');
+
+    if (isAskingAboutFeed && contextBlocks.length === 0) {
+      const { data: recentFeedPosts } = await supabase
+        .from('posts')
+        .select(`
+          id, content, code_snippet, code_language, created_at, likes_count, comments_count,
+          profiles(username, full_name)
+        `)
+        .order('created_at', { ascending: false })
+        .limit(8);
+
+      if (recentFeedPosts && recentFeedPosts.length > 0) {
+        sources.push({
+          id: 'live-feed-posts',
+          title: 'Live Connectra Feed Database (Latest Posts)',
+          type: 'database',
+          score: 0.95,
+        });
+
+        contextBlocks.push(`=== VERIFIED DATABASE RECORD: RECENT FEED POSTS (Newest First) ===
+${recentFeedPosts.map((post, idx) => `
+[Post #${idx + 1}] By: @${post.profiles?.username || 'developer'} (${post.profiles?.full_name || ''})
+Published: ${new Date(post.created_at).toLocaleString()}
+Content: "${post.content || ''}"
+${post.code_snippet ? `Code (${post.code_language || 'code'}):\n\`\`\`${post.code_language || ''}\n${post.code_snippet}\n\`\`\`` : ''}
+`).join('\n')}
+=== END RECENT POSTS RECORD ===`);
+      }
+    }
+
+    // 3. If query mentions projects, collaborations, repositories
+    const isAskingAboutProjects =
+      lower.includes('project') ||
+      lower.includes('collab') ||
+      lower.includes('team') ||
+      lower.includes('kanban');
+
+    if (isAskingAboutProjects) {
+      const { data: recentProjects } = await supabase
+        .from('projects')
+        .select('id, title, description, tech_stack, status, created_at, profiles(username)')
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (recentProjects && recentProjects.length > 0) {
+        sources.push({
+          id: 'live-projects',
+          title: 'Live Connectra Projects Database',
+          type: 'database',
+          score: 0.92,
+        });
+
+        contextBlocks.push(`=== VERIFIED DATABASE RECORD: CONNECTRA ACTIVE PROJECTS ===
+${recentProjects.map((proj, idx) => `
+[Project #${idx + 1}] "${proj.title}" (Status: ${proj.status})
+Lead: @${proj.profiles?.username || 'member'} | Tech Stack: ${proj.tech_stack || 'Web'}
+Description: ${proj.description || 'No description provided'}
+Created: ${new Date(proj.created_at).toLocaleDateString()}
+`).join('\n')}
+=== END PROJECTS RECORD ===`);
+      }
+    }
+
+    // 4. If query asks about active developers or members
+    const isAskingAboutDevelopers =
+      lower.includes('developer') ||
+      lower.includes('who is') ||
+      lower.includes('who are') ||
+      lower.includes('members') ||
+      lower.includes('users');
+
+    if (isAskingAboutDevelopers && contextBlocks.length === 0) {
+      const { data: topDevs } = await supabase
+        .from('profiles')
+        .select('username, full_name, bio, tech_stack, xp, level')
+        .order('xp', { ascending: false })
+        .limit(6);
+
+      if (topDevs && topDevs.length > 0) {
+        sources.push({
+          id: 'live-developers',
+          title: 'Live Connectra Developer Directory',
+          type: 'database',
+          score: 0.90,
+        });
+
+        contextBlocks.push(`=== VERIFIED DATABASE RECORD: TOP DEVELOPERS ===
+${topDevs.map((d, idx) => `${idx + 1}. @${d.username} (${d.full_name || ''}) - Lv.${d.level || 1} (${d.xp || 0} XP) | Stack: ${d.tech_stack || 'N/A'} | Bio: ${d.bio || 'None'}`).join('\n')}
+=== END DEVELOPERS RECORD ===`);
+      }
+    }
+  } catch (err) {
+    console.warn('Realtime Connectra DB context error:', err);
+  }
+
+  const contextText = contextBlocks.length > 0
+    ? `\n\n=== REAL-TIME CONNECTRA LIVE DATABASE (GROUND TRUTH) ===\nUse this real-time database query result to answer the user's question directly with exact dates, usernames, and content:\n\n${contextBlocks.join('\n\n')}\n=== END REAL-TIME DATABASE ===\n`
+    : '';
+
+  return { contextText, sources };
 }

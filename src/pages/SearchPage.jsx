@@ -115,7 +115,7 @@ export default function SearchPage({ session }) {
   const [loading, setLoading] = useState(true);
   const [loadingPosts, setLoadingPosts] = useState(false);
   const [profile, setProfile] = useState(null);
-  const [connections, setConnections] = useState({});
+  const [requestedMap, setRequestedMap] = useState({});
 
   // Typeahead suggestions popup state
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -261,6 +261,13 @@ export default function SearchPage({ session }) {
         .select('follower_id')
         .eq('following_id', currentUserId);
 
+      // Also load pending follow requests sent by current user
+      const { data: pendingRequests } = await supabase
+        .from('connections')
+        .select('receiver_id')
+        .eq('requester_id', currentUserId)
+        .eq('status', 'pending');
+
       const fIngMap = {};
       (myFollowing || []).forEach((f) => {
         if (f.following_id) fIngMap[f.following_id] = true;
@@ -271,8 +278,14 @@ export default function SearchPage({ session }) {
         if (f.follower_id) fErsMap[f.follower_id] = true;
       });
 
+      const reqMap = {};
+      (pendingRequests || []).forEach((r) => {
+        if (r.receiver_id) reqMap[r.receiver_id] = true;
+      });
+
       setFollowingMap(fIngMap);
       setFollowersMap(fErsMap);
+      setRequestedMap(reqMap);
     } catch (err) {
       console.warn('Error loading follows:', err);
     }
@@ -284,6 +297,34 @@ export default function SearchPage({ session }) {
 
   const handleFollow = async (targetId) => {
     if (!currentUserId || !targetId) return;
+    const targetUser = users.find((u) => u.id === targetId);
+    const isPriv =
+      targetUser?.isPrivate ||
+      localStorage.getItem(`connectra_privacy_${targetId}`) === 'true' ||
+      localStorage.getItem(`connectra_private_${targetId}`) === 'true';
+
+    // If profile is private, send a follow request
+    if (isPriv) {
+      setRequestedMap((prev) => ({ ...prev, [targetId]: true }));
+      const { error } = await supabase.from('connections').insert({
+        requester_id: currentUserId,
+        receiver_id: targetId,
+        status: 'pending',
+      });
+      if (error) {
+        toast.info('Follow request already pending.');
+      } else {
+        toast.success('Follow request sent!');
+        createNotification({
+          userId: targetId,
+          actorId: currentUserId,
+          type: 'connection_request',
+          entityId: currentUserId,
+        });
+      }
+      return;
+    }
+
     setFollowingMap((prev) => ({ ...prev, [targetId]: true }));
     const { error } = await supabase
       .from('follows')
@@ -400,10 +441,10 @@ export default function SearchPage({ session }) {
       const normalized = (result || []).map((u) => ({
         ...u,
         isPrivate:
-          u.is_private !== undefined
+          u.is_private !== undefined && u.is_private !== null
             ? Boolean(u.is_private)
             : u.id
-            ? localStorage.getItem(`connectra_private_${u.id}`) === 'true'
+            ? (localStorage.getItem(`connectra_privacy_${u.id}`) === 'true' || localStorage.getItem(`connectra_private_${u.id}`) === 'true')
             : false,
         displayName: u.username || u.full_name || (u.id ? `Developer_${u.id.slice(0, 5)}` : 'Developer'),
         profileSlug: u.username || u.id || 'developer',
@@ -1218,8 +1259,9 @@ export default function SearchPage({ session }) {
                       )}
 
                       {filteredUsers.map((user, i) => {
-                        const conn = connections[user.id];
-                        const status = conn?.status;
+                        const isFollowing = Boolean(followingMap[user.id]);
+                        const isFollower = Boolean(followersMap[user.id]);
+                        const isRequested = Boolean(requestedMap[user.id]);
 
                         return (
                           <motion.div
@@ -1287,19 +1329,19 @@ export default function SearchPage({ session }) {
                                       color: 'var(--text-muted)',
                                       border: '1px solid var(--border-color)',
                                     }}
-                                    title="Private Profile (Details visible to connections only)"
+                                    title="Private Profile (Details visible to approved followers only)"
                                   >
                                     <Lock size={10} /> Private
                                   </span>
                                 )}
                               </div>
 
-                              {user.isPrivate && status !== 'accepted' ? (
+                              {user.isPrivate && !isFollowing ? (
                                 <p
                                   className="text-xs mt-1 italic"
                                   style={{ color: 'var(--text-muted)' }}
                                 >
-                                  🔒 Profile details are private. Connect to view tech stack.
+                                  🔒 Profile details are private. Follow to view tech stack and projects.
                                 </p>
                               ) : (
                                 <>
@@ -1374,7 +1416,7 @@ export default function SearchPage({ session }) {
                                 const isFollowing = Boolean(followingMap[user.id]);
                                 const isFollower = Boolean(followersMap[user.id]);
 
-                                if (isFollowing) {
+                               if (isFollowing) {
                                   return (
                                     <button
                                       onClick={() => handleUnfollow(user.id)}
@@ -1393,6 +1435,17 @@ export default function SearchPage({ session }) {
                                         <UserMinus size={13} /> Unfollow
                                       </span>
                                     </button>
+                                  );
+                                }
+
+                                if (isRequested) {
+                                  return (
+                                    <span
+                                      className="px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 text-orange-500 bg-orange-500/10 border border-orange-500/20"
+                                      title="Follow request pending approval"
+                                    >
+                                      <Clock size={13} /> Requested
+                                    </span>
                                   );
                                 }
 

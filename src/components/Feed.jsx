@@ -133,7 +133,7 @@ function StoriesRow({ session }) {
   const touchStartY = useRef(0);
 
   const handleOpenUserStory = (user, storyIndex = 0) => {
-    // 1. Check if user has active Stories
+    // Check if user has active Stories
     const userStories = stories.filter((s) => s.user_id === user.id);
     if (userStories.length > 0) {
       const validIndex = Math.max(0, Math.min(storyIndex, userStories.length - 1));
@@ -143,28 +143,7 @@ function StoriesRow({ session }) {
         storyIndex: validIndex,
         userStories,
       });
-      return;
     }
-
-    // 2. Check if user has a Reel
-    const userReels = reels.filter((r) => r.user_id === user.id);
-    if (userReels.length > 0) {
-      setActiveStory({
-        user,
-        reel: userReels[0],
-        storyIndex: 0,
-        userStories: [],
-      });
-      return;
-    }
-
-    // 3. Fallback display card preview if no story posted yet
-    setActiveStory({
-      user,
-      fallbackText: `${user.username}'s Daily Dev Update: Exploring code and building in Connectra!`,
-      storyIndex: 0,
-      userStories: [],
-    });
   };
 
   const handleDeleteActiveStory = async (storyId) => {
@@ -197,10 +176,9 @@ function StoriesRow({ session }) {
     }
 
     // 2. Otherwise advance to the next user in the list
-    const allUsers = [currentUser, ...users].filter(Boolean);
-    const currentIndex = allUsers.findIndex(u => u.id === activeStory.user.id);
-    if (currentIndex >= 0 && currentIndex < allUsers.length - 1) {
-      handleOpenUserStory(allUsers[currentIndex + 1], 0);
+    const currentIndex = allNavUsers.findIndex(u => u.id === activeStory.user.id);
+    if (currentIndex >= 0 && currentIndex < allNavUsers.length - 1) {
+      handleOpenUserStory(allNavUsers[currentIndex + 1], 0);
     } else {
       setActiveStory(null);
     }
@@ -220,10 +198,9 @@ function StoriesRow({ session }) {
     }
 
     // 2. Otherwise go back to the previous user's last story
-    const allUsers = [currentUser, ...users].filter(Boolean);
-    const currentIndex = allUsers.findIndex(u => u.id === activeStory.user.id);
+    const currentIndex = allNavUsers.findIndex(u => u.id === activeStory.user.id);
     if (currentIndex > 0) {
-      const prevUser = allUsers[currentIndex - 1];
+      const prevUser = allNavUsers[currentIndex - 1];
       const prevUserStories = stories.filter((s) => s.user_id === prevUser.id);
       const lastIndex = Math.max(0, prevUserStories.length - 1);
       handleOpenUserStory(prevUser, lastIndex);
@@ -279,7 +256,7 @@ function StoriesRow({ session }) {
   };
 
   const userHasStory = (userId) => {
-    return stories.some(s => s.user_id === userId) || reels.some(r => r.user_id === userId);
+    return stories.some(s => s.user_id === userId);
   };
 
   const getUserStory = (userId) => {
@@ -289,7 +266,28 @@ function StoriesRow({ session }) {
   const currentUserStory = currentUser ? getUserStory(currentUser.id) : null;
   const currentUserTimeInfo = currentUserStory ? getStoryTimeInfo(currentUserStory) : null;
 
-  const allNavUsers = [currentUser, ...users].filter(Boolean);
+  // Extract ONLY users who have actively posted stories (excluding current user)
+  const storyUsers = [];
+  const seenStoryUserIds = new Set();
+  stories.forEach((story) => {
+    const uid = story.user_id;
+    if (uid && uid !== currentUser?.id && !seenStoryUserIds.has(uid)) {
+      seenStoryUserIds.add(uid);
+      const matchedProfile = users.find((u) => u.id === uid);
+      const userObj = matchedProfile || {
+        id: uid,
+        username: story.profiles?.username || 'developer',
+        avatar_url: story.profiles?.avatar_url || null,
+      };
+      storyUsers.push(userObj);
+    }
+  });
+
+  const allNavUsers = [
+    currentUser && userHasStory(currentUser.id) ? currentUser : null,
+    ...storyUsers,
+  ].filter(Boolean);
+
   const currentActiveUserIndex = allNavUsers.findIndex(u => u.id === activeStory?.user?.id);
   const hasPrior = Boolean(
     activeStory && (
@@ -340,25 +338,13 @@ function StoriesRow({ session }) {
             </span>
           </button>
 
-          {/* Current User Story */}
-          {currentUser && (
+          {/* Current User Story (visible if user has posted an active story) */}
+          {currentUser && userHasStory(currentUser.id) && (
             <button
-              onClick={() => {
-                if (userHasStory(currentUser.id)) {
-                  handleOpenUserStory(currentUser);
-                } else {
-                  setShowCreateStory(true);
-                }
-              }}
+              onClick={() => handleOpenUserStory(currentUser)}
               className="flex flex-col items-center gap-1.5 shrink-0 cursor-pointer group text-center w-16"
             >
-              <div
-                className={`w-14 h-14 rounded-full p-0.5 ${
-                  userHasStory(currentUser.id)
-                    ? 'bg-gradient-to-tr from-[#ea580c] via-[#f97316] to-[#facc15] shadow-xs'
-                    : 'bg-[#fed7aa]'
-                } group-hover:scale-105 transition-all shadow-2xs flex items-center justify-center`}
-              >
+              <div className="w-14 h-14 rounded-full p-0.5 bg-gradient-to-tr from-[#ea580c] via-[#f97316] to-[#facc15] shadow-xs group-hover:scale-105 transition-all shadow-2xs flex items-center justify-center">
                 <div className="w-full h-full rounded-full overflow-hidden p-0.5 bg-white flex items-center justify-center">
                   {currentUser.avatar_url ? (
                     <img
@@ -384,10 +370,9 @@ function StoriesRow({ session }) {
             </button>
           )}
 
-          {/* Real Users from Database */}
-          {users.map((user) => {
+          {/* Real Users Who Have Actually Posted Stories */}
+          {storyUsers.map((user) => {
             const userInitial = user.username?.[0]?.toUpperCase() || 'D';
-            const hasActiveStory = userHasStory(user.id);
             const userStory = getUserStory(user.id);
             const timeInfo = userStory ? getStoryTimeInfo(userStory) : null;
 
@@ -397,13 +382,7 @@ function StoriesRow({ session }) {
                 onClick={() => handleOpenUserStory(user)}
                 className="flex flex-col items-center gap-1.5 shrink-0 cursor-pointer group text-center w-16"
               >
-                <div
-                  className={`w-14 h-14 rounded-full p-0.5 ${
-                    hasActiveStory
-                      ? 'bg-gradient-to-tr from-[#ea580c] via-[#f97316] to-[#facc15] shadow-xs'
-                      : 'bg-stone-200 dark:bg-stone-700'
-                  } group-hover:scale-105 transition-all shadow-2xs flex items-center justify-center`}
-                >
+                <div className="w-14 h-14 rounded-full p-0.5 bg-gradient-to-tr from-[#ea580c] via-[#f97316] to-[#facc15] shadow-xs group-hover:scale-105 transition-all shadow-2xs flex items-center justify-center">
                   <div className="w-full h-full rounded-full overflow-hidden p-0.5 bg-white flex items-center justify-center">
                     {user.avatar_url ? (
                       <img

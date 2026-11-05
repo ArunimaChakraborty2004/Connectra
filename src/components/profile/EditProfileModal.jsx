@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Upload, CheckCircle2, AlertCircle, Sparkles, Wand2, Shield, Rocket, Briefcase, RefreshCw, Loader2, XCircle } from 'lucide-react';
+import { X, Upload, CheckCircle2, AlertCircle, Sparkles, Wand2, Shield, Rocket, Briefcase, RefreshCw, Loader2, XCircle, Lock, Globe } from 'lucide-react';
 import { toast } from '../../lib/toast';
 import { generateBioOptions } from '../../lib/ai';
 
@@ -17,6 +17,7 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
     twitter_url: profile?.twitter_url || '',
     leetcode_url: profile?.leetcode_url || '',
     tech_stack: profile?.tech_stack || '',
+    is_private: Boolean(profile?.is_private ?? (localStorage.getItem('connectra_privacy_' + profile?.id) === 'private')),
   });
   
   const [avatarFile, setAvatarFile] = useState(null);
@@ -68,6 +69,7 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
         twitter_url: profile.twitter_url || '',
         leetcode_url: profile.leetcode_url || '',
         tech_stack: profile.tech_stack || '',
+        is_private: Boolean(profile.is_private ?? (localStorage.getItem('connectra_privacy_' + profile.id) === 'private')),
       });
       setAvatarPreview(profile.avatar_url || '');
       setUsernameStatus({
@@ -364,7 +366,13 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
       linkedin_url: formData.linkedin_url,
       github_url: formData.github_url,
       avatar_url,
+      is_private: Boolean(formData.is_private),
     };
+
+    // Cache privacy locally so it takes effect instantly
+    try {
+      localStorage.setItem('connectra_privacy_' + profile.id, formData.is_private ? 'private' : 'public');
+    } catch {}
 
     // If extra columns (location, leetcode_url, twitter_url) exist in Supabase, include them; otherwise fallback safely
     let { data, error } = await supabase
@@ -379,12 +387,16 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
       .select()
       .single();
 
-    // If schema error occurred due to missing optional columns (e.g. leetcode_url or location column missing in Postgres)
-    if (error && (error.message?.includes('leetcode_url') || error.message?.includes('location') || error.message?.includes('twitter_url') || error.code === 'PGRST204')) {
+    // If schema error occurred due to missing optional columns (e.g. leetcode_url or is_private missing in older Postgres)
+    if (error && (error.message?.includes('leetcode_url') || error.message?.includes('location') || error.message?.includes('twitter_url') || error.message?.includes('is_private') || error.code === 'PGRST204')) {
       console.warn('Optional columns missing in schema, retrying with core columns:', error.message);
+      const safeCorePayload = { ...updatePayload };
+      if (error.message?.includes('is_private')) {
+        delete safeCorePayload.is_private;
+      }
       const retryResult = await supabase
         .from('profiles')
-        .update(updatePayload)
+        .update(safeCorePayload)
         .eq('id', profile.id)
         .select()
         .single();
@@ -519,6 +531,56 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
                     <p className="text-[11px] text-muted mt-1">Your unique handle on Connectra.</p>
                   )}
                 </div>
+              </div>
+
+              {/* Account Privacy Setting (Public vs Private Profile) */}
+              <div className="p-4 rounded-2xl border border-orange-500/20 bg-[#faf6f0] dark:bg-stone-900/60 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                    formData.is_private
+                      ? 'bg-orange-500/15 text-orange-500 border border-orange-500/30'
+                      : 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
+                  }`}>
+                    {formData.is_private ? <Lock size={20} /> : <Globe size={20} />}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-bold text-main">
+                        {formData.is_private ? 'Private Account' : 'Public Account'}
+                      </h4>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        formData.is_private
+                          ? 'bg-orange-500/10 text-orange-600 border border-orange-500/20'
+                          : 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20'
+                      }`}>
+                        {formData.is_private ? 'Followers Only' : 'Open to All'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted mt-0.5 leading-snug">
+                      {formData.is_private
+                        ? 'Requires your approval for new followers. Only approved followers can view your posts and projects.'
+                        : 'Anyone can follow you and view your posts, repositories, and developer timeline.'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Toggle Switch */}
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, is_private: !prev.is_private }))}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    formData.is_private ? 'bg-orange-500' : 'bg-stone-300 dark:bg-stone-700'
+                  }`}
+                  role="switch"
+                  aria-checked={formData.is_private}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                      formData.is_private ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
               </div>
 
               {/* Bio & Details */}

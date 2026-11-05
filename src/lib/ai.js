@@ -5,6 +5,7 @@ const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const CANDIDATE_MODELS = [
   'qwen/qwen3.8-27b',
   'openai/gpt-oss-120b',
+  'openai/gpt-oss-20b',
   'llama-3.3-70b-versatile',
   'llama-3.1-8b-instant',
 ];
@@ -66,11 +67,8 @@ export async function callGroq({
       }
     } catch (err) {
       lastError = err;
-      // If error is about model not found, try next candidate
-      if (err.message?.includes('model_not_found') || err.message?.includes('does not exist')) {
-        continue;
-      }
-      throw err;
+      // Try next candidate model seamlessly
+      continue;
     }
   }
 
@@ -345,7 +343,10 @@ Response Guidelines:
    - Point out relevant edge cases (e.g., token revocation, race conditions, OWASP Top 10 vulnerabilities, Supabase RLS bypass risks).
 4. 🚀 **Formatting & Citations**:
    - If RAG context is provided above, ground your answers in it and cite records like [Ref 1], [Ref 2].
-   - Use bold headers, concise bullet points, and high-signal formatting so it's effortless to scan.`;
+   - Use bold headers, concise bullet points, and high-signal formatting so it's effortless to scan.
+5. 🔍 **Connectra Community & Feed Grounding**:
+   - When real-time database context (posts, developer profiles, projects) is provided in your context, prioritize it directly to answer factual queries (e.g. "what was the last post by @username", "recent feed posts", "what projects are active").
+   - Clearly state the author handle (@username), exact publication date/time, and the post content/code.`;
 
   try {
     const response = await callGroq({
@@ -363,7 +364,11 @@ Response Guidelines:
   } catch (err) {
     const latency = performance.now() - startTime;
     recordModelBenchmark({ model, latencyMs: latency, taskType: 'copilot_rag', isSuccess: false });
-    return `Hello! I'm your Connectra Copilot. 🚀\n\nIt looks like your \`VITE_GROQ_API_KEY\` is not set yet in \`.env\`. Grab a free key in 30 seconds at [console.groq.com](https://console.groq.com/keys) and paste it into your \`.env\` file to activate instant ultra-fast responses!`;
+    const apiKey = getGroqApiKey();
+    if (!apiKey) {
+      return `Hello! I'm your Connectra Copilot. 🚀\n\nIt looks like your \`VITE_GROQ_API_KEY\` is not set yet in \`.env\`. Grab a free key in 30 seconds at [console.groq.com](https://console.groq.com/keys) and paste it into your \`.env\` file to activate instant ultra-fast responses!`;
+    }
+    return `⚠️ I ran into a temporary issue connecting to the AI inference service (${err.message || 'Service busy'}). Please try sending your query again in a moment.`;
   }
 }
 

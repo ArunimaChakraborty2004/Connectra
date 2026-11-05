@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Link, useNavigate } from 'react-router-dom';
-import { Lock, TrendingUp, UserPlus, CheckCircle2, Zap } from 'lucide-react';
+import { Lock, TrendingUp, UserPlus, CheckCircle2, Zap, Clock } from 'lucide-react';
 import { toast } from '../lib/toast';
 
 export default function Rightbar({ profile }) {
@@ -10,7 +10,8 @@ export default function Rightbar({ profile }) {
   const [joinedCommunities, setJoinedCommunities] = useState(new Set());
   const [suggestedUsers, setSuggestedUsers] = useState([]);
   const [connectingId, setConnectingId] = useState(null);
-  const [connectedIds, setConnectedIds] = useState(new Set());
+  const [followingIds, setFollowingIds] = useState(new Set());
+  const [requestedIds, setRequestedIds] = useState(new Set());
   const navigate = useNavigate();
 
   // Sparkline generator path based on post count or index
@@ -132,22 +133,33 @@ export default function Rightbar({ profile }) {
         if (profile?.id) {
           const { data: usersData } = await supabase
             .from('profiles')
-            .select('id, username, bio, avatar_url, tech_stack')
+            .select('id, username, bio, avatar_url, tech_stack, is_private')
             .neq('id', profile.id)
-            .limit(5);
+            .limit(6);
 
           if (usersData) {
             setSuggestedUsers(usersData);
           }
 
-          // Fetch active connection requests
+          // Fetch who the current user already follows
+          const { data: followsData } = await supabase
+            .from('follows')
+            .select('following_id')
+            .eq('follower_id', profile.id);
+
+          if (followsData) {
+            setFollowingIds(new Set(followsData.map((f) => f.following_id)));
+          }
+
+          // Fetch active pending follow requests
           const { data: connsData } = await supabase
             .from('connections')
             .select('receiver_id, status')
-            .eq('requester_id', profile.id);
+            .eq('requester_id', profile.id)
+            .eq('status', 'pending');
 
           if (connsData) {
-            setConnectedIds(new Set(connsData.map((c) => c.receiver_id)));
+            setRequestedIds(new Set(connsData.map((c) => c.receiver_id)));
           }
         }
       } catch (err) {
@@ -206,24 +218,53 @@ export default function Rightbar({ profile }) {
     }
   };
 
-  const handleQuickConnect = async (targetId) => {
-    if (!profile?.id) return;
+  const handleQuickFollow = async (targetUser) => {
+    if (!profile?.id || !targetUser?.id) return;
+    const targetId = targetUser.id;
     setConnectingId(targetId);
     try {
-      const { error } = await supabase.from('connections').insert({
-        requester_id: profile.id,
-        receiver_id: targetId,
-        status: 'pending',
-      });
-      if (!error) {
-        setConnectedIds((prev) => new Set(prev).add(targetId));
-        toast.success('Connection request sent!');
+      const isPriv = targetUser.is_private || localStorage.getItem(`connectra_privacy_${targetId}`) === 'true';
+
+      if (isPriv) {
+        // Send follow request for private account
+        const { error } = await supabase.from('connections').insert({
+          requester_id: profile.id,
+          receiver_id: targetId,
+          status: 'pending',
+        });
+        if (!error) {
+          setRequestedIds((prev) => new Set(prev).add(targetId));
+          toast.success('Follow request sent!');
+        } else {
+          setRequestedIds((prev) => new Set(prev).add(targetId));
+          toast.info('Follow request already pending.');
+        }
       } else {
-        toast.info('Request already pending.');
-        setConnectedIds((prev) => new Set(prev).add(targetId));
+        // Direct follow for public account
+        const { error } = await supabase.from('follows').insert({
+          follower_id: profile.id,
+          following_id: targetId,
+        });
+        if (!error) {
+          setFollowingIds((prev) => new Set(prev).add(targetId));
+          toast.success(`Following @${targetUser.username}!`);
+          try {
+            await supabase.from('notifications').insert({
+              user_id: targetId,
+              actor_id: profile.id,
+              type: 'follow',
+              entity_id: profile.id,
+            });
+          } catch (notifErr) {
+            console.warn('Rightbar follow notif error:', notifErr);
+          }
+        } else {
+          setFollowingIds((prev) => new Set(prev).add(targetId));
+        }
       }
+      window.dispatchEvent(new Event('refreshStats'));
     } catch {
-      toast.error('Could not connect');
+      toast.error('Could not follow developer');
     } finally {
       setConnectingId(null);
     }
@@ -376,7 +417,8 @@ export default function Rightbar({ profile }) {
 
           <div className="flex flex-col gap-2.5">
             {suggestedUsers.map((user) => {
-              const isSent = connectedIds.has(user.id);
+              const isFollowing = followingIds.has(user.id);
+              const isRequested = requestedIds.has(user.id);
               const isConnecting = connectingId === user.id;
 
               return (
@@ -403,20 +445,24 @@ export default function Rightbar({ profile }) {
                   </Link>
 
                   <button
-                    onClick={() => handleQuickConnect(user.id)}
-                    disabled={isSent || isConnecting}
-                    className={`px-3 py-1 rounded-xl text-xs font-bold flex items-center gap-1 transition-all shrink-0 cursor-pointer disabled:opacity-60 ${
-                      isSent
+                    onClick={() => handleQuickFollow(user)}
+                    disabled={isFollowing || isRequested || isConnecting}
+                    className={`px-3 py-1 rounded-xl text-xs font-bold flex items-center gap-1 transition-all shrink-0 cursor-pointer disabled:opacity-75 ${
+                      isFollowing
                         ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
+                        : isRequested
+                        ? 'bg-orange-50 text-orange-600 border border-orange-200'
                         : 'bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white shadow-xs hover:brightness-105'
                     }`}
                   >
                     {isConnecting ? (
                       <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                    ) : isSent ? (
-                      <><CheckCircle2 size={12} /> Sent</>
+                    ) : isFollowing ? (
+                      <><CheckCircle2 size={12} /> Following</>
+                    ) : isRequested ? (
+                      <><Clock size={12} /> Requested</>
                     ) : (
-                      <><UserPlus size={12} /> Connect</>
+                      <><UserPlus size={12} /> Follow</>
                     )}
                   </button>
                 </div>

@@ -4,6 +4,7 @@ ADD COLUMN IF NOT EXISTS linkedin_url TEXT,
 ADD COLUMN IF NOT EXISTS website_url TEXT,
 ADD COLUMN IF NOT EXISTS portfolio_url TEXT,
 ADD COLUMN IF NOT EXISTS avatar_url TEXT,
+ADD COLUMN IF NOT EXISTS is_private BOOLEAN DEFAULT FALSE,
 ADD COLUMN IF NOT EXISTS xp INTEGER DEFAULT 0,
 ADD COLUMN IF NOT EXISTS level INTEGER DEFAULT 1;
 
@@ -1177,3 +1178,8 @@ BEGIN
         CREATE POLICY "Authenticated Users Upload Post Images" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'post_images' AND auth.role() = 'authenticated');
     END IF;
 END $$;
+
+-- ==============================================================================
+-- 10. ACCOUNT PRIVACY (PUBLIC VS PRIVATE PROFILES)
+-- ==============================================================================
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS is_private BOOLEAN DEFAULT FALSE;
