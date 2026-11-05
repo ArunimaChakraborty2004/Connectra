@@ -4,6 +4,7 @@ import { supabase } from './lib/supabase';
 import Auth from './components/Auth';
 import Dashboard from './components/Dashboard';
 import SearchPage from './pages/SearchPage';
+import ExplorePage from './pages/ExplorePage';
 import ProfilePage from './pages/ProfilePage';
 import ProjectDetails from './pages/ProjectDetails';
 import CodingProfilePage from './pages/CodingProfilePage';
@@ -100,7 +101,8 @@ function AppInner({ session }) {
           <Route path="/" element={<Dashboard session={session} />} />
           <Route path="/post/:id" element={<PostPage session={session} />} />
           <Route path="/posts/:id" element={<PostPage session={session} />} />
-          <Route path="/search" element={<SearchPage session={session} />} />
+          <Route path="/explore" element={<ExplorePage session={session} />} />
+          <Route path="/search" element={<ExplorePage session={session} />} />
           <Route path="/profile/:username" element={<ProfilePage session={session} />} />
           <Route path="/profile/:username/coding" element={<CodingProfilePage session={session} />} />
           <Route path="/profile/:username/portfolio" element={<PortfolioPage session={session} />} />

@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { Link, useNavigate } from 'react-router-dom';
 import { Lock, TrendingUp, UserPlus, CheckCircle2, Zap, Clock } from 'lucide-react';
 import { toast } from '../lib/toast';
+import { CURATED_COMMUNITIES } from '../data/communitiesData';
 
 export default function Rightbar({ profile }) {
   const [trendingTags, setTrendingTags] = useState([]);
@@ -106,16 +107,29 @@ export default function Rightbar({ profile }) {
         setTrendingTags(sortedTags);
 
 
-        // 2. Fetch Real Communities from 'communities' table
+        // 2. Fetch Real Communities from 'communities' table merged with curated guilds
         const { data: commsData } = await supabase
           .from('communities')
           .select('id, name, icon, member_count')
           .order('member_count', { ascending: false })
           .limit(5);
 
-        if (commsData && commsData.length > 0) {
-          setCommunities(commsData);
-        }
+        const localJoined = JSON.parse(localStorage.getItem('connectra_joined_communities') || '["guild-zerotrust-sec", "guild-ai-agents"]');
+        const initialJoined = new Set(localJoined);
+
+        let mergedComms = (commsData && commsData.length > 0) ? [...commsData] : [];
+        CURATED_COMMUNITIES.slice(0, 4).forEach((curated) => {
+          if (!mergedComms.some((c) => c.id === curated.id || c.name === curated.name)) {
+            mergedComms.push({
+              id: curated.id,
+              name: curated.name,
+              icon: curated.icon,
+              member_count: curated.member_count
+            });
+          }
+        });
+
+        setCommunities(mergedComms.slice(0, 5));
 
         // Fetch user memberships for communities
         if (profile?.id) {
@@ -125,9 +139,10 @@ export default function Rightbar({ profile }) {
             .eq('user_id', profile.id);
 
           if (memberData) {
-            setJoinedCommunities(new Set(memberData.map((m) => m.community_id)));
+            memberData.forEach((m) => initialJoined.add(m.community_id));
           }
         }
+        setJoinedCommunities(initialJoined);
 
         // 3. Fetch Real Suggested Users from 'profiles' table
         if (profile?.id) {
@@ -171,25 +186,14 @@ export default function Rightbar({ profile }) {
   }, [profile?.id]);
 
   const handleToggleCommunity = async (comm) => {
-    if (!profile?.id) return;
     const isJoined = joinedCommunities.has(comm.id);
 
     try {
       if (isJoined) {
-        await supabase
-          .from('community_members')
-          .delete()
-          .eq('community_id', comm.id)
-          .eq('user_id', profile.id);
-
-        await supabase
-          .from('communities')
-          .update({ member_count: Math.max(0, (comm.member_count || 1) - 1) })
-          .eq('id', comm.id);
-
         setJoinedCommunities((prev) => {
           const s = new Set(prev);
           s.delete(comm.id);
+          localStorage.setItem('connectra_joined_communities', JSON.stringify([...s]));
           return s;
         });
 
@@ -197,26 +201,47 @@ export default function Rightbar({ profile }) {
           prev.map((c) => (c.id === comm.id ? { ...c, member_count: Math.max(0, (c.member_count || 1) - 1) } : c))
         );
         toast.success(`Left ${comm.name}`);
+
+        if (profile?.id && !comm.id.startsWith('guild-')) {
+          await supabase
+            .from('community_members')
+            .delete()
+            .eq('community_id', comm.id)
+            .eq('user_id', profile.id);
+
+          await supabase
+            .from('communities')
+            .update({ member_count: Math.max(0, (comm.member_count || 1) - 1) })
+            .eq('id', comm.id);
+        }
       } else {
-        await supabase
-          .from('community_members')
-          .insert({ community_id: comm.id, user_id: profile.id });
+        setJoinedCommunities((prev) => {
+          const s = new Set([...prev, comm.id]);
+          localStorage.setItem('connectra_joined_communities', JSON.stringify([...s]));
+          return s;
+        });
 
-        await supabase
-          .from('communities')
-          .update({ member_count: (comm.member_count || 0) + 1 })
-          .eq('id', comm.id);
-
-        setJoinedCommunities((prev) => new Set([...prev, comm.id]));
         setCommunities((prev) =>
           prev.map((c) => (c.id === comm.id ? { ...c, member_count: (c.member_count || 0) + 1 } : c))
         );
         toast.success(`Joined ${comm.name}!`);
+
+        if (profile?.id && !comm.id.startsWith('guild-')) {
+          await supabase
+            .from('community_members')
+            .insert({ community_id: comm.id, user_id: profile.id });
+
+          await supabase
+            .from('communities')
+            .update({ member_count: (comm.member_count || 0) + 1 })
+            .eq('id', comm.id);
+        }
       }
-    } catch {
-      toast.error('Failed to update community membership');
+    } catch (err) {
+      console.warn('Membership toggle note:', err);
     }
   };
+
 
   const handleQuickFollow = async (targetUser) => {
     if (!profile?.id || !targetUser?.id) return;

@@ -1,0 +1,12 @@
+Experiment,Subsystem,Topology / Metric,TP,FP,TN,FN,Precision(%),Recall(%),F1_Score,Accuracy(%),FPR(%),Latency
+Exp 1: SAST,Vulnerability Pipeline,regex,8,0,6,2,100.0,80.0,0.8889,87.5,0.0,0.09 ms
+Exp 1: SAST,Vulnerability Pipeline,single_agent,8,1,5,2,88.89,80.0,0.8421,81.25,16.67,256.41 ms
+Exp 1: SAST,Vulnerability Pipeline,multi_agent,8,0,6,2,100.0,80.0,0.8889,87.5,0.0,731.0 ms
+Exp 2: Secrets,Pre-Publish Scanner,regex_only,13,0,15,2,100.0,86.67,0.9286,93.33,0.0,5.02 us
+Exp 2: Secrets,Pre-Publish Scanner,entropy_only_4.2,11,3,12,4,78.57,73.33,0.7586,76.67,20.0,49.55 us
+Exp 2: Secrets,Pre-Publish Scanner,connectra_hybrid,14,1,14,1,93.33,93.33,0.9333,93.33,6.67,24.17 us
+Exp 3: Guardrails,Content Safety,2-Tier Screen,5,0,5,0,100.0,100.0,1.0,100.0,0.0,0.086 ms
+Exp 4: RAG,Hybrid Retrieval,lambda=1.0,-,-,-,-,37.5,87.5,0.6414,-,-,MRR=0.5833
+Exp 4: RAG,Hybrid Retrieval,lambda=0.0,-,-,-,-,50.0,87.5,0.7202,-,-,MRR=0.6979
+Exp 4: RAG,Hybrid Retrieval,lambda=0.55,-,-,-,-,50.0,87.5,0.7039,-,-,MRR=0.6771
+Exp 5: Synergy,Team Matchmaker,Connectra 4D,-,-,-,-,100.0,-,-,-,-,Capture Rate

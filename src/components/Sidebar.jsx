@@ -75,8 +75,8 @@ export default function Sidebar({ profile, stats: initialStats, onClose }) {
       title: 'EXPLORE',
       items: [
         { label: 'Feed', path: '/', icon: Compass },
+        { label: 'Explore Cosmos', path: '/explore', icon: Sparkles, badge: 'AI' },
         { label: 'Collab Board', path: '/collab', icon: Briefcase, badge: 'HOT' },
-        { label: 'Search Devs', path: '/search', icon: Search },
         { label: 'Reels', path: '/reels', icon: Film },
       ],
     },

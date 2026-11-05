@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Search, Briefcase, MessageSquare, User, Menu } from 'lucide-react';
+import { Home, Compass, Briefcase, MessageSquare, User, Menu } from 'lucide-react';
 
 export default function MobileBottomNav({ profile, onOpenSidebar }) {
   const location = useLocation();
@@ -12,7 +12,7 @@ export default function MobileBottomNav({ profile, onOpenSidebar }) {
 
   const navItems = [
     { label: 'Feed', path: '/', icon: Home },
-    { label: 'Search', path: '/search', icon: Search },
+    { label: 'Explore', path: '/explore', icon: Compass },
     { label: 'Collab', path: '/collab', icon: Briefcase },
     { label: 'Chat', path: '/chat', icon: MessageSquare },
     { label: 'Profile', path: `/profile/${profile?.username || 'user'}`, icon: User },
