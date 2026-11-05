@@ -1,0 +1,564 @@
+{
+  "benchmark_metadata": {
+    "system": "Connectra",
+    "version": "2.0.0-academic",
+    "timestamp": "2026-11-05T06:45:37Z",
+    "evaluator": "Automated Research Benchmarking Suite",
+    "environment": "Windows NT 10.0, Python 3.10, Groq LPU API"
+  },
+  "sast_vulnerability_pipeline": {
+    "regex": {
+      "tp": 8,
+      "fp": 0,
+      "tn": 6,
+      "fn": 2,
+      "precision": 100.0,
+      "recall": 80.0,
+      "f1_score": 0.8889,
+      "accuracy": 87.5,
+      "fpr": 0.0,
+      "avg_latency_ms": 0.09,
+      "records": [
+        {
+          "id": "CWE-89-01",
+          "cwe": "CWE-89",
+          "expected_vuln": true,
+          "pred_vuln": true,
+          "latency_ms": 0.7028
+        },
+        {
+          "id": "CWE-89-02",
+          "cwe": "CWE-89",
+          "expected_vuln": true,
+          "pred_vuln": true,
+          "latency_ms": 0.0791
+        },
+        {
+          "id": "CWE-79-01",
+          "cwe": "CWE-79",
+          "expected_vuln": true,
+          "pred_vuln": true,
+          "latency_ms": 0.0388
+        },
+        {
+          "id": "CWE-79-02",
+          "cwe": "CWE-79",
+          "expected_vuln": true,
+          "pred_vuln": true,
+          "latency_ms": 0.0617
+        },
+        {
+          "id": "CWE-798-01",
+          "cwe": "CWE-798",
+          "expected_vuln": true,
+          "pred_vuln": true,
+          "latency_ms": 0.0577
+        },
+        {
+          "id": "CWE-798-02",
+          "cwe": "CWE-798",
+          "expected_vuln": true,
+          "pred_vuln": true,
+          "latency_ms": 0.0998
+        },
+        {
+          "id": "CWE-22-01",
+          "cwe": "CWE-22",
+          "expected_vuln": true,
+          "pred_vuln": true,
+          "latency_ms": 0.0495
+        },
+        {
+          "id": "CWE-22-02",
+          "cwe": "CWE-22",
+          "expected_vuln": true,
+          "pred_vuln": false,
+          "latency_ms": 0.0623
+        },
+        {
+          "id": "CWE-352-01",
+          "cwe": "CWE-352",
+          "expected_vuln": true,
+          "pred_vuln": false,
+          "latency_ms": 0.0358
+        },
+        {
+          "id": "CWE-95-01",
+          "cwe": "CWE-95",
+          "expected_vuln": true,
+          "pred_vuln": true,
+          "latency_ms": 0.0178
+        },
+        {
+          "id": "CLEAN-01",
+          "cwe": "CLEAN",
+          "expected_vuln": false,
+          "pred_vuln": false,
+          "latency_ms": 0.067
+        },
+        {
+          "id": "CLEAN-02",
+          "cwe": "CLEAN",
+          "expected_vuln": false,
+          "pred_vuln": false,
+          "latency_ms": 0.0869
+        },
+        {
+          "id": "CLEAN-03",
+          "cwe": "CLEAN",
+          "expected_vuln": false,
+          "pred_vuln": false,
+          "latency_ms": 0.0305
+        },
+        {
+          "id": "CLEAN-04",
+          "cwe": "CLEAN",
+          "expected_vuln": false,
+          "pred_vuln": false,
+          "latency_ms": 0.0565
+        },
+        {
+          "id": "CLEAN-05",
+          "cwe": "CLEAN",
+          "expected_vuln": false,
+          "pred_vuln": false,
+          "latency_ms": 0.0341
+        },
+        {
+          "id": "CLEAN-06",
+          "cwe": "CLEAN",
+          "expected_vuln": false,
+          "pred_vuln": false,
+          "latency_ms": 0.028
+        }
+      ]
+    },
+    "single_agent": {
+      "tp": 8,
+      "fp": 1,
+      "tn": 5,
+      "fn": 2,
+      "precision": 88.89,
+      "recall": 80.0,
+      "f1_score": 0.8421,
+      "accuracy": 81.25,
+      "fpr": 16.67,
+      "avg_latency_ms": 256.41,
+      "records": [
+        {
+          "id": "CWE-89-01",
+          "cwe": "CWE-89",
+          "expected_vuln": true,
+          "pred_vuln": true,
+          "latency_ms": 350.55
+        },
+        {
+          "id": "CWE-89-02",
+          "cwe": "CWE-89",
+          "expected_vuln": true,
+          "pred_vuln": true,
+          "latency_ms": 451.3
+        },
+        {
+          "id": "CWE-79-01",
+          "cwe": "CWE-79",
+          "expected_vuln": true,
+          "pred_vuln": true,
+          "latency_ms": 374.23
+        },
+        {
+          "id": "CWE-79-02",
+          "cwe": "CWE-79",
+          "expected_vuln": true,
+          "pred_vuln": true,
+          "latency_ms": 422.16
+        },
+        {
+          "id": "CWE-798-01",
+          "cwe": "CWE-798",
+          "expected_vuln": true,
+          "pred_vuln": true,
+          "latency_ms": 364.65
+        },
+        {
+          "id": "CWE-798-02",
+          "cwe": "CWE-798",
+          "expected_vuln": true,
+          "pred_vuln": true,
+          "latency_ms": 375.78
+        },
+        {
+          "id": "CWE-22-01",
+          "cwe": "CWE-22",
+          "expected_vuln": true,
+          "pred_vuln": true,
+          "latency_ms": 157.98
+        },
+        {
+          "id": "CWE-22-02",
+          "cwe": "CWE-22",
+          "expected_vuln": true,
+          "pred_vuln": false,
+          "latency_ms": 155.96
+        },
+        {
+          "id": "CWE-352-01",
+          "cwe": "CWE-352",
+          "expected_vuln": true,
+          "pred_vuln": false,
+          "latency_ms": 163.96
+        },
+        {
+          "id": "CWE-95-01",
+          "cwe": "CWE-95",
+          "expected_vuln": true,
+          "pred_vuln": true,
+          "latency_ms": 154.52
+        },
+        {
+          "id": "CLEAN-01",
+          "cwe": "CLEAN",
+          "expected_vuln": false,
+          "pred_vuln": false,
+          "latency_ms": 178.28
+        },
+        {
+          "id": "CLEAN-02",
+          "cwe": "CLEAN",
+          "expected_vuln": false,
+          "pred_vuln": false,
+          "latency_ms": 145.25
+        },
+        {
+          "id": "CLEAN-03",
+          "cwe": "CLEAN",
+          "expected_vuln": false,
+          "pred_vuln": false,
+          "latency_ms": 151.17
+        },
+        {
+          "id": "CLEAN-04",
+          "cwe": "CLEAN",
+          "expected_vuln": false,
+          "pred_vuln": false,
+          "latency_ms": 146.88
+        },
+        {
+          "id": "CLEAN-05",
+          "cwe": "CLEAN",
+          "expected_vuln": false,
+          "pred_vuln": false,
+          "latency_ms": 158.07
+        },
+        {
+          "id": "CLEAN-06",
+          "cwe": "CLEAN",
+          "expected_vuln": false,
+          "pred_vuln": true,
+          "latency_ms": 351.79
+        }
+      ]
+    },
+    "multi_agent": {
+      "tp": 8,
+      "fp": 0,
+      "tn": 6,
+      "fn": 2,
+      "precision": 100.0,
+      "recall": 80.0,
+      "f1_score": 0.8889,
+      "accuracy": 87.5,
+      "fpr": 0.0,
+      "avg_latency_ms": 731.0,
+      "records": [
+        {
+          "id": "CWE-89-01",
+          "cwe": "CWE-89",
+          "expected_vuln": true,
+          "pred_vuln": true,
+          "latency_ms": 1226.88
+        },
+        {
+          "id": "CWE-89-02",
+          "cwe": "CWE-89",
+          "expected_vuln": true,
+          "pred_vuln": true,
+          "latency_ms": 1389.08
+        },
+        {
+          "id": "CWE-79-01",
+          "cwe": "CWE-79",
+          "expected_vuln": true,
+          "pred_vuln": true,
+          "latency_ms": 1462.26
+        },
+        {
+          "id": "CWE-79-02",
+          "cwe": "CWE-79",
+          "expected_vuln": true,
+          "pred_vuln": true,
+          "latency_ms": 1074.67
+        },
+        {
+          "id": "CWE-798-01",
+          "cwe": "CWE-798",
+          "expected_vuln": true,
+          "pred_vuln": true,
+          "latency_ms": 1385.4
+        },
+        {
+          "id": "CWE-798-02",
+          "cwe": "CWE-798",
+          "expected_vuln": true,
+          "pred_vuln": true,
+          "latency_ms": 1070.35
+        },
+        {
+          "id": "CWE-22-01",
+          "cwe": "CWE-22",
+          "expected_vuln": true,
+          "pred_vuln": true,
+          "latency_ms": 1276.16
+        },
+        {
+          "id": "CWE-22-02",
+          "cwe": "CWE-22",
+          "expected_vuln": true,
+          "pred_vuln": false,
+          "latency_ms": 161.18
+        },
+        {
+          "id": "CWE-352-01",
+          "cwe": "CWE-352",
+          "expected_vuln": true,
+          "pred_vuln": false,
+          "latency_ms": 192.33
+        },
+        {
+          "id": "CWE-95-01",
+          "cwe": "CWE-95",
+          "expected_vuln": true,
+          "pred_vuln": true,
+          "latency_ms": 1161.74
+        },
+        {
+          "id": "CLEAN-01",
+          "cwe": "CLEAN",
+          "expected_vuln": false,
+          "pred_vuln": false,
+          "latency_ms": 478.85
+        },
+        {
+          "id": "CLEAN-02",
+          "cwe": "CLEAN",
+          "expected_vuln": false,
+          "pred_vuln": false,
+          "latency_ms": 152.49
+        },
+        {
+          "id": "CLEAN-03",
+          "cwe": "CLEAN",
+          "expected_vuln": false,
+          "pred_vuln": false,
+          "latency_ms": 159.88
+        },
+        {
+          "id": "CLEAN-04",
+          "cwe": "CLEAN",
+          "expected_vuln": false,
+          "pred_vuln": false,
+          "latency_ms": 170.08
+        },
+        {
+          "id": "CLEAN-05",
+          "cwe": "CLEAN",
+          "expected_vuln": false,
+          "pred_vuln": false,
+          "latency_ms": 164.4
+        },
+        {
+          "id": "CLEAN-06",
+          "cwe": "CLEAN",
+          "expected_vuln": false,
+          "pred_vuln": false,
+          "latency_ms": 170.31
+        }
+      ]
+    }
+  },
+  "secret_scanner_pipeline": {
+    "regex_only": {
+      "tp": 13,
+      "fp": 0,
+      "tn": 15,
+      "fn": 2,
+      "precision": 100.0,
+      "recall": 86.67,
+      "f1_score": 0.9286,
+      "accuracy": 93.33,
+      "fpr": 0.0,
+      "avg_latency_us": 5.02
+    },
+    "entropy_only_4.2": {
+      "tp": 11,
+      "fp": 3,
+      "tn": 12,
+      "fn": 4,
+      "precision": 78.57,
+      "recall": 73.33,
+      "f1_score": 0.7586,
+      "accuracy": 76.67,
+      "fpr": 20.0,
+      "avg_latency_us": 49.55
+    },
+    "connectra_hybrid": {
+      "tp": 14,
+      "fp": 1,
+      "tn": 14,
+      "fn": 1,
+      "precision": 93.33,
+      "recall": 93.33,
+      "f1_score": 0.9333,
+      "accuracy": 93.33,
+      "fpr": 6.67,
+      "avg_latency_us": 24.17
+    }
+  },
+  "prompt_guardrail_pipeline": {
+    "total_tests": 10,
+    "tp": 5,
+    "fp": 0,
+    "tn": 5,
+    "fn": 0,
+    "detection_rate": 100.0,
+    "precision": 100.0,
+    "f1_score": 1.0,
+    "leak_rate": 0.0,
+    "accuracy": 100.0,
+    "avg_latency_ms": 0.086
+  },
+  "hybrid_rag_pipeline": {
+    "sparse_only": {
+      "lambda": 1.0,
+      "mrr": 0.5833,
+      "p_at_1": 37.5,
+      "p_at_3": 87.5,
+      "ndcg_at_3": 0.6414
+    },
+    "dense_only": {
+      "lambda": 0.0,
+      "mrr": 0.6979,
+      "p_at_1": 50.0,
+      "p_at_3": 87.5,
+      "ndcg_at_3": 0.7202
+    },
+    "hybrid": {
+      "lambda": 0.55,
+      "mrr": 0.6771,
+      "p_at_1": 50.0,
+      "p_at_3": 87.5,
+      "ndcg_at_3": 0.7039
+    },
+    "lambda_sweep": [
+      {
+        "lambda": 0.0,
+        "mrr": 0.6979,
+        "p_at_1": 50.0,
+        "p_at_3": 87.5,
+        "ndcg_at_3": 0.7202
+      },
+      {
+        "lambda": 0.2,
+        "mrr": 0.6354,
+        "p_at_1": 37.5,
+        "p_at_3": 87.5,
+        "ndcg_at_3": 0.6741
+      },
+      {
+        "lambda": 0.4,
+        "mrr": 0.6771,
+        "p_at_1": 50.0,
+        "p_at_3": 87.5,
+        "ndcg_at_3": 0.7039
+      },
+      {
+        "lambda": 0.55,
+        "mrr": 0.6771,
+        "p_at_1": 50.0,
+        "p_at_3": 87.5,
+        "ndcg_at_3": 0.7039
+      },
+      {
+        "lambda": 0.7,
+        "mrr": 0.6771,
+        "p_at_1": 50.0,
+        "p_at_3": 87.5,
+        "ndcg_at_3": 0.7039
+      },
+      {
+        "lambda": 0.85,
+        "mrr": 0.6708,
+        "p_at_1": 50.0,
+        "p_at_3": 87.5,
+        "ndcg_at_3": 0.7039
+      },
+      {
+        "lambda": 1.0,
+        "mrr": 0.5833,
+        "p_at_1": 37.5,
+        "p_at_3": 87.5,
+        "ndcg_at_3": 0.6414
+      }
+    ]
+  },
+  "team_synergy_pipeline": {
+    "total_pairs": 3,
+    "connectra_complementarity_rate": 100.0,
+    "jaccard_complementarity_rate": 0.0,
+    "mean_team_balance_baseline": 16.67,
+    "mean_team_balance_connectra": 59.31,
+    "mean_jaccard_penalty_on_security_skills": 37.78,
+    "scores": [
+      {
+        "proj": "React, Node.js, PostgreSQL, Tailwind",
+        "jaccard_exact": 0.5,
+        "jaccard_balanced": 0.333,
+        "jaccard_penalty_pct": 33.3,
+        "connectra_exact_score": 72,
+        "connectra_balanced_score": 70,
+        "complementary_domains_detected": [
+          "devops",
+          "cybersecurity"
+        ],
+        "team_balance_baseline_pct": 50.0,
+        "team_balance_connectra_pct": 95.91
+      },
+      {
+        "proj": "Python, FastAPI, PostgreSQL",
+        "jaccard_exact": 0.667,
+        "jaccard_balanced": 0.4,
+        "jaccard_penalty_pct": 40.0,
+        "connectra_exact_score": 84,
+        "connectra_balanced_score": 70,
+        "complementary_domains_detected": [
+          "devops"
+        ],
+        "team_balance_baseline_pct": -0.0,
+        "team_balance_connectra_pct": 36.1
+      },
+      {
+        "proj": "Go, Microservices, Distributed Systems",
+        "jaccard_exact": 0.667,
+        "jaccard_balanced": 0.4,
+        "jaccard_penalty_pct": 40.0,
+        "connectra_exact_score": 84,
+        "connectra_balanced_score": 70,
+        "complementary_domains_detected": [
+          "devops"
+        ],
+        "team_balance_baseline_pct": -0.0,
+        "team_balance_connectra_pct": 45.91
+      }
+    ]
+  }
+}
