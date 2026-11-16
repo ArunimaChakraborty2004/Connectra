@@ -283,16 +283,28 @@ export default function Navbar({ onOpenSidebar, session: propSession, profile: p
         <nav className="hidden lg:flex items-center gap-2">
           {navLinks.map((item) => {
             const Icon = item.icon;
-            const active = item.path ? isActive(item.path) : false;
+            const active = item.path
+              ? isActive(item.path)
+              : item.activeMatch
+              ? item.activeMatch(location.pathname)
+              : false;
 
             if (item.action) {
               return (
                 <button
                   key={item.label}
                   onClick={item.action}
-                  className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-medium text-[#8d7565] hover:text-[#2b1f17] hover:bg-[#fff4e6] transition-all cursor-pointer relative"
+                  className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer relative ${
+                    active
+                      ? 'text-[#ea580c] bg-[#ffedd5] border border-[#fed7aa] font-bold shadow-2xs'
+                      : 'text-[#8d7565] hover:text-[#2b1f17] hover:bg-[#fff4e6]'
+                  }`}
                 >
-                  <Icon size={19} />
+                  <Icon
+                    size={19}
+                    strokeWidth={active ? 2.4 : 1.8}
+                    className={active ? 'text-[#ea580c]' : ''}
+                  />
                   <span>{item.label}</span>
                   {item.badge && (
                     <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white shadow-xs">

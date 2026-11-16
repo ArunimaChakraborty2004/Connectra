@@ -89,7 +89,7 @@ export default function Sidebar({ profile, stats: initialStats, onClose }) {
           icon: FolderGit2,
         },
         { label: 'Messages', path: '/chat', icon: MessageSquare },
-        { label: 'Communities', path: '/communities', icon: Globe },
+        { label: 'Communities', path: '/communities', icon: Globe, badge: 'PANEL' },
         { label: 'Events & CTF', path: '/events', icon: Calendar },
       ],
     },

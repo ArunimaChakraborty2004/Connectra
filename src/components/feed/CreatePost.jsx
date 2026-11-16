@@ -22,7 +22,7 @@ import { scanForSecrets, redactSecrets } from '../../lib/secretScanner';
 import AIAnalysisCard from './AIAnalysisCard';
 import { createNotification } from '../../lib/notifications';
 
-export default function CreatePost({ session, onPostCreated, placeholder }) {
+export default function CreatePost({ session, onPostCreated, placeholder, communityId = null }) {
   const [content, setContent] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [codeSnippet, setCodeSnippet] = useState('');
@@ -211,8 +211,22 @@ export default function CreatePost({ session, onPostCreated, placeholder }) {
       code_language: codeLang || null,
     };
 
+    if (communityId && !communityId.startsWith('guild-')) {
+      postPayload.community_id = communityId;
+    }
+    if (communityId) {
+      postPayload.poll_data = { community_id: communityId };
+    }
+
     let createdPostId = null;
-    const { data: newPost, error } = await supabase.from('posts').insert(postPayload).select('id').single();
+    let { data: newPost, error } = await supabase.from('posts').insert(postPayload).select('id').single();
+    if (error && error.message?.includes('community_id')) {
+      delete postPayload.community_id;
+      const retry = await supabase.from('posts').insert(postPayload).select('id').single();
+      newPost = retry.data;
+      error = retry.error;
+    }
+
     if (!error && newPost) {
       createdPostId = newPost.id;
     } else {
@@ -230,6 +244,7 @@ export default function CreatePost({ session, onPostCreated, placeholder }) {
       is_reel: Boolean(finalVideoUrl),
       code_snippet: finalCode || null,
       code_language: codeLang || null,
+      community_id: communityId || null,
       created_at: new Date().toISOString(),
       profiles: {
         username: session?.user?.user_metadata?.username || userProfile?.username || 'You',

@@ -315,12 +315,12 @@ export const CURATED_COMMUNITIES = [
 ];
 
 export const COMMUNITY_CATEGORIES = [
-  { id: 'all', label: 'All Guilds', icon: '🌟' },
+  { id: 'all', label: 'All Communities', icon: '🌟' },
   { id: 'Security', label: 'Security & Zero-Trust', icon: '🛡️', color: 'emerald' },
-  { id: 'AI & ML', label: 'AI & Autonomous Agents', icon: '🤖', color: 'purple' },
+  { id: 'AI & ML', label: 'AI & Machine Learning', icon: '🤖', color: 'purple' },
   { id: 'Systems', label: 'Systems & Cloud', icon: '⚡', color: 'amber' },
   { id: 'Web', label: 'Web & Fullstack', icon: '🌐', color: 'blue' },
-  { id: 'Creative', label: 'Creative & WebGL', icon: '🎨', color: 'pink' },
+  { id: 'Creative', label: 'Creative & UI/UX', icon: '🎨', color: 'pink' },
   { id: 'Community', label: 'Founders & Builders', icon: '🚀', color: 'yellow' },
   { id: 'joined', label: 'Joined by Me', icon: '👥' }
 ];

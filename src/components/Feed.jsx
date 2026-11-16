@@ -770,12 +770,20 @@ export default function Feed({ session, userIdFilter = null, communityIdFilter =
         .from('posts')
         .select(`
           id, user_id, content, image_url, code_snippet, code_language, created_at, updated_at,
+          community_id, community_slug, poll_data,
           profiles(username, avatar_url)
         `)
         .order('created_at', { ascending: false });
 
+      const isMainHomeFeed = !userIdFilter && !communityIdFilter && placeholder !== 'Post to all communities...';
+
       if (userIdFilter) {
         postsQuery = postsQuery.eq('user_id', userIdFilter);
+      } else if (communityIdFilter) {
+        postsQuery = postsQuery.eq('community_id', communityIdFilter);
+      } else if (isMainHomeFeed) {
+        // Main Home Feed: strictly exclude community posts so community posts stay in their community
+        postsQuery = postsQuery.is('community_id', null);
       }
 
       const { data: postsData, error: postsError } = await postsQuery;
@@ -784,6 +792,13 @@ export default function Feed({ session, userIdFilter = null, communityIdFilter =
       }
 
       let allPosts = postsData || [];
+
+      // Additional safeguard: exclude any posts containing community tags or slugs from the main home feed
+      if (isMainHomeFeed) {
+        allPosts = allPosts.filter(
+          (p) => !p.community_id && !p.community_slug && !p.content?.includes('<!--community_id:')
+        );
+      }
 
       // 2. Safely Fetch Reels with Likes and Comments
       let reelsData = [];
@@ -810,7 +825,12 @@ export default function Feed({ session, userIdFilter = null, communityIdFilter =
       // Merge with locally persisted posts
       try {
         const localPosts = JSON.parse(localStorage.getItem('connectra_active_posts') || '[]');
-        const filteredLocalPosts = userIdFilter ? localPosts.filter((p) => p.user_id === userIdFilter) : localPosts;
+        let filteredLocalPosts = userIdFilter ? localPosts.filter((p) => p.user_id === userIdFilter) : localPosts;
+        if (isMainHomeFeed) {
+          filteredLocalPosts = filteredLocalPosts.filter(
+            (p) => !p.community_id && !p.community_slug && !p.content?.includes('<!--community_id:')
+          );
+        }
         filteredLocalPosts.forEach((lp) => {
           if (!allPosts.some((p) => p.id === lp.id)) {
             allPosts.unshift(lp);
