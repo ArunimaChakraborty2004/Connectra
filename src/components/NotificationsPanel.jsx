@@ -23,12 +23,15 @@ import { createNotification } from '../lib/notifications';
 
 function timeAgo(dateStr) {
   if (!dateStr) return '';
-  const diff = (Date.now() - new Date(dateStr)) / 1000;
+  const normalized = /Z|[+-]\d{2}:\d{2}$/.test(dateStr)
+    ? dateStr
+    : dateStr.replace(' ', 'T') + 'Z';
+  const diff = (Date.now() - new Date(normalized)) / 1000;
   if (diff < 60) return 'just now';
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
-  return new Date(dateStr).toLocaleDateString();
+  return new Date(normalized).toLocaleDateString();
 }
 
 export default function NotificationsPanel({ session, isOpen, onClose }) {

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Heart, MessageSquare, Share2, Trash2, Edit2, Bookmark, MoreHorizontal, Sparkles, Shield, Loader2, Eye, EyeOff, MessageCircleOff, Film } from 'lucide-react';
+import { Heart, MessageSquare, Share2, Trash2, Edit2, Bookmark, MoreHorizontal, Sparkles, Shield, Loader2, Eye, EyeOff, MessageCircleOff, Film, Copy, Check, BarChart3, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from '../../lib/toast';
 import { Link } from 'react-router-dom';
@@ -8,7 +8,7 @@ import { explainCodeSnippet, reviewCodeAndSecurity } from '../../lib/ai';
 import AIAnalysisCard from './AIAnalysisCard';
 import { createNotification } from '../../lib/notifications';
 
-export default function PostCard({ post, session, onUpdate, isHighlighted = false, autoOpenComments = false }) {
+export default function PostCard({ post, session, onUpdate, isHighlighted = false, autoOpenComments = false, isCommunityAdmin = false }) {
   const [showComments, setShowComments] = useState(autoOpenComments);
 
   useEffect(() => {
@@ -28,9 +28,10 @@ export default function PostCard({ post, session, onUpdate, isHighlighted = fals
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [pollData, setPollData] = useState(post.poll_data || null);
-  const [hasVoted, setHasVoted] = useState(
-    Boolean(session?.user?.id && post.poll_data?.options?.some((o) => o.votes?.includes(session.user.id)))
-  );
+  const [hasVoted, setHasVoted] = useState(() => {
+    if (!session?.user?.id || !post.poll_data?.options || !Array.isArray(post.poll_data.options)) return false;
+    return post.poll_data.options.some((o) => Array.isArray(o?.votes) && o.votes.includes(session.user.id));
+  });
   const [isLiked, setIsLiked] = useState(() => Boolean(post.user_has_liked));
   const [likeCount, setLikeCount] = useState(() => post.likes?.[0]?.count ?? post.likes_count ?? 0);
   const [isLiking, setIsLiking] = useState(false);
@@ -142,6 +143,16 @@ export default function PostCard({ post, session, onUpdate, isHighlighted = fals
     }
   };
 
+  const [codeCopied, setCodeCopied] = useState(false);
+  const handleCopyCode = () => {
+    if (navigator.clipboard && post.code_snippet) {
+      navigator.clipboard.writeText(post.code_snippet);
+      setCodeCopied(true);
+      toast.success('Code copied to clipboard! 📋');
+      setTimeout(() => setCodeCopied(false), 2000);
+    }
+  };
+
   const handleSecurityCheck = async () => {
     if (aiAnalysisType === 'security' && aiAnalysis) {
       setAiAnalysis(null);
@@ -168,7 +179,11 @@ export default function PostCard({ post, session, onUpdate, isHighlighted = fals
 
   const timeAgo = (dateStr) => {
     if (!dateStr) return '';
-    const diff = (Date.now() - new Date(dateStr)) / 1000;
+    // Ensure UTC parsing: append 'Z' if no timezone suffix present
+    const normalized = /Z|[+-]\d{2}:\d{2}$/.test(dateStr)
+      ? dateStr
+      : dateStr.replace(' ', 'T') + 'Z';
+    const diff = (Date.now() - new Date(normalized)) / 1000;
     if (diff < 60) return 'just now';
     if (diff < 3600) return `${Math.floor(diff / 60)}m`;
     if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
@@ -350,11 +365,15 @@ export default function PostCard({ post, session, onUpdate, isHighlighted = fals
   };
 
   const handleDeletePost = async () => {
-    if (!confirm('Are you sure you want to delete this post?')) return;
+    const confirmMsg = isCommunityAdmin && !isOwner
+      ? 'Delete this post as community admin?'
+      : 'Are you sure you want to delete this post?';
+    if (!confirm(confirmMsg)) return;
     const { error } = await supabase.from('posts').delete().eq('id', post.id);
-    if (error) toast.error('Failed to delete post');
-    else {
-      toast.success('Post deleted');
+    if (error) {
+      toast.error('Failed to delete post: ' + error.message);
+    } else {
+      toast.success(isCommunityAdmin && !isOwner ? 'Post removed by community admin' : 'Post deleted');
       if (onUpdate) onUpdate();
     }
   };
@@ -457,12 +476,16 @@ export default function PostCard({ post, session, onUpdate, isHighlighted = fals
   };
 
   const handleVote = async (optionIndex) => {
-    if (hasVoted || !pollData) return;
+    if (hasVoted || !pollData || !Array.isArray(pollData.options)) return;
+    const userId = session?.user?.id || 'anon';
     const updated = { ...pollData };
-    updated.options = pollData.options.map((opt, i) => ({
-      ...opt,
-      votes: i === optionIndex ? [...(opt.votes || []), session.user.id] : opt.votes || [],
-    }));
+    updated.options = pollData.options.map((opt, i) => {
+      const currentVotes = Array.isArray(opt.votes) ? opt.votes : [];
+      return {
+        ...opt,
+        votes: i === optionIndex ? [...currentVotes, userId] : currentVotes,
+      };
+    });
     setPollData(updated);
     setHasVoted(true);
     await supabase.from('posts').update({ poll_data: updated }).eq('id', post.id);
@@ -520,6 +543,20 @@ export default function PostCard({ post, session, onUpdate, isHighlighted = fals
             </Link>
 
             <span className="text-xs text-[#8d7565]">{authorHandle}</span>
+
+            {post.community_slug && (
+              <>
+                <span className="text-xs text-[#8d7565]">in</span>
+                <Link
+                  to={`/communities?community=${post.community_id || post.community_slug}`}
+                  className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-md bg-orange-50 dark:bg-orange-950/50 text-[#ea580c] hover:bg-orange-100 transition-colors border border-orange-200/60 dark:border-orange-900/40"
+                  title={`View in #${post.community_slug}`}
+                >
+                  <span>#{post.community_slug}</span>
+                </Link>
+              </>
+            )}
+
             <span className="text-xs text-[#8d7565]">·</span>
             <span className="text-xs text-[#8d7565]">{timeAgo(post.created_at)}</span>
 
@@ -541,41 +578,49 @@ export default function PostCard({ post, session, onUpdate, isHighlighted = fals
           </button>
           {showMenu && (
             <div className="absolute right-0 top-7 w-52 rounded-xl bg-white border border-[#f1e4d3] shadow-xl py-1 z-20">
-              {isOwner && (
+              {(isOwner || isCommunityAdmin) && (
                 <>
-                  <button
-                    onClick={() => { setIsEditing(!isEditing); setShowMenu(false); }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-[#8d7565] hover:text-[#2b1f17] hover:bg-[#fff7ed] transition-colors text-left cursor-pointer"
-                  >
-                    <Edit2 size={13} /> Edit Post
-                  </button>
-                  <button
-                    onClick={handleToggleHideLikes}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-[#8d7565] hover:text-[#2b1f17] hover:bg-[#fff7ed] transition-colors text-left cursor-pointer"
-                  >
-                    {hideLikes ? <Eye size={13} /> : <EyeOff size={13} />}
-                    {hideLikes ? 'Unhide like count' : 'Hide like count'}
-                  </button>
-                  <button
-                    onClick={handleToggleHideCommentCount}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-[#8d7565] hover:text-[#2b1f17] hover:bg-[#fff7ed] transition-colors text-left cursor-pointer"
-                  >
-                    {hideCommentCount ? <MessageSquare size={13} /> : <EyeOff size={13} />}
-                    {hideCommentCount ? 'Unhide comment count' : 'Hide comment count'}
-                  </button>
-                  <button
-                    onClick={handleToggleDisableComments}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-[#8d7565] hover:text-[#2b1f17] hover:bg-[#fff7ed] transition-colors text-left cursor-pointer"
-                  >
-                    {commentsDisabled ? <MessageSquare size={13} /> : <MessageCircleOff size={13} />}
-                    {commentsDisabled ? 'Turn on commenting' : 'Turn off commenting'}
-                  </button>
+                  {isOwner && (
+                    <button
+                      onClick={() => { setIsEditing(!isEditing); setShowMenu(false); }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-[#8d7565] hover:text-[#2b1f17] hover:bg-[#fff7ed] transition-colors text-left cursor-pointer"
+                    >
+                      <Edit2 size={13} /> Edit Post
+                    </button>
+                  )}
+                  {isOwner && (
+                    <button
+                      onClick={handleToggleHideLikes}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-[#8d7565] hover:text-[#2b1f17] hover:bg-[#fff7ed] transition-colors text-left cursor-pointer"
+                    >
+                      {hideLikes ? <Eye size={13} /> : <EyeOff size={13} />}
+                      {hideLikes ? 'Unhide like count' : 'Hide like count'}
+                    </button>
+                  )}
+                  {isOwner && (
+                    <button
+                      onClick={handleToggleHideCommentCount}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-[#8d7565] hover:text-[#2b1f17] hover:bg-[#fff7ed] transition-colors text-left cursor-pointer"
+                    >
+                      {hideCommentCount ? <MessageSquare size={13} /> : <EyeOff size={13} />}
+                      {hideCommentCount ? 'Unhide comment count' : 'Hide comment count'}
+                    </button>
+                  )}
+                  {isOwner && (
+                    <button
+                      onClick={handleToggleDisableComments}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-[#8d7565] hover:text-[#2b1f17] hover:bg-[#fff7ed] transition-colors text-left cursor-pointer"
+                    >
+                      {commentsDisabled ? <MessageSquare size={13} /> : <MessageCircleOff size={13} />}
+                      {commentsDisabled ? 'Turn on commenting' : 'Turn off commenting'}
+                    </button>
+                  )}
                   <div className="border-t border-[#f1e4d3] my-1" />
                   <button
                     onClick={() => { handleDeletePost(); setShowMenu(false); }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 transition-colors text-left cursor-pointer"
                   >
-                    <Trash2 size={13} /> Delete Post
+                    <Trash2 size={13} /> {isCommunityAdmin && !isOwner ? 'Delete Post (Admin)' : 'Delete Post'}
                   </button>
                   <div className="border-t border-[#f1e4d3] my-1" />
                 </>
@@ -621,34 +666,94 @@ export default function PostCard({ post, session, onUpdate, isHighlighted = fals
         )}
       </div>
 
-      {/* Poll */}
-      {pollData && (
-        <div className="rounded-xl p-3 bg-[#fff7ed] border border-[#fed7aa] flex flex-col gap-2">
-          <p className="text-sm font-bold text-[#2b1f17]">{pollData.question}</p>
-          {pollData.options.map((opt, i) => {
-            const totalVotes = pollData.options.reduce((s, o) => s + (o.votes?.length || 0), 0);
-            const pct = totalVotes > 0 ? Math.round(((opt.votes?.length || 0) / totalVotes) * 100) : 0;
-            const voted = opt.votes?.includes(session.user.id);
-            return (
-              <button
-                key={i}
-                onClick={() => handleVote(i)}
-                disabled={hasVoted}
-                className="w-full text-left rounded-xl overflow-hidden relative border border-[#fed7aa] bg-white p-2.5 flex items-center justify-between text-xs transition-all shadow-2xs"
-              >
-                {hasVoted && (
-                  <div
-                    className="absolute inset-y-0 left-0 bg-orange-100 rounded-xl"
-                    style={{ width: `${pct}%` }}
-                  />
-                )}
-                <span className="relative z-10 text-[#2b1f17] font-semibold">{opt.text}</span>
-                {hasVoted && <span className="relative z-10 text-[#ea580c] font-bold">{pct}%</span>}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      {/* SaaS Developer Poll */}
+      {pollData && Array.isArray(pollData.options) && pollData.options.length > 0 && (() => {
+        const totalVotes = pollData.options.reduce(
+          (sum, opt) => sum + (Array.isArray(opt?.votes) ? opt.votes.length : (typeof opt?.votes === 'number' ? opt.votes : 0)),
+          0
+        );
+
+        return (
+          <div className="rounded-2xl p-4 bg-[#faf6f0]/70 dark:bg-[#1a1410] border border-[#f1e4d3] dark:border-[#382b22] space-y-3 shadow-2xs">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-lg bg-orange-100 dark:bg-orange-950/60 text-[#ea580c] flex items-center justify-center shrink-0">
+                  <BarChart3 size={13} />
+                </div>
+                <h4 className="text-xs sm:text-sm font-bold text-[#1c130d] dark:text-white">
+                  {pollData.question}
+                </h4>
+              </div>
+              <span className="text-[10px] font-mono text-[#8d7565] shrink-0 font-semibold">
+                {totalVotes} vote{totalVotes !== 1 ? 's' : ''}
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              {pollData.options.map((opt, i) => {
+                const optVotes = Array.isArray(opt.votes) ? opt.votes.length : (typeof opt.votes === 'number' ? opt.votes : 0);
+                const pct = totalVotes > 0 ? Math.round((optVotes / totalVotes) * 100) : 0;
+                const votedForThis = Boolean(session?.user?.id && Array.isArray(opt.votes) && opt.votes.includes(session.user.id));
+
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => handleVote(i)}
+                    disabled={hasVoted}
+                    className={`w-full text-left rounded-xl overflow-hidden relative border transition-all p-3 flex items-center justify-between text-xs ${
+                      hasVoted
+                        ? votedForThis
+                          ? 'border-orange-400 dark:border-orange-700 bg-white dark:bg-[#251a14] shadow-xs'
+                          : 'border-[#f1e4d3] dark:border-[#33261d] bg-white/70 dark:bg-[#1f1813]'
+                        : 'border-[#f1e4d3] dark:border-[#382b22] bg-white dark:bg-[#1f1813] hover:border-orange-400 hover:shadow-xs cursor-pointer'
+                    }`}
+                  >
+                    {/* Progress Bar Fill when Voted */}
+                    {hasVoted && (
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${pct}%` }}
+                        transition={{ duration: 0.45, ease: 'easeOut' }}
+                        className={`absolute inset-y-0 left-0 ${
+                          votedForThis
+                            ? 'bg-gradient-to-r from-orange-500/20 to-orange-500/10 dark:from-orange-500/30 dark:to-orange-500/15'
+                            : 'bg-[#f1e4d3]/40 dark:bg-[#2e231b]'
+                        }`}
+                      />
+                    )}
+
+                    <div className="relative z-10 flex items-center gap-2 min-w-0 pr-2">
+                      {votedForThis ? (
+                        <CheckCircle2 size={14} className="text-[#ea580c] shrink-0" />
+                      ) : !hasVoted ? (
+                        <div className="w-3.5 h-3.5 rounded-full border border-[#8d7565] shrink-0" />
+                      ) : null}
+                      <span className={`font-semibold truncate ${votedForThis ? 'text-[#ea580c] font-bold' : 'text-[#1c130d] dark:text-white'}`}>
+                        {opt.text}
+                      </span>
+                    </div>
+
+                    {hasVoted && (
+                      <div className="relative z-10 flex items-center gap-2 shrink-0 font-mono text-[11px]">
+                        <span className="text-[#8d7565] text-[10px]">({optVotes})</span>
+                        <span className={`font-bold ${votedForThis ? 'text-[#ea580c]' : 'text-[#1c130d] dark:text-white'}`}>
+                          {pct}%
+                        </span>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-between text-[10px] text-[#8d7565] pt-0.5 px-0.5 font-medium">
+              <span>{hasVoted ? '✓ Your vote is recorded in database' : 'Click an option to cast your vote'}</span>
+              <span>Live Synced</span>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Media Attachment (Video / Reel or Image) */}
       {(post.video_url || post.image_url) && (() => {
@@ -687,22 +792,47 @@ export default function PostCard({ post, session, onUpdate, isHighlighted = fals
         }
 
         return (
-          <div className="rounded-xl overflow-hidden border border-[#f1e4d3] max-h-[420px] bg-[#faf6f0] shadow-2xs mt-1">
+          <div
+            className="rounded-xl overflow-hidden border border-[#f1e4d3] dark:border-stone-800 max-h-[520px] bg-stone-900/5 dark:bg-stone-950 flex items-center justify-center shadow-2xs mt-1 relative group cursor-zoom-in"
+            onClick={() => window.open(mediaSource, '_blank')}
+            title="Click to view full image in a new tab"
+          >
             <img
               src={mediaSource}
               alt="attachment"
-              className="w-full h-full object-cover rounded-xl hover:scale-[1.01] transition-transform duration-300"
+              className="w-full max-h-[520px] object-contain rounded-xl hover:scale-[1.008] transition-transform duration-200"
             />
+            <div className="absolute bottom-2 right-2 px-2 py-0.5 bg-black/60 backdrop-blur-xs rounded text-[10px] text-white opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+              Click to expand ↗
+            </div>
           </div>
         );
       })()}
 
       {/* Code Snippet */}
       {post.code_snippet && (
-        <div className="rounded-xl overflow-hidden border border-[#f1e4d3] bg-[#2b1f17] shadow-2xs">
+        <div className="rounded-xl overflow-hidden border border-[#f1e4d3] dark:border-stone-800 bg-[#2b1f17] shadow-2xs">
           <div className="px-3 py-1.5 bg-[#3d2c20] border-b border-[#4f382a] text-[11px] font-mono text-[#fcd34d] flex items-center justify-between">
-            <span>{post.code_language || 'code'}</span>
-            <div className="flex items-center gap-2">
+            <span className="font-bold uppercase tracking-wider text-[10px] text-amber-400/90">{post.code_language || 'code'}</span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={handleCopyCode}
+                className="flex items-center gap-1 text-[11px] font-sans font-medium px-2 py-0.5 rounded-md bg-stone-700/60 hover:bg-stone-700 text-stone-200 border border-stone-600/40 transition-all cursor-pointer"
+                title="Copy code to clipboard"
+              >
+                {codeCopied ? (
+                  <>
+                    <Check size={11} className="text-emerald-400" />
+                    <span className="text-emerald-300">Copied</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy size={11} className="text-stone-300" />
+                    <span>Copy</span>
+                  </>
+                )}
+              </button>
               <button
                 type="button"
                 onClick={handleExplainCode}
@@ -816,7 +946,7 @@ export default function PostCard({ post, session, onUpdate, isHighlighted = fals
                 <p className="text-xs text-[#8d7565] italic py-1">No comments yet. Start the discussion!</p>
               ) : (
                 comments.map((c) => {
-                  const canDelete = isOwner || c.user_id === session?.user?.id || session?.user?.user_metadata?.is_admin;
+                  const canDelete = isOwner || isCommunityAdmin || c.user_id === session?.user?.id || session?.user?.user_metadata?.is_admin;
                   return (
                     <div key={c.id} className="flex gap-2.5 text-xs group">
                       <Link to={`/profile/${c.profiles?.username || ''}`} className="shrink-0">

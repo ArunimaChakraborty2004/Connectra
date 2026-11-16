@@ -108,6 +108,7 @@ function AppInner({ session }) {
           <Route path="/profile/:username/portfolio" element={<PortfolioPage session={session} />} />
           <Route path="/projects/:id" element={<ProjectDetails session={session} />} />
           <Route path="/communities" element={<CommunitiesPage session={session} />} />
+          <Route path="/community" element={<CommunitiesPage session={session} />} />
           <Route path="/communities/:id" element={<CommunityDetailsPage session={session} />} />
           <Route path="/events" element={<EventsPage session={session} />} />
           <Route path="/reels" element={<ReelsPage session={session} />} />

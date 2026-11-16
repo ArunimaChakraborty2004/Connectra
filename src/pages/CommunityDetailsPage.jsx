@@ -208,7 +208,7 @@ export default function CommunityDetailsPage({ session }) {
   const handleShare = () => {
     if (navigator.clipboard) {
       navigator.clipboard.writeText(window.location.href);
-      toast.success('Guild link copied to clipboard!');
+      toast.success('Community link copied to clipboard!');
     }
   };
 
@@ -228,7 +228,7 @@ export default function CommunityDetailsPage({ session }) {
             className="inline-flex items-center gap-2 text-sm text-muted hover:text-primary transition-colors group"
           >
             <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform" />
-            <span>Back to Technical Guilds</span>
+            <span>Back to Communities</span>
           </Link>
 
           <button
@@ -236,11 +236,11 @@ export default function CommunityDetailsPage({ session }) {
             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold glass-panel text-muted hover:text-primary transition-colors cursor-pointer"
           >
             <Share2 size={14} />
-            <span>Share Guild</span>
+            <span>Share Community</span>
           </button>
         </div>
 
-        {/* Guild Banner & Hero Header */}
+        {/* Community Banner & Hero Header */}
         <div className="glass-panel rounded-3xl overflow-hidden border border-border shadow-2xl relative">
           {/* Ambient Banner Backdrop */}
           <div 
@@ -252,7 +252,7 @@ export default function CommunityDetailsPage({ session }) {
             <div className="absolute top-4 right-4 flex items-center gap-2">
               <span className="px-3 py-1 rounded-full text-xs font-bold bg-black/60 backdrop-blur-md text-white border border-white/20 flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span>{community.active_now || 28} Devs Active</span>
+                <span>{community.member_count || 1} Members</span>
               </span>
             </div>
           </div>
@@ -271,11 +271,11 @@ export default function CommunityDetailsPage({ session }) {
                     </h1>
                     {community.is_private ? (
                       <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-slate-500/15 text-slate-400 border border-slate-500/30">
-                        <Lock size={11} /> Enclave (Private)
+                        <Lock size={11} /> Private
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                        <Globe size={11} /> Public Guild
+                        <Globe size={11} /> Public Community
                       </span>
                     )}
                     {community.is_verified && (
@@ -307,7 +307,7 @@ export default function CommunityDetailsPage({ session }) {
                   ) : (
                     <>
                       <UserPlus size={16} />
-                      <span>Join Guild</span>
+                      <span>Join Community</span>
                     </>
                   )}
                 </button>
@@ -315,7 +315,7 @@ export default function CommunityDetailsPage({ session }) {
             </div>
 
             <p className="text-muted text-sm sm:text-base leading-relaxed max-w-3xl mt-2">
-              {community.description || 'Welcome to this technical guild. Review architecture, audit code snippets, and collaborate with peer developers.'}
+              {community.description || 'Welcome to this community. Share knowledge, discuss code, and collaborate with peer developers.'}
             </p>
 
             {/* Tags Strip */}
@@ -394,7 +394,7 @@ export default function CommunityDetailsPage({ session }) {
             }`}
           >
             <Info size={16} />
-            <span>Zero-Trust Rules</span>
+            <span>Community Guidelines</span>
           </button>
         </div>
 
@@ -415,9 +415,9 @@ export default function CommunityDetailsPage({ session }) {
               <div className="glass-panel p-6 rounded-3xl space-y-4">
                 <div className="flex items-center justify-between pb-3 border-b border-border">
                   <h3 className="font-extrabold text-base text-main">
-                    Guild Members
+                    Community Members
                   </h3>
-                  <span className="text-xs text-muted font-mono">{members.length} verified engineers</span>
+                  <span className="text-xs text-muted font-mono">{members.length} members</span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
@@ -469,15 +469,14 @@ export default function CommunityDetailsPage({ session }) {
             {activeTab === 'resources' && (
               <div className="glass-panel p-6 rounded-3xl space-y-6">
                 <div>
-                  <h3 className="text-lg font-black text-main mb-1">Curated Guild Resources</h3>
-                  <p className="text-xs text-muted">Verified architectural specifications, security checklists, and benchmark repositories.</p>
+                  <h3 className="text-lg font-black text-main mb-1">Community Resources</h3>
+                  <p className="text-xs text-muted">Curated documentation, architecture specifications, and useful links.</p>
                 </div>
 
                 <div className="space-y-3">
                   {(community.resources || [
-                    { title: 'OWASP Top 10 Guidelines', type: 'Doc', url: 'https://owasp.org' },
-                    { title: 'Rust Concurrency & Memory Safety Specifications', type: 'Guide', url: 'https://rust-lang.org' },
-                    { title: 'Cilium eBPF Security Observability Playground', type: 'Sandbox', url: 'https://ebpf.io' }
+                    { title: 'Community Guidelines & Code of Conduct', type: 'Doc', url: 'https://connectra.dev' },
+                    { title: 'Developer Reference Guide', type: 'Guide', url: 'https://connectra.dev' },
                   ]).map((res, i) => (
                     <a
                       key={i}
@@ -495,7 +494,7 @@ export default function CommunityDetailsPage({ session }) {
                             {res.title}
                           </h4>
                           <span className="text-xs text-muted flex items-center gap-1 mt-0.5">
-                            <span>Verified Reference</span>
+                            <span>Reference</span>
                           </span>
                         </div>
                       </div>
@@ -509,23 +508,23 @@ export default function CommunityDetailsPage({ session }) {
             {activeTab === 'about' && (
               <div className="glass-panel p-6 rounded-3xl space-y-6">
                 <div>
-                  <h3 className="text-lg font-black text-main mb-2">Guild Mission & Scope</h3>
+                  <h3 className="text-lg font-black text-main mb-2">About Community</h3>
                   <p className="text-sm text-muted leading-relaxed">
-                    {community.description || 'A dedicated developer space for high-caliber technical discussions and code verification.'}
+                    {community.description || 'A dedicated developer space for technical discussions, knowledge sharing, and collaboration.'}
                   </p>
                 </div>
 
                 <div className="border-t border-border pt-4">
                   <h4 className="text-sm font-bold text-main mb-3 flex items-center gap-2">
                     <Shield size={16} className="text-emerald-400" />
-                    <span>Zero-Trust Guild Protocols</span>
+                    <span>Community Guidelines</span>
                   </h4>
                   <ul className="space-y-2.5 text-xs text-muted">
                     {(community.rules || [
-                      'All pasted code snippets are scanned against Common Weakness Enumerations (CWEs).',
-                      'No hardcoded tokens, API keys, or plaintext secrets in discussions.',
-                      'Provide reproducible proofs and benchmarks for architecture claims.',
-                      'Maintain constructive, high-signal developer etiquette.'
+                      'Be respectful and helpful in all technical discussions.',
+                      'No plaintext secrets, tokens, or private credentials in code snippets.',
+                      'Provide clear context when asking for help or sharing solutions.',
+                      'Maintain constructive, high-signal communication.'
                     ]).map((r, i) => (
                       <li key={i} className="flex items-start gap-2.5">
                         <CheckCircle2 size={14} className="text-emerald-400 shrink-0 mt-0.5" />
@@ -541,43 +540,39 @@ export default function CommunityDetailsPage({ session }) {
           {/* Right Sidebar Info Widgets (1 Col) */}
           <div className="space-y-6">
             
-            {/* Guild Snapshot */}
+            {/* Community Snapshot */}
             <div className="glass-panel p-5 rounded-3xl space-y-4">
-              <h4 className="text-xs font-bold text-muted uppercase tracking-wider">Guild Snapshot</h4>
+              <h4 className="text-xs font-bold text-muted uppercase tracking-wider">Community Snapshot</h4>
               <p className="text-xs text-muted leading-relaxed">
                 {community.description}
               </p>
 
               <div className="space-y-2.5 pt-2 border-t border-border text-xs">
                 <div className="flex justify-between items-center text-muted">
-                  <span>Guild Type</span>
+                  <span>Community Type</span>
                   <span className="text-main font-bold capitalize">
-                    {community.is_private ? 'Zero-Trust Enclave' : 'Open Technical Forum'}
+                    {community.is_private ? 'Private Community' : 'Public Community'}
                   </span>
                 </div>
                 <div className="flex justify-between items-center text-muted">
                   <span>Category</span>
-                  <span className="text-main font-bold">{community.category || 'Engineering'}</span>
+                  <span className="text-main font-bold">{community.category || 'General'}</span>
                 </div>
                 <div className="flex justify-between items-center text-muted">
                   <span>Total Members</span>
                   <span className="text-main font-bold">{(community.member_count || 1).toLocaleString()}</span>
                 </div>
-                <div className="flex justify-between items-center text-muted">
-                  <span>Security Audit</span>
-                  <span className="text-emerald-400 font-bold">Active AST Scanner</span>
-                </div>
               </div>
             </div>
 
-            {/* AI Architecture Tip Card */}
+            {/* Safety & Quality Tip Card */}
             <div className="glass-panel p-5 rounded-3xl space-y-3 bg-gradient-to-br from-primary/10 via-surface to-purple-500/10 border border-primary/20">
               <div className="flex items-center gap-2 text-primary font-bold text-sm">
                 <Sparkles size={16} />
-                <span>Zero-Trust Code Screen</span>
+                <span>Community Guidelines</span>
               </div>
               <p className="text-xs text-muted leading-relaxed">
-                Posts and code snippets published in this guild are screened in real time to prevent credentials leaks and CWE vulnerabilities.
+                Posts and comments in this community help developers connect, discuss technical topics, and collaborate safely.
               </p>
             </div>
 

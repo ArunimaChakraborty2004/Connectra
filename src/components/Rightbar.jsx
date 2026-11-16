@@ -200,6 +200,7 @@ export default function Rightbar({ profile }) {
         setCommunities((prev) =>
           prev.map((c) => (c.id === comm.id ? { ...c, member_count: Math.max(0, (c.member_count || 1) - 1) } : c))
         );
+        window.dispatchEvent(new Event('refreshCommunities'));
         toast.success(`Left ${comm.name}`);
 
         if (profile?.id && !comm.id.startsWith('guild-')) {
@@ -224,6 +225,7 @@ export default function Rightbar({ profile }) {
         setCommunities((prev) =>
           prev.map((c) => (c.id === comm.id ? { ...c, member_count: (c.member_count || 0) + 1 } : c))
         );
+        window.dispatchEvent(new Event('refreshCommunities'));
         toast.success(`Joined ${comm.name}!`);
 
         if (profile?.id && !comm.id.startsWith('guild-')) {
@@ -380,7 +382,7 @@ export default function Rightbar({ profile }) {
               to="/communities"
               className="text-[11px] font-bold text-[#ea580c] hover:underline transition-colors"
             >
-              View all
+              Community Panel →
             </Link>
           </div>
 
