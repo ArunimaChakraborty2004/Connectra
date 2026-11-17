@@ -166,15 +166,15 @@ export default function ChatPage({ session }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  // Initialize from URL parameters if provided (e.g. /chat?user=UUID or /chat?group=UUID)
+  // Initialize from URL parameters if provided (e.g. /chat?user=UUID or /chat?username=alex or /chat?group=UUID)
   useEffect(() => {
     const targetUserId = searchParams.get('user') || searchParams.get('userId');
+    const targetUsername = searchParams.get('username') || searchParams.get('u');
     const targetGroupId = searchParams.get('group') || searchParams.get('groupId');
 
     if (targetUserId) {
       setActiveTab('direct');
       setSelectedGroup(null);
-      // Fetch user profile if not in conversations
       supabase
         .from('profiles')
         .select('id, username, avatar_url')
@@ -182,6 +182,19 @@ export default function ChatPage({ session }) {
         .single()
         .then(({ data }) => {
           if (data) startChat(data);
+          else startChat({ id: targetUserId, username: 'developer' });
+        });
+    } else if (targetUsername) {
+      setActiveTab('direct');
+      setSelectedGroup(null);
+      supabase
+        .from('profiles')
+        .select('id, username, avatar_url')
+        .eq('username', targetUsername)
+        .single()
+        .then(({ data }) => {
+          if (data) startChat(data);
+          else startChat({ id: targetUsername, username: targetUsername });
         });
     } else if (targetGroupId) {
       setActiveTab('groups');
@@ -329,12 +342,25 @@ export default function ChatPage({ session }) {
 
   // Handle startChat custom event from other pages
   useEffect(() => {
-    const handleStartChat = (e) => {
+    const handleStartChat = async (e) => {
       const { userId, username } = e.detail || {};
-      if (userId && username) {
-        setActiveTab('direct');
-        setSelectedGroup(null);
-        startChat({ id: userId, username });
+      setActiveTab('direct');
+      setSelectedGroup(null);
+
+      if (userId) {
+        startChat({ id: userId, username: username || 'developer' });
+      } else if (username) {
+        try {
+          const { data } = await supabase
+            .from('profiles')
+            .select('id, username, avatar_url')
+            .eq('username', username)
+            .single();
+          if (data) startChat(data);
+          else startChat({ id: username, username });
+        } catch {
+          startChat({ id: username, username });
+        }
       }
     };
     document.addEventListener('startChat', handleStartChat);
@@ -358,46 +384,84 @@ export default function ChatPage({ session }) {
   }, [messageToDelete]);
 
   const loadConversations = async () => {
+    if (!myId) return;
     setLoadingConvos(true);
     try {
-      const { data } = await supabase
+      // 1. Fetch raw messages involving current user without fragile foreign key join syntax
+      const { data: rawMessages, error: msgError } = await supabase
         .from('messages')
-        .select(`
-          id, sender_id, receiver_id, content, created_at,
-          sender:profiles!messages_sender_id_fkey(id, username, avatar_url),
-          receiver:profiles!messages_receiver_id_fkey(id, username, avatar_url)
-        `)
+        .select('*')
         .or(`sender_id.eq.${myId},receiver_id.eq.${myId}`)
         .order('created_at', { ascending: false });
 
-      if (!data) return;
+      if (msgError) throw msgError;
 
-      const seen = new Set();
-      const rawConvos = [];
-      for (const msg of data) {
+      if (!rawMessages || rawMessages.length === 0) {
+        setConversations([]);
+        return;
+      }
+
+      // 2. Extract unique partner IDs and latest message per partner
+      const seenPartners = new Set();
+      const partnerList = [];
+      const latestMsgMap = new Map();
+
+      for (const msg of rawMessages) {
         if (deletedForMeIds.has(msg.id)) continue;
         const otherId = msg.sender_id === myId ? msg.receiver_id : msg.sender_id;
-        if (!seen.has(otherId)) {
-          seen.add(otherId);
-          const otherProfile = msg.sender_id === myId ? msg.receiver : msg.sender;
-          if (otherProfile) rawConvos.push({ profile: otherProfile, otherId, msg });
+        if (otherId && otherId !== myId) {
+          if (!seenPartners.has(otherId)) {
+            seenPartners.add(otherId);
+            partnerList.push(otherId);
+            latestMsgMap.set(otherId, msg);
+          }
         }
       }
 
+      if (partnerList.length === 0) {
+        setConversations([]);
+        return;
+      }
+
+      // 3. Fetch partner profiles directly by ID
+      const { data: partnerProfiles } = await supabase
+        .from('profiles')
+        .select('id, username, full_name, avatar_url, bio')
+        .in('id', partnerList);
+
+      const profileMap = new Map();
+      (partnerProfiles || []).forEach(p => profileMap.set(p.id, p));
+
+      // 4. Construct conversations with decrypted lastMessage preview
       const convos = await Promise.all(
-        rawConvos.map(async ({ profile, otherId, msg }) => {
-          let preview = msg.content || '';
-          if (isEncryptedMessage(msg.content)) {
+        partnerList.map(async (otherId) => {
+          const profile = profileMap.get(otherId) || {
+            id: otherId,
+            username: 'developer',
+            full_name: 'Developer',
+            avatar_url: null,
+          };
+          const msg = latestMsgMap.get(otherId);
+          let preview = msg?.content || '';
+
+          if (isEncryptedMessage(preview)) {
             try {
               const key = await deriveConversationKey(myId, otherId);
-              preview = await decryptMessage(msg.content, key);
+              preview = await decryptMessage(preview, key);
             } catch {
               preview = '🔒 Encrypted message';
             }
           }
-          return { ...profile, lastMessage: preview };
+
+          return {
+            ...profile,
+            lastMessage: preview,
+            lastMessageAt: msg?.created_at,
+          };
         })
       );
+
+      convos.sort((a, b) => new Date(b.lastMessageAt || 0) - new Date(a.lastMessageAt || 0));
       setConversations(convos);
     } catch (err) {
       console.error('loadConversations error:', err);
@@ -430,32 +494,48 @@ export default function ChatPage({ session }) {
   };
 
   const loadDirectMessages = async (otherUserId) => {
+    if (!myId || !otherUserId) return;
     setLoadingMessages(true);
     try {
-      const key = await deriveConversationKey(myId, otherUserId);
-      // Store key so realtime handler (and E2EE toggle) can use it
-      e2eeCryptoKeyRef.current = key;
-      setE2eeCryptoKey(key);
-      const fp = await generateKeyFingerprint(myId, otherUserId);
-      setE2eeFingerprint(fp);
+      let key = null;
+      try {
+        key = await deriveConversationKey(myId, otherUserId);
+        e2eeCryptoKeyRef.current = key;
+        setE2eeCryptoKey(key);
+        const fp = await generateKeyFingerprint(myId, otherUserId);
+        setE2eeFingerprint(fp);
+      } catch (e2eeErr) {
+        console.warn('E2EE key derivation skipped:', e2eeErr);
+      }
 
-      const { data } = await supabase
+      // Query messages involving myId, then filter strictly between myId and otherUserId
+      const { data, error } = await supabase
         .from('messages')
         .select('*')
-        .or(
-          `and(sender_id.eq.${myId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${myId})`
-        )
+        .or(`sender_id.eq.${myId},receiver_id.eq.${myId}`)
         .order('created_at', { ascending: true });
 
+      if (error) throw error;
+
+      const relevant = (data || []).filter(
+        m => (m.sender_id === myId && m.receiver_id === otherUserId) ||
+             (m.sender_id === otherUserId && m.receiver_id === myId)
+      );
+
       const decrypted = await Promise.all(
-        (data || []).map(async (m) => {
-          if (isEncryptedMessage(m.content)) {
-            const dec = await decryptMessage(m.content, key);
-            return { ...m, content: dec, isE2EE: true };
+        relevant.map(async (m) => {
+          if (isEncryptedMessage(m.content) && key) {
+            try {
+              const dec = await decryptMessage(m.content, key);
+              return { ...m, content: dec, isE2EE: true };
+            } catch {
+              return { ...m, content: '🔒 Encrypted message', isE2EE: true };
+            }
           }
           return m;
         })
       );
+
       setMessages(decrypted);
     } catch (err) {
       console.warn('loadDirectMessages error:', err);
@@ -465,32 +545,41 @@ export default function ChatPage({ session }) {
   };
 
   const loadGroupMessages = async (groupId) => {
+    if (!groupId) return;
     setLoadingMessages(true);
     try {
       const { data, error } = await supabase
         .from('chat_group_messages')
-        .select(`
-          id, group_id, sender_id, content, is_announcement, attachment_url, attachment_name, attachment_type, created_at,
-          sender:profiles!chat_group_messages_sender_id_fkey(username, avatar_url)
-        `)
+        .select('*')
         .eq('group_id', groupId)
         .order('created_at', { ascending: true });
+
       if (error) throw error;
-      setMessages(data || []);
-    } catch (err) {
-      if (err?.message?.includes('attachment_') || err?.message?.includes('column')) {
-        const { data } = await supabase
-          .from('chat_group_messages')
-          .select(`
-            id, group_id, sender_id, content, is_announcement, created_at,
-            sender:profiles!chat_group_messages_sender_id_fkey(username, avatar_url)
-          `)
-          .eq('group_id', groupId)
-          .order('created_at', { ascending: true });
-        setMessages(data || []);
-      } else {
-        console.warn('loadGroupMessages error:', err);
+
+      if (!data || data.length === 0) {
+        setMessages([]);
+        return;
       }
+
+      // Collect unique sender IDs to populate usernames/avatars
+      const senderIds = [...new Set(data.map(m => m.sender_id).filter(Boolean))];
+      let profilesMap = {};
+      if (senderIds.length > 0) {
+        const { data: senderProfiles } = await supabase
+          .from('profiles')
+          .select('id, username, avatar_url')
+          .in('id', senderIds);
+        (senderProfiles || []).forEach(p => { profilesMap[p.id] = p; });
+      }
+
+      const formatted = data.map(m => ({
+        ...m,
+        sender: profilesMap[m.sender_id] || { username: 'developer', avatar_url: null },
+      }));
+
+      setMessages(formatted);
+    } catch (err) {
+      console.warn('loadGroupMessages error:', err);
     } finally {
       setLoadingMessages(false);
     }
@@ -711,42 +800,37 @@ export default function ChatPage({ session }) {
           attachment_type: attachmentType,
         };
 
+        const mySenderProfile = {
+          username: session?.user?.user_metadata?.username || session?.user?.email?.split('@')[0] || 'You',
+          avatar_url: currentUserProfile?.avatar_url || null,
+        };
+
         try {
           const { data, error } = await supabase
             .from('chat_group_messages')
             .insert(fullPayload)
-            .select(`
-              id, group_id, sender_id, content, is_announcement, attachment_url, attachment_name, attachment_type, created_at,
-              sender:profiles!chat_group_messages_sender_id_fkey(username, avatar_url)
-            `)
+            .select()
             .single();
 
           if (error) throw error;
-          sentData = data;
+          sentData = { ...data, sender: mySenderProfile };
         } catch (insertErr) {
           // Fallback if attachment columns are not in schema cache
-          if (insertErr?.message?.includes('attachment_') || insertErr?.message?.includes('column')) {
-            const fallbackContent = attachmentUrl 
-              ? `${text ? text + ' ' : ''}[Attachment: ${attachmentName || 'file'}](${attachmentUrl})`
-              : text;
-            const { data, error } = await supabase
-              .from('chat_group_messages')
-              .insert({
-                group_id: selectedGroup.id,
-                sender_id: myId,
-                content: fallbackContent,
-                is_announcement: Boolean(isAnnouncementMsg && groupAdminRole),
-              })
-              .select(`
-                id, group_id, sender_id, content, is_announcement, created_at,
-                sender:profiles!chat_group_messages_sender_id_fkey(username, avatar_url)
-              `)
-              .single();
-            if (error) throw error;
-            sentData = data;
-          } else {
-            throw insertErr;
-          }
+          const fallbackContent = attachmentUrl 
+            ? `${text ? text + ' ' : ''}[Attachment: ${attachmentName || 'file'}](${attachmentUrl})`
+            : text;
+          const { data, error } = await supabase
+            .from('chat_group_messages')
+            .insert({
+              group_id: selectedGroup.id,
+              sender_id: myId,
+              content: fallbackContent,
+              is_announcement: Boolean(isAnnouncementMsg && groupAdminRole),
+            })
+            .select()
+            .single();
+          if (error) throw error;
+          sentData = { ...data, sender: mySenderProfile };
         }
 
         setMessages(prev => [...prev, sentData]);
@@ -844,6 +928,7 @@ export default function ChatPage({ session }) {
           }
           return prev.map(c => (c.id === selectedUser.id ? { ...c, lastMessage: text } : c));
         });
+        loadConversations();
       }
 
       setNewMessage('');

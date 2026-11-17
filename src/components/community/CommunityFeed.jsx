@@ -20,26 +20,35 @@ import {
   Search,
   FileImage,
   BarChart2,
+  Globe,
+  HelpCircle,
+  Cpu,
 } from 'lucide-react';
-import { reviewCodeAndSecurity, polishPostContent } from '../../lib/ai';
+import { reviewCodeAndSecurity, polishPostContent, polishCodeSnippet } from '../../lib/ai';
 import { scanForSecrets, redactSecrets } from '../../lib/secretScanner';
+import { detectCodeLanguage, getLanguageDisplayName, SUPPORTED_LANGUAGES } from '../../lib/codeDetector';
+import AIAnalysisCard from '../feed/AIAnalysisCard';
 
 // ─── Simple Community Channels ────────────────────────────────────────────────
 const COMMUNITY_CHANNELS = [
-  { id: 'all', label: 'All Posts', icon: '🌐' },
-  { id: 'general', label: 'General', icon: '💬' },
-  { id: 'code', label: 'Code & Reviews', icon: '⚡' },
-  { id: 'showcase', label: 'Showcase', icon: '🚀' },
-  { id: 'help', label: 'Questions & Help', icon: '❓' },
+  { id: 'all', label: 'All Discussions', icon: Globe },
+  { id: 'general', label: 'General', icon: MessageSquare },
+  { id: 'code', label: 'Code & Reviews', icon: Code2 },
+  { id: 'showcase', label: 'Showcase', icon: Sparkles },
+  { id: 'help', label: 'Questions & Help', icon: HelpCircle },
 ];
 
 // ─── Post Composer ─────────────────────────────────────────────────────────────
 function CreateCommunityPost({ session, community, communityId, onPostCreated, selectedChannel }) {
-  const [activeTab, setActiveTab] = useState('text'); // 'text' | 'code' | 'image' | 'poll'
-  const [topicTag, setTopicTag] = useState(selectedChannel !== 'all' ? selectedChannel : 'general');
+  const [activeTab, setActiveTab] = useState(
+    selectedChannel === 'code' ? 'code' : selectedChannel === 'showcase' ? 'image' : selectedChannel === 'help' ? 'poll' : 'text'
+  );
   const [content, setContent] = useState('');
   const [codeSnippet, setCodeSnippet] = useState('');
   const [codeLang, setCodeLang] = useState('javascript');
+  const [isAutoDetected, setIsAutoDetected] = useState(false);
+  const [codeReviewResult, setCodeReviewResult] = useState(null);
+  const [showCodeReview, setShowCodeReview] = useState(false);
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
   const [imageUrlInput, setImageUrlInput] = useState('');
@@ -66,13 +75,30 @@ function CreateCommunityPost({ session, community, communityId, onPostCreated, s
   }, [session?.user?.id]);
 
   useEffect(() => {
-    if (selectedChannel && selectedChannel !== 'all') {
-      setTopicTag(selectedChannel);
-    }
+    if (selectedChannel === 'code') setActiveTab('code');
+    else if (selectedChannel === 'showcase') setActiveTab('image');
+    else if (selectedChannel === 'help') setActiveTab('poll');
+    else if (selectedChannel === 'general') setActiveTab('text');
   }, [selectedChannel]);
 
   const avatarUrl = session?.user?.user_metadata?.avatar_url || userProfile?.avatar_url;
   const username = session?.user?.user_metadata?.username || userProfile?.username || 'You';
+
+  const handleCodeSnippetChange = (newCode) => {
+    setCodeSnippet(newCode);
+    if (newCode && newCode.trim()) {
+      const detected = detectCodeLanguage(newCode);
+      if (detected) {
+        setCodeLang(detected);
+        setIsAutoDetected(true);
+      }
+    }
+  };
+
+  const handleManualLangChange = (newLang) => {
+    setCodeLang(newLang);
+    setIsAutoDetected(false);
+  };
 
   const handleImageChange = (e) => {
     const file = e.target.files?.[0];
@@ -97,7 +123,7 @@ function CreateCommunityPost({ session, community, communityId, onPostCreated, s
             setActiveTab('image');
           };
           reader.readAsDataURL(file);
-          toast.success('Screenshot pasted from clipboard! 📋');
+          toast.success('Screenshot pasted from clipboard.');
           break;
         }
       }
@@ -105,14 +131,48 @@ function CreateCommunityPost({ session, community, communityId, onPostCreated, s
   };
 
   const handlePolish = async () => {
-    if (!content.trim()) return;
+    const hasText = Boolean(content && content.trim());
+    const hasCode = Boolean(codeSnippet && codeSnippet.trim());
+    if (!hasText && !hasCode) {
+      toast.error('Write some text or paste a code snippet to polish');
+      return;
+    }
+
     setAiPolishing(true);
     try {
-      const polished = await polishPostContent({ content });
-      setContent(polished);
-      toast.success('Post polished! ✨');
-    } catch { toast.error('AI polish failed'); }
-    finally { setAiPolishing(false); }
+      // 1. If code exists, polish the code snippet and run verification
+      if (hasCode) {
+        const detected = detectCodeLanguage(codeSnippet);
+        const activeLang = detected || codeLang || 'python';
+        if (detected && detected !== codeLang) {
+          setCodeLang(detected);
+          setIsAutoDetected(true);
+        }
+        const polishedCode = await polishCodeSnippet({ code: codeSnippet, language: activeLang });
+        setCodeSnippet(polishedCode);
+
+        // Security & Quality SAST review
+        const audit = await reviewCodeAndSecurity({ code: polishedCode, language: activeLang });
+        setCodeReviewResult(audit);
+        setShowCodeReview(true);
+      }
+
+      // 2. Polish text or generate informative caption for the code
+      if (hasText) {
+        const polished = await polishPostContent({ content });
+        setContent(polished);
+      } else if (hasCode) {
+        const langName = getLanguageDisplayName(codeLang);
+        setContent(`Optimized and security-verified ${langName} implementation.\n\n#${codeLang} #cleancode #devcommunity`);
+      }
+
+      toast.success('Post & code polished with AI! ✨');
+    } catch (err) {
+      console.warn('AI polish error:', err);
+      toast.error('AI polish failed');
+    } finally {
+      setAiPolishing(false);
+    }
   };
 
   const handlePreAuditCode = async () => {
@@ -121,17 +181,26 @@ function CreateCommunityPost({ session, community, communityId, onPostCreated, s
       return;
     }
     setAiReviewing(true);
+    setShowCodeReview(true);
     try {
+      const detected = detectCodeLanguage(codeSnippet);
+      const activeLang = detected || codeLang || 'python';
+      if (detected && detected !== codeLang) {
+        setCodeLang(detected);
+        setIsAutoDetected(true);
+      }
       const review = await reviewCodeAndSecurity({
         code: codeSnippet,
-        language: codeLang,
+        language: activeLang,
       });
+      setCodeReviewResult(review);
       if (review?.findings?.length > 0) {
-        toast.error(`Found ${review.findings.length} security warning(s)`);
+        toast.error(`Identified ${review.findings.length} security advisory warning(s)`);
       } else {
-        toast.success('Code looks clean! 🛡️');
+        toast.success(`${getLanguageDisplayName(activeLang)} code verified clean! 🛡️`);
       }
-    } catch {
+    } catch (err) {
+      console.warn('Code review error:', err);
       toast.error('AI code review failed');
     } finally {
       setAiReviewing(false);
@@ -143,8 +212,17 @@ function CreateCommunityPost({ session, community, communityId, onPostCreated, s
     let finalContent = overrideContent !== undefined ? overrideContent : content;
     let finalImageUrl = null;
 
-    if (topicTag && topicTag !== 'general' && !finalContent.includes(`[#${topicTag}]`)) {
-      finalContent = `[#${topicTag}] ${finalContent}`;
+    const hasCodeSnippet = Boolean(codeSnippet && codeSnippet.trim());
+    let targetTag = selectedChannel && selectedChannel !== 'all' ? selectedChannel : null;
+    if (!targetTag) {
+      if (hasCodeSnippet || activeTab === 'code') targetTag = 'code';
+      else if (imageFile || imagePreview || activeTab === 'image') targetTag = 'showcase';
+      else if (activeTab === 'poll') targetTag = 'help';
+      else targetTag = 'general';
+    }
+
+    if (targetTag && targetTag !== 'general' && !finalContent.includes(`[#${targetTag}]`)) {
+      finalContent = `[#${targetTag}] ${finalContent}`;
     }
 
     let pollPayload = null;
@@ -260,7 +338,7 @@ function CreateCommunityPost({ session, community, communityId, onPostCreated, s
     setPollQuestion('');
     setPollOptions(['Option 1', 'Option 2']);
     setPendingPublish(null);
-    toast.success('Post published! 🚀');
+    toast.success('Post published successfully.');
     onPostCreated?.(formattedPost);
   };
 
@@ -347,9 +425,9 @@ function CreateCommunityPost({ session, community, communityId, onPostCreated, s
 
       {/* Composer Container (Always Open & Ready) */}
       <div className="p-4 sm:p-5 space-y-3.5">
-        {/* Header / Category Pills */}
-        <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-[#f1e4d3] dark:border-[#33261d]">
-          <div className="flex items-center gap-2">
+        {/* Header / Posting Context */}
+        <div className="flex items-center justify-between flex-wrap gap-2 pb-2.5 border-b border-[#f1e4d3] dark:border-[#33261d]">
+          <div className="flex items-center gap-2 flex-wrap">
             <div className="shrink-0 w-8 h-8 rounded-xl bg-gradient-to-br from-[#ea580c] to-[#f97316] flex items-center justify-center overflow-hidden">
               {avatarUrl ? (
                 <img src={avatarUrl} alt="You" className="w-full h-full object-cover" />
@@ -357,54 +435,44 @@ function CreateCommunityPost({ session, community, communityId, onPostCreated, s
                 <span className="text-white font-black text-xs">{username?.[0]?.toUpperCase() || 'U'}</span>
               )}
             </div>
-            <div className="text-xs font-bold text-[#1c130d] dark:text-white flex items-center gap-1.5">
+            <div className="text-xs font-bold text-[#1c130d] dark:text-white flex items-center gap-1.5 flex-wrap">
               <span>{username}</span>
-              <span className="text-[10px] text-[#8d7565] font-normal">in</span>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-950/60 text-[#ea580c]">
-                {community?.icon || '💬'} {community?.name}
+              <span className="text-[10px] text-[#8d7565] font-normal">posting in</span>
+              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-orange-100 dark:bg-orange-950/60 text-[#ea580c] flex items-center gap-1">
+                <Globe size={11} /> {community?.name}
               </span>
+              {selectedChannel && selectedChannel !== 'all' && (
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300">
+                  #{selectedChannel}
+                </span>
+              )}
             </div>
           </div>
 
-          {/* Tag Selection & Clear */}
-          <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
-            {[
-              { id: 'general', label: '💬 General' },
-              { id: 'code', label: '⚡ Code Review' },
-              { id: 'showcase', label: '🚀 Showcase' },
-              { id: 'help', label: '❓ Help' },
-            ].map((tag) => (
-              <button
-                key={tag.id}
-                type="button"
-                onClick={() => setTopicTag(tag.id)}
-                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer whitespace-nowrap ${
-                  topicTag === tag.id
-                    ? 'bg-[#ea580c] text-white shadow-xs'
-                    : 'bg-[#faf6f0] dark:bg-[#281f18] text-[#8d7565] hover:text-[#1c130d] dark:hover:text-white border border-[#f1e4d3] dark:border-[#382b22]'
-                }`}
-              >
-                {tag.label}
-              </button>
-            ))}
-            {Boolean(content || codeSnippet || imageFile || imagePreview) && (
-              <button
-                type="button"
-                onClick={() => { setContent(''); setCodeSnippet(''); setImageFile(null); setImagePreview(null); setImageUrlInput(''); }}
-                className="px-2 py-1 rounded-lg text-[10px] font-bold text-[#8d7565] hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer ml-1"
-                title="Clear all fields"
-              >
-                Clear
-              </button>
-            )}
-          </div>
+          {Boolean(content || codeSnippet || imageFile || imagePreview) && (
+            <button
+              type="button"
+              onClick={() => { setContent(''); setCodeSnippet(''); setImageFile(null); setImagePreview(null); setImageUrlInput(''); }}
+              className="px-2.5 py-1 rounded-lg text-[10px] font-bold text-[#8d7565] hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+              title="Clear all fields"
+            >
+              Clear
+            </button>
+          )}
         </div>
 
             {/* Post Format Tabs */}
             <div className="flex items-center gap-1 p-1 bg-[#faf6f0] dark:bg-[#281f18] rounded-xl border border-[#f1e4d3] dark:border-[#382b22]">
               {[
                 { id: 'text', label: 'Text Post', icon: MessageSquare },
-                { id: 'code', label: 'Code Snippet', icon: Code2, hasAsset: Boolean(codeSnippet && codeSnippet.trim()) },
+                {
+                  id: 'code',
+                  label: codeSnippet?.trim()
+                    ? `Code (${getLanguageDisplayName(codeLang).toUpperCase()})`
+                    : (activeTab === 'code' ? `Code (${getLanguageDisplayName(codeLang).toUpperCase()})` : 'Code Snippet'),
+                  icon: Code2,
+                  hasAsset: Boolean(codeSnippet && codeSnippet.trim()),
+                },
                 { id: 'image', label: 'Image', icon: FileImage, hasAsset: Boolean(imageFile || imagePreview || (imageUrlInput && imageUrlInput.trim())) },
                 { id: 'poll', label: 'Poll', icon: BarChart2, hasAsset: Boolean(pollQuestion && pollQuestion.trim()) },
               ].map(({ id, label, icon: Icon, hasAsset }) => (
@@ -460,33 +528,57 @@ function CreateCommunityPost({ session, community, communityId, onPostCreated, s
                       <Code2 size={14} className="text-[#ea580c]" />
                       <select
                         value={codeLang}
-                        onChange={(e) => setCodeLang(e.target.value)}
+                        onChange={(e) => handleManualLangChange(e.target.value)}
                         className="text-xs px-2.5 py-1.5 rounded-lg bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#1c130d] dark:text-white focus:outline-none focus:border-[#ea580c] cursor-pointer font-mono font-bold"
                       >
-                        {LANGS.map((l) => (
-                          <option key={l} value={l}>{l}</option>
+                        {SUPPORTED_LANGUAGES.map((l) => (
+                          <option key={l.id} value={l.id}>{l.label}</option>
                         ))}
                       </select>
-                      <span className="text-[10px] text-[#8d7565]">Language</span>
+                      {isAutoDetected ? (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1 shadow-2xs">
+                          <Sparkles size={10} /> Auto-detected
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-[#8d7565]">Language</span>
+                      )}
                     </div>
 
                     <button
+                      type="button"
                       onClick={handlePreAuditCode}
                       disabled={!(codeSnippet && codeSnippet.trim()) || aiReviewing}
                       className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 hover:brightness-95 transition-all cursor-pointer disabled:opacity-50"
                     >
                       {aiReviewing ? <Loader2 size={11} className="animate-spin" /> : <Shield size={11} />}
-                      <span>{aiReviewing ? 'Checking…' : 'Review Code with AI'}</span>
+                      <span>{aiReviewing ? 'Analyzing Code…' : 'Review Code with AI'}</span>
                     </button>
                   </div>
 
                   <textarea
                     rows={6}
                     value={codeSnippet}
-                    onChange={(e) => setCodeSnippet(e.target.value)}
-                    placeholder={`// Paste your ${codeLang} code snippet here…`}
+                    onChange={(e) => handleCodeSnippetChange(e.target.value)}
+                    placeholder={`# Paste your ${getLanguageDisplayName(codeLang)} code snippet here…`}
                     className="w-full font-mono text-xs bg-[#120e0b] border border-[#3d2e24] rounded-xl p-3 text-amber-200 placeholder:text-stone-600 resize-none focus:outline-none focus:ring-2 focus:ring-[#ea580c]/30 transition-all leading-relaxed"
                   />
+
+                  {/* Inline AI Review & Error Reflection Card */}
+                  {showCodeReview && codeReviewResult && (
+                    <div className="pt-2">
+                      <AIAnalysisCard
+                        content={codeReviewResult}
+                        type="security"
+                        onClose={() => setShowCodeReview(false)}
+                        onApplyFix={(fixedCode) => {
+                          setCodeSnippet(fixedCode);
+                          const detected = detectCodeLanguage(fixedCode);
+                          if (detected) setCodeLang(detected);
+                          toast.success('AI remediation patch applied to snippet!');
+                        }}
+                      />
+                    </div>
+                  )}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -622,9 +714,9 @@ function CreateCommunityPost({ session, community, communityId, onPostCreated, s
               <div className="flex items-center gap-2">
                 <button
                   onClick={handlePolish}
-                  disabled={!(content && content.trim()) || aiPolishing}
+                  disabled={(!content?.trim() && !codeSnippet?.trim()) || aiPolishing}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-[#ea580c] bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-900/40 hover:brightness-95 transition-all cursor-pointer disabled:opacity-40"
-                  title="Polish post with AI"
+                  title="Polish post and code with AI"
                 >
                   {aiPolishing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
                   <span>AI Polish</span>
@@ -652,48 +744,6 @@ function CreateCommunityPost({ session, community, communityId, onPostCreated, s
                 </button>
               </div>
             </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Simple Member Count Bar ───────────────────────────────────────────────────
-function CommunityMemberBar({ communityId, community, isAdmin }) {
-  const [memberCount, setMemberCount] = useState(community?.member_count || 1);
-
-  useEffect(() => {
-    if (!communityId) return;
-    supabase
-      .from('community_members')
-      .select('id', { count: 'exact', head: true })
-      .eq('community_id', communityId)
-      .then(({ count }) => {
-        if (typeof count === 'number' && count > 0) {
-          setMemberCount(count);
-        } else if (community?.member_count) {
-          setMemberCount(community.member_count);
-        }
-      });
-  }, [communityId, community?.member_count]);
-
-  return (
-    <div className="flex items-center justify-between px-3.5 py-2 rounded-xl bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] text-xs">
-      <div className="flex items-center gap-2 text-[#8d7565]">
-        <Users size={14} className="text-[#ea580c]" />
-        <span>
-          <strong className="text-[#1c130d] dark:text-white font-bold">{memberCount}</strong> member{memberCount !== 1 ? 's' : ''}
-        </span>
-      </div>
-      <div className="flex items-center gap-2">
-        {isAdmin && (
-          <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-400 border border-amber-300 dark:border-amber-800 flex items-center gap-1">
-            <Shield size={11} /> Admin Access
-          </span>
-        )}
-        <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          Active Community
-        </span>
       </div>
     </div>
   );
@@ -853,15 +903,42 @@ export default function CommunityFeed({
     toast.success('Feed refreshed');
   };
 
+  const channelCounts = useMemo(() => {
+    const counts = { all: posts.length, general: 0, code: 0, showcase: 0, help: 0 };
+    posts.forEach((p) => {
+      const c = (p.content || '').toLowerCase();
+      const hasCode = Boolean(p.code_snippet && p.code_snippet.trim());
+      const hasImg = Boolean(p.image_url);
+      const hasPoll = Boolean(p.poll_data);
+      const isTaggedCode = c.includes('[#code]') || c.includes('#code');
+      const isTaggedShowcase = c.includes('[#showcase]') || c.includes('#showcase');
+      const isTaggedHelp = c.includes('[#help]') || c.includes('#help') || c.includes('?');
+
+      if (hasCode || isTaggedCode) counts.code++;
+      else if (hasImg || isTaggedShowcase) counts.showcase++;
+      else if (hasPoll || isTaggedHelp) counts.help++;
+      else counts.general++;
+    });
+    return counts;
+  }, [posts]);
+
   const filteredPosts = useMemo(() => {
     let result = [...posts];
 
     if (selectedChannel !== 'all') {
       result = result.filter((p) => {
-        const c = p.content?.toLowerCase() || '';
-        if (selectedChannel === 'code') return c.includes('[#code]') || Boolean(p.code_snippet);
-        if (selectedChannel === 'showcase') return c.includes('[#showcase]') || Boolean(p.image_url);
-        if (selectedChannel === 'help') return c.includes('[#help]') || c.includes('?');
+        const c = (p.content || '').toLowerCase();
+        const hasCode = Boolean(p.code_snippet && p.code_snippet.trim());
+        const hasImg = Boolean(p.image_url);
+        const hasPoll = Boolean(p.poll_data);
+        const isTaggedCode = c.includes('[#code]') || c.includes('#code');
+        const isTaggedShowcase = c.includes('[#showcase]') || c.includes('#showcase');
+        const isTaggedHelp = c.includes('[#help]') || c.includes('#help') || c.includes('?');
+
+        if (selectedChannel === 'code') return hasCode || isTaggedCode;
+        if (selectedChannel === 'showcase') return hasImg || isTaggedShowcase;
+        if (selectedChannel === 'help') return hasPoll || isTaggedHelp;
+        if (selectedChannel === 'general') return !hasCode && !isTaggedCode && !hasImg && !isTaggedShowcase && !hasPoll && !isTaggedHelp;
         return true;
       });
     }
@@ -898,31 +975,7 @@ export default function CommunityFeed({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* 1. Simple Member Count Bar */}
-      <CommunityMemberBar communityId={communityId} community={community} isAdmin={isAdmin} />
-
-      {/* 2. Channel Category Filter Pills */}
-      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
-        {COMMUNITY_CHANNELS.map((ch) => {
-          const isSelected = selectedChannel === ch.id;
-          return (
-            <button
-              key={ch.id}
-              onClick={() => setSelectedChannel(ch.id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-                isSelected
-                  ? 'bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white shadow-xs'
-                  : 'bg-white dark:bg-[#1f1813] text-[#8d7565] hover:text-[#1c130d] dark:hover:text-white border border-[#f1e4d3] dark:border-[#382b22]'
-              }`}
-            >
-              <span>{ch.icon}</span>
-              <span>{ch.label}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* 3. Post Composer (prominent at top, ONLY for joined members) */}
+      {/* 1. Post Composer (prominent at top, ONLY for joined members) */}
       {isJoined ? (
         <CreateCommunityPost
           session={session}
@@ -934,7 +987,7 @@ export default function CommunityFeed({
       ) : (
         <div className="bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] rounded-2xl p-5 text-center space-y-3 shadow-xs">
           <div className="w-12 h-12 rounded-2xl bg-orange-100 dark:bg-orange-950/60 text-[#ea580c] flex items-center justify-center mx-auto text-xl shadow-xs">
-            {community?.icon || '👥'}
+            <Users size={22} className="text-[#ea580c]" />
           </div>
           <div className="space-y-1">
             <h3 className="text-sm font-bold text-[#1c130d] dark:text-white">
@@ -954,7 +1007,35 @@ export default function CommunityFeed({
         </div>
       )}
 
-      {/* 4. Search & Filter Bar */}
+      {/* 2. Channel Category Filter Pills */}
+      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+        {COMMUNITY_CHANNELS.map((ch) => {
+          const isSelected = selectedChannel === ch.id;
+          const ChannelIcon = ch.icon;
+          const count = channelCounts[ch.id] ?? 0;
+          return (
+            <button
+              key={ch.id}
+              onClick={() => setSelectedChannel(ch.id)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                isSelected
+                  ? 'bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white shadow-xs'
+                  : 'bg-white dark:bg-[#1f1813] text-[#8d7565] hover:text-[#1c130d] dark:hover:text-white border border-[#f1e4d3] dark:border-[#382b22]'
+              }`}
+            >
+              <ChannelIcon size={13} className={isSelected ? 'text-white' : 'text-[#ea580c]'} />
+              <span>{ch.label}</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                isSelected ? 'bg-white/20 text-white font-bold' : 'bg-[#faf6f0] dark:bg-[#281f18] text-[#8d7565]'
+              }`}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 3. Search & Filter Bar */}
       <div className="bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] rounded-2xl p-3 shadow-xs space-y-2">
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
@@ -1035,7 +1116,7 @@ export default function CommunityFeed({
         </div>
       </div>
 
-      {/* 5. Posts Stream */}
+      {/* 4. Posts Stream */}
       {loading ? (
         <div className="space-y-4">
           {[...Array(3)].map((_, i) => (
@@ -1063,19 +1144,49 @@ export default function CommunityFeed({
           animate={{ opacity: 1, y: 0 }}
           className="bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] rounded-2xl p-10 shadow-xs flex flex-col items-center justify-center text-center gap-3"
         >
-          <div className="w-14 h-14 rounded-2xl bg-orange-100/70 dark:bg-orange-950/60 border border-orange-200 dark:border-orange-800 flex items-center justify-center text-3xl shadow-xs">
-            {community?.icon || '💬'}
+          <div className="w-12 h-12 rounded-2xl bg-orange-100/70 dark:bg-orange-950/60 border border-orange-200 dark:border-orange-800 flex items-center justify-center text-orange-600 shadow-xs">
+            {selectedChannel === 'code' ? (
+              <Code2 size={24} />
+            ) : selectedChannel === 'showcase' ? (
+              <Sparkles size={24} />
+            ) : selectedChannel === 'help' ? (
+              <HelpCircle size={24} />
+            ) : (
+              <MessageSquare size={24} />
+            )}
           </div>
           <div className="space-y-1 max-w-sm">
             <h3 className="font-bold text-sm sm:text-base text-[#1c130d] dark:text-white">
-              {searchQuery ? 'No matching posts found' : 'No posts in this community yet'}
-            </h3>
-            <p className="text-xs text-[#8d7565] dark:text-[#a89080] leading-relaxed">
               {searchQuery
-                ? `No posts matched "${searchQuery}".`
-                : `Be the first to post something in ${community?.name || 'this community'}!`}
+                ? 'No matching discussions found'
+                : selectedChannel === 'code'
+                ? 'No code reviews in this channel yet'
+                : selectedChannel === 'showcase'
+                ? 'No project showcases in this channel yet'
+                : selectedChannel === 'help'
+                ? 'No questions in this channel yet'
+                : 'No discussions in this channel yet'}
+            </h3>
+            <p className="text-xs text-[#8d7565] leading-relaxed">
+              {searchQuery
+                ? `No posts matched "${searchQuery}". Try clearing your search or filters.`
+                : selectedChannel === 'code'
+                ? 'Be the first to share a code snippet above for peer review and AI security analysis.'
+                : selectedChannel === 'showcase'
+                ? 'Share a screenshot or product demo above to showcase your work.'
+                : selectedChannel === 'help'
+                ? 'Ask a question or create a poll above to get help from the guild.'
+                : 'Share an update or question above to start the discussion.'}
             </p>
           </div>
+          {selectedChannel !== 'all' && (
+            <button
+              onClick={() => setSelectedChannel('all')}
+              className="text-xs font-bold text-[#ea580c] hover:underline cursor-pointer"
+            >
+              View All Community Discussions
+            </button>
+          )}
         </motion.div>
       ) : (
         <AnimatePresence mode="popLayout">
