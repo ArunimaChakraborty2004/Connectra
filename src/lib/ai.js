@@ -353,6 +353,42 @@ Requirements:
 }
 
 /**
+ * Polishes and cleans code snippets using Groq LLM with AppSec & idiomatic formatting
+ */
+export async function polishCodeSnippet({ code, language = 'python' }) {
+  if (!code || !code.trim()) return code;
+
+  const prompt = `You are a Principal Software Engineer and Code Quality Auditor.
+Polish, format, and optimize the following ${language} code snippet:
+1. Fix any syntax errors, typo bugs, or anti-patterns.
+2. Clean up indentation, style, and variable naming according to idiomatic ${language} conventions (e.g. PEP 8 for Python).
+3. Ensure security defaults (prevent injection, sanitize inputs, avoid hardcoded secrets).
+4. Add clean, concise inline comments where helpful.
+
+VITAL: Return ONLY the raw executable code without markdown code blocks (\`\`\`${language}...\`\`\`) or conversational conversational chatter.
+
+Source Code (${language}):
+${code}`;
+
+  try {
+    const raw = await callGroq({
+      messages: [
+        { role: 'system', content: `You are an expert ${language} code compiler and formatter that outputs ONLY raw code.` },
+        { role: 'user', content: prompt },
+      ],
+      temperature: 0.2,
+      max_tokens: 1500,
+    });
+
+    const cleaned = raw.replace(/^```[a-zA-Z]*\n?/m, '').replace(/```$/m, '').trim();
+    return cleaned || code;
+  } catch (err) {
+    console.warn('AI code polish fallback:', err.message);
+    return code;
+  }
+}
+
+/**
  * Generate README and project architecture overview
  */
 export async function generateProjectReadme({ title, description, techStack, repoUrl }) {

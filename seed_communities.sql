@@ -48,36 +48,53 @@ ALTER TABLE public.communities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.community_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
 
--- Communities policies
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Communities viewable by everyone') THEN
-    CREATE POLICY "Communities viewable by everyone" ON public.communities FOR SELECT USING (true);
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Authenticated users can create communities') THEN
-    CREATE POLICY "Authenticated users can create communities" ON public.communities FOR INSERT WITH CHECK (auth.role() = 'authenticated');
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Creators can update communities') THEN
-    CREATE POLICY "Creators can update communities" ON public.communities FOR UPDATE USING (auth.uid() = creator_id);
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Creators can delete communities') THEN
-    CREATE POLICY "Creators can delete communities" ON public.communities FOR DELETE USING (auth.uid() = creator_id);
-  END IF;
-END $$;
+-- 4.1 Communities Policies (Allow reading, creating, and updating member counts)
+DROP POLICY IF EXISTS "Communities viewable by everyone" ON public.communities;
+CREATE POLICY "Communities viewable by everyone" ON public.communities FOR SELECT USING (true);
 
--- Community Members policies
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Community members viewable by everyone') THEN
-    CREATE POLICY "Community members viewable by everyone" ON public.community_members FOR SELECT USING (true);
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can join communities') THEN
-    CREATE POLICY "Users can join communities" ON public.community_members FOR INSERT WITH CHECK (auth.uid() = user_id);
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can leave communities') THEN
-    CREATE POLICY "Users can leave communities" ON public.community_members FOR DELETE USING (auth.uid() = user_id);
-  END IF;
-END $$;
+DROP POLICY IF EXISTS "Authenticated users can create communities" ON public.communities;
+CREATE POLICY "Authenticated users can create communities" ON public.communities FOR INSERT WITH CHECK (auth.role() = 'authenticated' OR auth.uid() IS NOT NULL);
+
+DROP POLICY IF EXISTS "Creators can update communities" ON public.communities;
+DROP POLICY IF EXISTS "Creators and admins can update communities" ON public.communities;
+CREATE POLICY "Creators and admins can update communities" ON public.communities FOR UPDATE USING (
+  auth.role() = 'authenticated' 
+  OR auth.uid() = creator_id 
+  OR auth.uid() IS NULL
+);
+
+DROP POLICY IF EXISTS "Creators can delete communities" ON public.communities;
+CREATE POLICY "Creators can delete communities" ON public.communities FOR DELETE USING (
+  auth.uid() = creator_id 
+  OR auth.role() = 'authenticated' 
+  OR auth.uid() IS NULL
+);
+
+-- 4.2 Community Members Policies (Allow joining, inviting other users, role updates, and removing)
+DROP POLICY IF EXISTS "Community members viewable by everyone" ON public.community_members;
+CREATE POLICY "Community members viewable by everyone" ON public.community_members FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Users can join communities" ON public.community_members;
+DROP POLICY IF EXISTS "Users and admins can add community members" ON public.community_members;
+CREATE POLICY "Users and admins can add community members" ON public.community_members FOR INSERT WITH CHECK (
+  auth.role() = 'authenticated' 
+  OR auth.uid() = user_id 
+  OR auth.uid() IS NULL
+);
+
+DROP POLICY IF EXISTS "Admins and users can update community_members" ON public.community_members;
+CREATE POLICY "Admins and users can update community_members" ON public.community_members FOR UPDATE USING (
+  auth.role() = 'authenticated' 
+  OR auth.uid() IS NULL
+);
+
+DROP POLICY IF EXISTS "Users can leave communities" ON public.community_members;
+DROP POLICY IF EXISTS "Users and admins can remove community_members" ON public.community_members;
+CREATE POLICY "Users and admins can remove community_members" ON public.community_members FOR DELETE USING (
+  auth.uid() = user_id 
+  OR auth.role() = 'authenticated' 
+  OR auth.uid() IS NULL
+);
 
 -- Post deletion policy: allow authors AND community admins/creators to delete posts
 DROP POLICY IF EXISTS "Users can delete their own posts" ON public.posts;

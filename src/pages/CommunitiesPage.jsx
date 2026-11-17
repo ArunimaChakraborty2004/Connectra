@@ -40,15 +40,29 @@ import {
   KeyRound,
   Database,
   BarChart3,
+  UserPlus,
+  UserCheck,
+  UserMinus,
+  Settings,
+  Trash2,
+  Copy,
+  SlidersHorizontal,
 } from 'lucide-react';
-import { CardSkeleton } from '../components/ui/SkeletonLoader';
-import Feed from '../components/Feed';
 import CommunityFeed from '../components/community/CommunityFeed';
-import { CURATED_COMMUNITIES, COMMUNITY_CATEGORIES, getCommunityById } from '../data/communitiesData';
+import Feed from '../components/Feed';
 
-const DEFAULT_ICONS = ['🛡️', '🤖', '⚡', '🌐', '☁️', '🦀', '🔐', '🎨', '🚀', '💻', '🎯', '🧬', '🛠️', '📦'];
+// Categories list with Lucide vector icons
+const COMMUNITY_CATEGORIES = [
+  { id: 'all', label: 'All Guilds', icon: Terminal },
+  { id: 'Security', label: 'Security', icon: ShieldCheck },
+  { id: 'AI & ML', label: 'AI & ML', icon: Bot },
+  { id: 'Systems', label: 'Systems', icon: Cpu },
+  { id: 'Cloud', label: 'Cloud & DevOps', icon: Boxes },
+  { id: 'Web', label: 'Web Architecture', icon: Globe },
+  { id: 'Data', label: 'Data & Async', icon: Database },
+];
 
-// SaaS Developer Vector Icon Resolver
+// SaaS Vector Icon Resolver for Communities
 function renderTechIcon(comm, size = 18) {
   if (!comm) return <Terminal size={size} className="text-[#ea580c]" />;
   const slug = (comm.slug || '').toLowerCase();
@@ -67,19 +81,37 @@ function renderTechIcon(comm, size = 18) {
   if (slug.includes('crypto') || slug.includes('zkp') || name.includes('crypto')) {
     return <KeyRound size={size} className="text-indigo-600 dark:text-indigo-400" />;
   }
-  if (slug.includes('cloud') || slug.includes('kube') || name.includes('cloud')) {
+  if (slug.includes('cloud') || slug.includes('kube') || slug.includes('devops') || name.includes('cloud')) {
     return <Boxes size={size} className="text-cyan-600 dark:text-cyan-400" />;
   }
-  if (slug.includes('web') || slug.includes('next') || cat.includes('web')) {
+  if (slug.includes('web') || slug.includes('next') || slug.includes('react') || cat.includes('web')) {
     return <Globe size={size} className="text-blue-600 dark:text-blue-400" />;
   }
-  if (slug.includes('python') || slug.includes('data') || name.includes('python')) {
+  if (slug.includes('python') || slug.includes('data') || cat.includes('data') || name.includes('python')) {
     return <Database size={size} className="text-amber-600 dark:text-amber-400" />;
   }
   if (slug.includes('red-team') || slug.includes('offensive')) {
     return <Lock size={size} className="text-rose-600 dark:text-rose-400" />;
   }
   return <Terminal size={size} className="text-[#ea580c]" />;
+}
+
+// Relative Time Formatter
+function timeAgo(dateStr) {
+  if (!dateStr) return 'Recently';
+  const now = new Date();
+  const past = new Date(dateStr);
+  const diffMs = now - past;
+  const diffSec = Math.floor(diffMs / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHour = Math.floor(diffMin / 60);
+  const diffDay = Math.floor(diffHour / 24);
+
+  if (diffSec < 60) return 'Just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffHour < 24) return `${diffHour}h ago`;
+  if (diffDay < 30) return `${diffDay}d ago`;
+  return past.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 class CommunityErrorBoundary extends Component {
@@ -97,10 +129,8 @@ class CommunityErrorBoundary extends Component {
     if (this.state.hasError) {
       return (
         <div className="bg-white dark:bg-[#1f1813] border border-orange-200 dark:border-orange-900/50 rounded-2xl p-6 text-center space-y-3 shadow-xs">
-          <div className="w-12 h-12 rounded-2xl bg-orange-100 dark:bg-orange-950/60 text-[#ea580c] flex items-center justify-center mx-auto text-xl">
-            💬
-          </div>
-          <h3 className="font-bold text-sm text-[#1c130d] dark:text-white">Community feed temporarily refreshing</h3>
+          <Terminal size={24} className="mx-auto text-[#ea580c]" />
+          <h3 className="font-bold text-sm text-[#1c130d] dark:text-white">Community feed refreshing</h3>
           <p className="text-xs text-[#8d7565] dark:text-[#a89080] max-w-md mx-auto">
             {this.state.error?.message || 'Recovering feed stream...'}
           </p>
@@ -108,7 +138,7 @@ class CommunityErrorBoundary extends Component {
             onClick={() => this.setState({ hasError: false, error: null })}
             className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-[#ea580c] to-[#f97316] hover:brightness-105 cursor-pointer shadow-xs"
           >
-            Refresh Feed
+            Refresh Stream
           </button>
         </div>
       );
@@ -121,60 +151,62 @@ export default function CommunitiesPage({ session }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  // Tab State: 'workspace' (Feed) | 'explore' (Directory) | 'my-guilds' (Joined) | 'leaderboard' (Rankings)
-  const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'workspace');
+  // Navigation State
   const [selectedGuildId, setSelectedGuildId] = useState(() => searchParams.get('community') || searchParams.get('guild') || '');
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState('feed'); // 'feed' | 'members' | 'about' | 'settings'
 
+  // Database Data
   const [dbCommunities, setDbCommunities] = useState([]);
   const [joined, setJoined] = useState(new Set());
   const [userRoles, setUserRoles] = useState({});
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [sortBy, setSortBy] = useState('popular'); // 'popular' | 'active' | 'name'
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'list'
   const [joiningId, setJoiningId] = useState(null);
 
-  // Search & filter
+  // Left Rail Filter
   const [guildSearch, setGuildSearch] = useState('');
   const [guildCategoryFilter, setGuildCategoryFilter] = useState('all');
+  const [railSegment, setRailSegment] = useState('all'); // 'all' | 'joined' | 'managed'
+  const [guildSort, setGuildSort] = useState('popular'); // 'popular' | 'newest' | 'alphabetical'
 
-  // Create Community Modal
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({
+  // Members Management State
+  const [guildMembers, setGuildMembers] = useState([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+  const [memberRoleFilter, setMemberRoleFilter] = useState('all');
+  const [memberSearchQuery, setMemberSearchQuery] = useState('');
+
+  // Invite / Add Member Modal State
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [userSearchResults, setUserSearchResults] = useState([]);
+  const [searchingUsers, setSearchingUsers] = useState(false);
+  const [selectedRoleToAssign, setSelectedRoleToAssign] = useState('member');
+  const [addingUserId, setAddingUserId] = useState(null);
+
+  // Create Community Modal State
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createForm, setCreateForm] = useState({
     name: '',
     description: '',
     category: 'Security',
-    icon: '🛡️',
-    tags: 'Web, OpenSource',
+    tags: 'DevSecOps, ZeroTrust',
     is_private: false,
   });
-  const [submitting, setSubmitting] = useState(false);
+  const [submittingCreate, setSubmittingCreate] = useState(false);
 
-  // Edit Community Modal (Admin Only)
-  const [showEditModal, setShowEditModal] = useState(false);
+  // Edit Community State (Admin)
   const [editForm, setEditForm] = useState({
     name: '',
     description: '',
     category: 'Security',
-    icon: '🛡️',
     tags: '',
+    is_private: false,
   });
   const [savingEdit, setSavingEdit] = useState(false);
 
-  // Sync tab change with URL search params
-  const handleTabChange = (tab) => {
-    setActiveTab(tab);
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set('tab', tab);
-      return next;
-    });
-  };
-
-  // Sync selected community with URL search params
+  // Sync selected community with URL
   const handleSelectGuild = (guildId) => {
     setSelectedGuildId(guildId);
+    setActiveWorkspaceTab('feed');
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       next.set('community', guildId);
@@ -183,15 +215,10 @@ export default function CommunitiesPage({ session }) {
     });
   };
 
-  // Load communities & memberships
-  useEffect(() => {
-    fetchData();
-  }, [session?.user?.id]);
-
+  // 1. Fetch Communities & User Memberships from Database
   const fetchData = async () => {
     setLoading(true);
     try {
-      // 1. Fetch live communities from Supabase with creator profiles
       const { data: comms, error: commsErr } = await supabase
         .from('communities')
         .select('*, profiles:creator_id(id, username, avatar_url, bio)')
@@ -199,93 +226,29 @@ export default function CommunitiesPage({ session }) {
 
       if (comms && !commsErr) {
         setDbCommunities(comms);
-
-        // Auto-seed core technical guilds to live PostgreSQL if only 1 community exists
-        if (session?.user?.id && comms.length <= 1) {
-          const coreGuilds = [
-            {
-              creator_id: session.user.id,
-              name: 'Zero-Trust Security & DevSecOps',
-              slug: 'zero-trust-sec',
-              category: 'Security',
-              icon: '🛡️',
-              banner_url:
-                'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&w=1200&q=80',
-              description:
-                'The premier hub for vulnerability triage, automated CWE mitigation, AST fuzzing, static analysis, and zero-trust secrets scanning pipelines.',
-              tags: ['DevSecOps', 'Zero-Trust', 'CWE-Audit', 'Rust', 'eBPF'],
-              member_count: 42,
-              is_private: false,
-            },
-            {
-              creator_id: session.user.id,
-              name: 'Autonomous AI & Multi-Agent Labs',
-              slug: 'ai-agents-lab',
-              category: 'AI & ML',
-              icon: '🤖',
-              banner_url:
-                'https://images.unsplash.com/photo-1620712943543-bcc4688e7485?auto=format&fit=crop&w=1200&q=80',
-              description:
-                'Architecting next-gen agentic workflows with Groq Llama 3.3, LangChain, vector retrieval (RAG), tool calling, and local small language models.',
-              tags: ['Llama-3.3', 'Groq', 'LangGraph', 'PyTorch', 'RAG'],
-              member_count: 67,
-              is_private: false,
-            },
-            {
-              creator_id: session.user.id,
-              name: 'Rust Core & Systems Engineering',
-              slug: 'rust-systems',
-              category: 'Systems',
-              icon: '⚡',
-              banner_url:
-                'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=80',
-              description:
-                'High-performance systems programming, WebAssembly micro-engines, memory safety without GC, async concurrency with Tokio, and Linux kernel hacking.',
-              tags: ['Rust', 'Wasm', 'Tokio', 'Memory-Safety', 'Linux'],
-              member_count: 31,
-              is_private: false,
-            },
-          ];
-
-          for (const g of coreGuilds) {
-            if (!comms.some((c) => c.slug === g.slug || c.name === g.name)) {
-              await supabase.from('communities').insert(g);
-            }
-          }
-
-          const { data: updatedComms } = await supabase
-            .from('communities')
-            .select('*, profiles:creator_id(id, username, avatar_url, bio)')
-            .order('created_at', { ascending: false });
-
-          if (updatedComms) setDbCommunities(updatedComms);
+        if (!selectedGuildId && comms.length > 0) {
+          setSelectedGuildId(comms[0].id);
         }
       }
 
-      // 2. Fetch live memberships from Supabase
-      const joinedSet = new Set();
-      const rolesMap = {};
-      const { data: memberships } = await supabase
-        .from('community_members')
-        .select('community_id, user_id, role');
+      // Fetch memberships
+      if (session?.user?.id) {
+        const { data: memberships } = await supabase
+          .from('community_members')
+          .select('community_id, user_id, role')
+          .eq('user_id', session.user.id);
 
-      if (memberships && session?.user?.id) {
-        memberships
-          .filter((m) => m.user_id === session.user.id)
-          .forEach((m) => {
+        if (memberships) {
+          const joinedSet = new Set();
+          const rolesMap = {};
+          memberships.forEach((m) => {
             joinedSet.add(m.community_id);
             rolesMap[m.community_id] = m.role || 'member';
           });
+          setJoined(joinedSet);
+          setUserRoles(rolesMap);
+        }
       }
-
-      // Fallback local cache if offline
-      if (joinedSet.size === 0) {
-        const localJoined = JSON.parse(localStorage.getItem('connectra_joined_communities') || '[]');
-        localJoined.forEach((id) => joinedSet.add(id));
-      }
-
-      setJoined(joinedSet);
-      setUserRoles(rolesMap);
     } catch (err) {
       console.warn('Communities fetch notice:', err);
     } finally {
@@ -293,119 +256,360 @@ export default function CommunitiesPage({ session }) {
     }
   };
 
-  // Merge Curated Guilds + Database Communities (preferring database records)
-  const allCommunities = useMemo(() => {
-    const list = [];
-    const seenSlugs = new Set();
-
-    // 1. Add database communities first
-    dbCommunities.forEach((dbC) => {
-      const slug = dbC.slug || dbC.name.toLowerCase().replace(/\s+/g, '-');
-      seenSlugs.add(slug);
-      seenSlugs.add(dbC.id);
-
-      list.push({
-        id: dbC.id,
-        name: dbC.name,
-        slug,
-        category: dbC.category || 'Security',
-        icon: dbC.icon || '🛡️',
-        banner_url:
-          dbC.banner_url ||
-          'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&w=1200&q=80',
-        description: dbC.description || 'Developer community on Connectra.',
-        tags: Array.isArray(dbC.tags) ? dbC.tags : ['General', 'Development'],
-        member_count: dbC.member_count || 1,
-        is_private: !!dbC.is_private,
-        is_verified: true,
-        active_now: dbC.member_count || 1,
-        creator: dbC.profiles || {
-          username: 'community_member',
-          avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
-          bio: 'Community Member',
-        },
-        rules: [
-          'Be respectful, helpful, and constructive in all discussions.',
-          'Share relevant code snippets, solutions, and questions.',
-          'No credentials, unverified exploits, or spam links.',
-        ],
-        resources: [
-          { title: 'Community Guidelines', type: 'Doc', url: 'https://connectra.dev' },
-        ],
-        created_at: dbC.created_at,
-        is_database: true,
-      });
-    });
-
-    // 2. Add curated templates for any not yet created in the database
-    CURATED_COMMUNITIES.forEach((c) => {
-      if (!seenSlugs.has(c.slug) && !seenSlugs.has(c.id)) {
-        list.push(c);
-      }
-    });
-
-    return list;
-  }, [dbCommunities]);
-
-  // Set default selected community once communities load
   useEffect(() => {
-    if (!selectedGuildId && allCommunities.length > 0) {
-      setSelectedGuildId(allCommunities[0].id);
-    }
-  }, [allCommunities, selectedGuildId]);
+    fetchData();
+  }, [session?.user?.id]);
 
-  // The active selected community in feed
+  // The active selected community
   const activeGuild = useMemo(() => {
-    if (selectedGuildId === 'all') return null;
-    if (!allCommunities || allCommunities.length === 0) return null;
+    if (!dbCommunities || dbCommunities.length === 0) return null;
     return (
-      allCommunities.find(
-        (c) =>
-          c.id === selectedGuildId ||
-          c.slug === selectedGuildId ||
-          (c.slug === 'zero-trust-sec' && (selectedGuildId === 'guild-zerotrust-sec' || selectedGuildId === '00000000-0000-4000-a000-000000000001')) ||
-          (c.slug === 'ai-agents-lab' && (selectedGuildId === 'guild-ai-agents' || selectedGuildId === '00000000-0000-4000-a000-000000000002'))
-      ) || allCommunities[0]
+      dbCommunities.find(
+        (c) => c.id === selectedGuildId || c.slug === selectedGuildId
+      ) || dbCommunities[0]
     );
-  }, [allCommunities, selectedGuildId]);
+  }, [dbCommunities, selectedGuildId]);
 
-  // Joined communities list
-  const myJoinedGuilds = useMemo(() => {
-    return allCommunities.filter((c) => joined.has(c.id));
-  }, [allCommunities, joined]);
+  // Sync edit form with active guild
+  useEffect(() => {
+    if (activeGuild) {
+      setEditForm({
+        name: activeGuild.name || '',
+        description: activeGuild.description || '',
+        category: activeGuild.category || 'Security',
+        tags: Array.isArray(activeGuild.tags) ? activeGuild.tags.join(', ') : (activeGuild.tags || ''),
+        is_private: !!activeGuild.is_private,
+      });
+    }
+  }, [activeGuild]);
 
-  // Current user access & role in active community
+  // Current user admin & join status
   const isCurrentJoined = useMemo(() => {
     if (!activeGuild) return false;
-    return (
-      joined.has(activeGuild.id) ||
-      joined.has(activeGuild.slug) ||
-      (activeGuild.slug === 'zero-trust-sec' && (joined.has('guild-zerotrust-sec') || joined.has('00000000-0000-4000-a000-000000000001'))) ||
-      (activeGuild.slug === 'ai-agents-lab' && (joined.has('guild-ai-agents') || joined.has('00000000-0000-4000-a000-000000000002')))
-    );
+    return joined.has(activeGuild.id) || joined.has(activeGuild.slug);
   }, [activeGuild, joined]);
 
   const isCurrentAdmin = useMemo(() => {
     if (!session?.user?.id || !activeGuild) return false;
     const role = userRoles[activeGuild.id] || userRoles[activeGuild.slug];
     const isOwnerByRole = role === 'owner' || role === 'admin' || role === 'moderator';
-    const isOwnerByCreator = activeGuild.creator_id === session.user.id || activeGuild.creator?.id === session.user.id;
+    const isOwnerByCreator = activeGuild.creator_id === session.user.id || activeGuild.profiles?.id === session.user.id;
     return isOwnerByRole || isOwnerByCreator;
   }, [session?.user?.id, activeGuild, userRoles]);
 
-  // Admin Actions: Edit Community
-  const handleOpenEdit = (comm) => {
-    if (!comm) return;
-    setEditForm({
-      name: comm.name || '',
-      description: comm.description || '',
-      category: comm.category || 'Security',
-      icon: comm.icon || '🛡️',
-      tags: Array.isArray(comm.tags) ? comm.tags.join(', ') : (comm.tags || ''),
-    });
-    setShowEditModal(true);
+  // 2. Fetch Members of Active Community from Database
+  const loadMembers = async (commId) => {
+    if (!commId) return;
+    setLoadingMembers(true);
+    try {
+      const { data: membersData, error: memErr } = await supabase
+        .from('community_members')
+        .select('id, role, joined_at, user_id')
+        .eq('community_id', commId)
+        .order('joined_at', { ascending: false });
+
+      if (membersData && !memErr) {
+        const userIds = [...new Set(membersData.map((m) => m.user_id).filter(Boolean))];
+        let profilesMap = {};
+        if (userIds.length > 0) {
+          const { data: profs } = await supabase
+            .from('profiles')
+            .select('id, username, full_name, avatar_url, bio, xp, level, tech_stack')
+            .in('id', userIds);
+
+          (profs || []).forEach((p) => {
+            profilesMap[p.id] = p;
+          });
+        }
+
+        const normalized = membersData.map((m) => ({
+          ...m,
+          profile: profilesMap[m.user_id] || {
+            username: 'developer',
+            full_name: 'Developer',
+            avatar_url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100',
+            xp: 0,
+            level: 1,
+          },
+        }));
+
+        setGuildMembers(normalized);
+      } else {
+        setGuildMembers([]);
+      }
+    } catch (err) {
+      console.warn('Error loading community members:', err);
+    } finally {
+      setLoadingMembers(false);
+    }
   };
 
+  useEffect(() => {
+    if (activeGuild?.id && (activeWorkspaceTab === 'members' || activeWorkspaceTab === 'settings')) {
+      loadMembers(activeGuild.id);
+    }
+  }, [activeGuild?.id, activeWorkspaceTab]);
+
+  // 3. User Search in Invite Modal
+  const handleSearchUsers = async (searchTerm) => {
+    setUserSearchQuery(searchTerm);
+    if (!searchTerm.trim()) {
+      setUserSearchResults([]);
+      return;
+    }
+    setSearchingUsers(true);
+    try {
+      const { data: users, error } = await supabase
+        .from('profiles')
+        .select('id, username, full_name, avatar_url, bio, tech_stack')
+        .or(`username.ilike.%${searchTerm.trim()}%,full_name.ilike.%${searchTerm.trim()}%`)
+        .limit(8);
+
+      if (!error && users) {
+        setUserSearchResults(users);
+      }
+    } catch (err) {
+      console.warn('User search error:', err);
+    } finally {
+      setSearchingUsers(false);
+    }
+  };
+
+  // 4. Add / Invite Member Directly to Community
+  const handleAddMember = async (targetUserId) => {
+    if (!activeGuild) return;
+    setAddingUserId(targetUserId);
+    try {
+      const { error } = await supabase
+        .from('community_members')
+        .insert({
+          community_id: activeGuild.id,
+          user_id: targetUserId,
+          role: selectedRoleToAssign,
+        });
+
+      if (error) {
+        if (error.message?.includes('unique') || error.code === '23505') {
+          toast.info('This developer is already a member of this community.');
+          return;
+        }
+        if (error.message?.includes('row-level security') || error.code === '42501') {
+          toast.error('Blocked by Supabase RLS: Run the updated Section 4 query in seed_communities.sql in your Supabase SQL Editor to allow admins to add members.');
+          return;
+        }
+        throw error;
+      }
+
+      // Update database member_count safely
+      try {
+        await supabase
+          .from('communities')
+          .update({ member_count: (activeGuild.member_count || 0) + 1 })
+          .eq('id', activeGuild.id);
+      } catch (countErr) {
+        console.warn('Member count increment notice:', countErr);
+      }
+
+      toast.success('Member successfully added to community.');
+      await loadMembers(activeGuild.id);
+      fetchData();
+    } catch (err) {
+      toast.error('Failed to add member: ' + err.message);
+    } finally {
+      setAddingUserId(null);
+    }
+  };
+
+  // 5. Change Member Role (Admin Action)
+  const handleChangeRole = async (memberId, newRole) => {
+    try {
+      const { error } = await supabase
+        .from('community_members')
+        .update({ role: newRole })
+        .eq('id', memberId);
+
+      if (error) {
+        if (error.message?.includes('row-level security') || error.code === '42501') {
+          toast.error('Blocked by Supabase RLS: Run Section 4 in seed_communities.sql in your Supabase SQL Editor.');
+          return;
+        }
+        throw error;
+      }
+      toast.success(`Role updated to ${newRole}.`);
+      setGuildMembers((prev) =>
+        prev.map((m) => (m.id === memberId ? { ...m, role: newRole } : m))
+      );
+    } catch (err) {
+      toast.error('Failed to update role: ' + err.message);
+    }
+  };
+
+  // 6. Remove Member from Community (Admin Action)
+  const handleRemoveMember = async (memberId, memberUserId) => {
+    if (!confirm('Are you sure you want to remove this member from the community?')) return;
+    try {
+      const { error } = await supabase
+        .from('community_members')
+        .delete()
+        .eq('id', memberId);
+
+      if (error) {
+        if (error.message?.includes('row-level security') || error.code === '42501') {
+          toast.error('Blocked by Supabase RLS: Run Section 4 in seed_communities.sql in your Supabase SQL Editor.');
+          return;
+        }
+        throw error;
+      }
+
+      await supabase
+        .from('communities')
+        .update({ member_count: Math.max(0, (activeGuild.member_count || 1) - 1) })
+        .eq('id', activeGuild.id);
+
+      toast.success('Member removed from community.');
+      setGuildMembers((prev) => prev.filter((m) => m.id !== memberId));
+      fetchData();
+    } catch (err) {
+      toast.error('Failed to remove member: ' + err.message);
+    }
+  };
+
+  // 7. Join / Leave Community
+  const toggleJoin = async (community, e) => {
+    if (e) e.stopPropagation();
+    if (!session?.user?.id) {
+      toast.error('Please sign in to join communities.');
+      return;
+    }
+
+    const isJoined = joined.has(community.id);
+    const newJoined = new Set(joined);
+    setJoiningId(community.id);
+
+    try {
+      if (isJoined) {
+        newJoined.delete(community.id);
+        setJoined(newJoined);
+
+        await supabase
+          .from('community_members')
+          .delete()
+          .eq('community_id', community.id)
+          .eq('user_id', session.user.id);
+
+        setUserRoles((prev) => {
+          const n = { ...prev };
+          delete n[community.id];
+          return n;
+        });
+
+        await supabase
+          .from('communities')
+          .update({ member_count: Math.max(0, (community.member_count || 1) - 1) })
+          .eq('id', community.id);
+
+        toast.success(`Left ${community.name}`);
+      } else {
+        newJoined.add(community.id);
+        setJoined(newJoined);
+
+        await supabase
+          .from('community_members')
+          .insert({
+            community_id: community.id,
+            user_id: session.user.id,
+            role: 'member',
+          });
+
+        setUserRoles((prev) => ({
+          ...prev,
+          [community.id]: 'member',
+        }));
+
+        await supabase
+          .from('communities')
+          .update({ member_count: (community.member_count || 0) + 1 })
+          .eq('id', community.id);
+
+        toast.success(`Welcome to ${community.name}! Joined successfully.`);
+      }
+      fetchData();
+    } catch (err) {
+      toast.error('Failed to update membership: ' + err.message);
+    } finally {
+      setJoiningId(null);
+    }
+  };
+
+  // 8. Create Community
+  const handleCreateCommunity = async (e) => {
+    e.preventDefault();
+    if (!createForm.name.trim()) {
+      toast.error('Community name is required.');
+      return;
+    }
+
+    const slug = createForm.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    const tagArray = createForm.tags
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean);
+
+    setSubmittingCreate(true);
+    try {
+      const newCommObj = {
+        name: createForm.name.trim(),
+        slug,
+        description: createForm.description.trim(),
+        category: createForm.category || 'Security',
+        tags: tagArray.length > 0 ? tagArray : ['Engineering', 'OpenSource'],
+        is_private: createForm.is_private,
+        member_count: 1,
+        creator_id: session?.user?.id || null,
+      };
+
+      const { data, error } = await supabase
+        .from('communities')
+        .insert(newCommObj)
+        .select()
+        .single();
+
+      if (error) {
+        if (error.message.includes('unique')) {
+          toast.error('A community with this name or slug already exists.');
+          return;
+        }
+        throw error;
+      }
+
+      if (data && session?.user?.id) {
+        await supabase.from('community_members').insert({
+          community_id: data.id,
+          user_id: session.user.id,
+          role: 'owner',
+        });
+      }
+
+      toast.success(`Community "${data.name}" created successfully.`);
+      setShowCreateModal(false);
+      setCreateForm({
+        name: '',
+        description: '',
+        category: 'Security',
+        tags: 'DevSecOps, ZeroTrust',
+        is_private: false,
+      });
+
+      fetchData();
+      handleSelectGuild(data.id);
+    } catch (err) {
+      toast.error('Failed to create community: ' + err.message);
+    } finally {
+      setSubmittingCreate(false);
+    }
+  };
+
+  // 9. Save Community Edits (Admin)
   const handleSaveEdit = async (e) => {
     e.preventDefault();
     if (!activeGuild) return;
@@ -420,1611 +624,1134 @@ export default function CommunitiesPage({ session }) {
         name: editForm.name.trim(),
         description: editForm.description.trim(),
         category: editForm.category,
-        icon: editForm.icon,
         tags: tagArray.length > 0 ? tagArray : ['Development'],
+        is_private: editForm.is_private,
       };
 
-      if (activeGuild.is_database) {
-        const { error } = await supabase
-          .from('communities')
-          .update(updateObj)
-          .eq('id', activeGuild.id);
+      const { error } = await supabase
+        .from('communities')
+        .update(updateObj)
+        .eq('id', activeGuild.id);
 
-        if (error) throw error;
+      if (error) {
+        if (error.message?.includes('row-level security') || error.code === '42501') {
+          toast.error('Blocked by Supabase RLS: Run Section 4 in seed_communities.sql in your Supabase SQL Editor.');
+          return;
+        }
+        throw error;
       }
 
-      setDbCommunities((prev) =>
-        prev.map((c) => (c.id === activeGuild.id ? { ...c, ...updateObj } : c))
-      );
-
-      toast.success('Community details updated! ✨');
-      setShowEditModal(false);
+      toast.success('Community settings saved successfully.');
       fetchData();
+      setActiveWorkspaceTab('feed');
     } catch (err) {
-      toast.error('Failed to update community: ' + err.message);
+      toast.error('Failed to save settings: ' + err.message);
     } finally {
       setSavingEdit(false);
     }
   };
 
-  const handleDeleteCommunity = async (comm) => {
-    if (!confirm(`Are you sure you want to permanently delete "${comm.name}" and all of its posts? This cannot be undone.`)) return;
+  // 10. Delete Community (Admin)
+  const handleDeleteCommunity = async () => {
+    if (!activeGuild) return;
+    if (!confirm(`Are you sure you want to permanently delete "${activeGuild.name}" and all of its posts? This action is irreversible.`)) return;
     try {
-      if (comm.is_database) {
-        await supabase.from('posts').delete().eq('community_id', comm.id);
-        await supabase.from('community_members').delete().eq('community_id', comm.id);
-        const { error } = await supabase.from('communities').delete().eq('id', comm.id);
-        if (error) throw error;
+      await supabase.from('posts').delete().eq('community_id', activeGuild.id);
+      await supabase.from('community_members').delete().eq('community_id', activeGuild.id);
+      const { error } = await supabase.from('communities').delete().eq('id', activeGuild.id);
+      if (error) {
+        if (error.message?.includes('row-level security') || error.code === '42501') {
+          toast.error('Blocked by Supabase RLS: Run Section 4 in seed_communities.sql in your Supabase SQL Editor.');
+          return;
+        }
+        throw error;
       }
 
-      toast.success(`Community "${comm.name}" deleted.`);
-      setDbCommunities((prev) => prev.filter((c) => c.id !== comm.id));
-      setSelectedGuildId('all');
+      toast.success(`Community "${activeGuild.name}" deleted.`);
       fetchData();
     } catch (err) {
       toast.error('Failed to delete community: ' + err.message);
     }
   };
 
-  // Handle Join / Leave (100% Supabase Backend Connected)
-  const toggleJoin = async (community, e) => {
-    if (e) e.stopPropagation();
-    if (!session?.user?.id) {
-      toast.error('Please sign in to join communities');
-      return;
-    }
-
-    const isJoined = joined.has(community.id);
-    const newJoined = new Set(joined);
-    setJoiningId(community.id);
-
-    try {
-      if (isJoined) {
-        newJoined.delete(community.id);
-        setJoined(newJoined);
-        localStorage.setItem('connectra_joined_communities', JSON.stringify([...newJoined]));
-
-        // Direct Supabase community_members delete
-        await supabase
-          .from('community_members')
-          .delete()
-          .eq('community_id', community.id)
-          .eq('user_id', session.user.id);
-
-        setUserRoles((prev) => {
-          const n = { ...prev };
-          delete n[community.id];
-          return n;
-        });
-
-        // Update database member_count if real DB record
-        if (community.is_database) {
-          await supabase
-            .from('communities')
-            .update({ member_count: Math.max(0, (community.member_count || 1) - 1) })
-            .eq('id', community.id);
-        }
-
-        toast.success(`Left ${community.name}`);
-      } else {
-        newJoined.add(community.id);
-        setJoined(newJoined);
-        localStorage.setItem('connectra_joined_communities', JSON.stringify([...newJoined]));
-
-        // Direct Supabase community_members insert
-        const { error: joinErr } = await supabase
-          .from('community_members')
-          .insert({
-            community_id: community.id,
-            user_id: session.user.id,
-            role: 'member',
-          });
-
-        if (joinErr && !joinErr.message.includes('unique')) {
-          console.warn('Membership insert notice:', joinErr.message);
-        }
-
-        setUserRoles((prev) => ({
-          ...prev,
-          [community.id]: 'member',
-        }));
-
-        // Update database member_count if real DB record
-        if (community.is_database) {
-          await supabase
-            .from('communities')
-            .update({ member_count: (community.member_count || 0) + 1 })
-            .eq('id', community.id);
-        }
-
-        toast.success(`Welcome to ${community.name}! Joined in database. 🎉`);
-      }
-    } catch (err) {
-      console.warn('Membership error:', err);
-      toast.error('Failed to update membership in database: ' + err.message);
-    } finally {
-      setJoiningId(null);
-    }
+  // Copy Community Invite Link
+  const handleCopyInviteLink = () => {
+    const url = `${window.location.origin}/communities?community=${activeGuild?.id}`;
+    navigator.clipboard.writeText(url);
+    toast.success('Community invite link copied to clipboard.');
   };
 
-  // Handle Create Community
-  const handleCreate = async (e) => {
-    e.preventDefault();
-    if (!form.name.trim()) {
-      toast.error('Community name is required');
-      return;
-    }
+  // Guild Directory Counts
+  const totalGuildsCount = dbCommunities.length;
+  const joinedCount = useMemo(() => dbCommunities.filter((c) => joined.has(c.id)).length, [dbCommunities, joined]);
+  const managedCount = useMemo(
+    () =>
+      dbCommunities.filter(
+        (c) =>
+          c.creator_id === session?.user?.id ||
+          userRoles[c.id] === 'owner' ||
+          userRoles[c.id] === 'admin'
+      ).length,
+    [dbCommunities, session?.user?.id, userRoles]
+  );
 
-    const slug = form.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-    const tagArray = form.tags
-      .split(',')
-      .map((t) => t.trim())
-      .filter(Boolean);
-
-    setSubmitting(true);
-    try {
-      const newCommObj = {
-        name: form.name.trim(),
-        slug,
-        description: form.description.trim(),
-        category: form.category || 'Security',
-        icon: form.icon || '🛡️',
-        tags: tagArray.length > 0 ? tagArray : ['DevSecOps', 'OpenSource'],
-        is_private: form.is_private,
-        member_count: 1,
-        creator_id: session?.user?.id || null,
-      };
-
-      let createdData = null;
-
-      if (session?.user?.id) {
-        const { data, error } = await supabase
-          .from('communities')
-          .insert(newCommObj)
-          .select()
-          .single();
-
-        if (error) {
-          if (error.message.includes('unique')) {
-            toast.error('A community with this name already exists. Please choose another.');
-            setSubmitting(false);
-            return;
-          }
-          console.warn('Supabase community insert warning:', error);
-        } else {
-          createdData = data;
-          await supabase.from('community_members').insert({
-            community_id: data.id,
-            user_id: session.user.id,
-            role: 'owner',
-          });
-        }
+  // Filtered Left Rail Communities (Segmented, Searchable, Sorted)
+  const filteredRailCommunities = useMemo(() => {
+    let list = dbCommunities.filter((c) => {
+      // 1. Segment filter
+      if (railSegment === 'joined' && !joined.has(c.id)) return false;
+      if (railSegment === 'managed') {
+        const isManager =
+          c.creator_id === session?.user?.id ||
+          userRoles[c.id] === 'owner' ||
+          userRoles[c.id] === 'admin';
+        if (!isManager) return false;
       }
 
-      const finalComm = createdData || {
-        ...newCommObj,
-        id: 'user-comm-' + Date.now(),
-        active_now: 1,
-        created_at: new Date().toISOString(),
-      };
-
-      setDbCommunities((prev) => [finalComm, ...prev]);
-      setJoined((prev) => {
-        const s = new Set(prev);
-        s.add(finalComm.id);
-        localStorage.setItem('connectra_joined_communities', JSON.stringify([...s]));
-        return s;
-      });
-      window.dispatchEvent(new Event('refreshCommunities'));
-
-      setShowForm(false);
-      setForm({
-        name: '',
-        description: '',
-        category: 'Security',
-        icon: '🛡️',
-        tags: 'ZeroTrust, OpenSource',
-        is_private: false,
-      });
-
-      toast.success('Community created successfully!');
-      setSelectedGuildId(finalComm.id);
-      setActiveTab('workspace');
-    } catch (err) {
-      toast.error('Failed to create community: ' + err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Filter & Sort Logic for Explore Tab
-  const filteredCommunities = useMemo(() => {
-    let result = allCommunities.filter((c) => {
-      if (selectedCategory === 'joined') {
-        if (!joined.has(c.id)) return false;
-      } else if (selectedCategory !== 'all') {
-        if (c.category?.toLowerCase() !== selectedCategory.toLowerCase()) return false;
-      }
-
-      if (search.trim()) {
-        const q = search.toLowerCase();
-        const matchesName = c.name.toLowerCase().includes(q);
-        const matchesDesc = (c.description || '').toLowerCase().includes(q);
-        const matchesTags = (c.tags || []).some((t) => t.toLowerCase().includes(q));
+      // 2. Search filter
+      if (guildSearch && guildSearch.trim()) {
+        const q = guildSearch.toLowerCase();
+        const matchesName = c.name?.toLowerCase().includes(q);
+        const matchesDesc = c.description?.toLowerCase().includes(q);
+        const matchesTags = Array.isArray(c.tags)
+          ? c.tags.some((t) => String(t).toLowerCase().includes(q))
+          : String(c.tags || '').toLowerCase().includes(q);
         if (!matchesName && !matchesDesc && !matchesTags) return false;
+      }
+
+      // 3. Category filter
+      if (guildCategoryFilter !== 'all' && c.category !== guildCategoryFilter) {
+        return false;
       }
 
       return true;
     });
 
-    result.sort((a, b) => {
-      if (sortBy === 'active') return (b.active_now || 0) - (a.active_now || 0);
-      if (sortBy === 'name') return a.name.localeCompare(b.name);
-      return (b.member_count || 0) - (a.member_count || 0);
-    });
-
-    return result;
-  }, [allCommunities, selectedCategory, search, sortBy, joined]);
-
-  // Featured Guild (Spotlight)
-  const featuredGuild = allCommunities[0];
-
-  // Copy Guild Link
-  const handleShare = (comm, e) => {
-    if (e) e.stopPropagation();
-    const url = `${window.location.origin}/communities/${comm.id}`;
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(url);
-      toast.success(`Copied link to ${comm.name}!`);
+    // 4. Sort
+    if (guildSort === 'newest') {
+      list.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    } else if (guildSort === 'alphabetical') {
+      list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     } else {
-      toast.info(`Community link: ${url}`);
+      list.sort((a, b) => (b.member_count || 0) - (a.member_count || 0));
     }
-  };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#faf6f0] dark:bg-[#150f0c] text-[#1c130d] dark:text-[#faf6f0]">
-        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 py-8 space-y-6">
-          <div className="h-44 rounded-3xl bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] animate-pulse" />
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[1, 2, 3, 4, 5, 6].map((i) => (
-              <CardSkeleton key={i} />
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
+    return list;
+  }, [
+    dbCommunities,
+    railSegment,
+    guildSearch,
+    guildCategoryFilter,
+    guildSort,
+    joined,
+    userRoles,
+    session?.user?.id,
+  ]);
+
+  // Filtered Members in Roster Tab
+  const filteredRosterMembers = useMemo(() => {
+    return guildMembers.filter((m) => {
+      const matchesRole =
+        memberRoleFilter === 'all' ? true :
+        memberRoleFilter === 'admins' ? (m.role === 'owner' || m.role === 'admin' || m.role === 'moderator') :
+        m.role === memberRoleFilter;
+
+      const q = memberSearchQuery.toLowerCase();
+      const matchesSearch = q
+        ? m.profile?.username?.toLowerCase().includes(q) ||
+          m.profile?.full_name?.toLowerCase().includes(q) ||
+          m.profile?.bio?.toLowerCase().includes(q)
+        : true;
+
+      return matchesRole && matchesSearch;
+    });
+  }, [guildMembers, memberRoleFilter, memberSearchQuery]);
 
   return (
-    <div className="min-h-screen bg-[#faf6f0] dark:bg-[#150f0c] text-[#1c130d] dark:text-[#faf6f0] transition-colors duration-200 pb-20">
-      <div className="max-w-[1440px] mx-auto px-4 sm:px-6 py-6 space-y-6">
+    <div className="min-h-screen bg-[#faf6f0] dark:bg-[#150f0c] text-[#1c130d] dark:text-[#faf6f0] transition-colors duration-200 pb-20 select-none">
+      <div className="max-w-[1440px] mx-auto px-3 sm:px-6 py-6 space-y-6">
 
         {/* =========================================================================
-            1. COMMUNITY PANEL HERO BANNER
+            TOP WORKSPACE BAR: SAAS BREADCRUMB & PRIMARY ACTION
             ========================================================================= */}
-        <motion.div
-          initial={{ opacity: 0, y: -15 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="relative overflow-hidden rounded-3xl p-6 sm:p-7 bg-gradient-to-br from-[#fffcf7] via-white to-[#fff4e6] dark:from-[#1f1813] dark:via-[#1a1410] dark:to-[#2b1f17] border border-[#f1e4d3] dark:border-[#3d2e24] shadow-md shadow-orange-500/5"
-        >
-          <div className="absolute -right-20 -top-20 w-80 h-80 rounded-full bg-orange-400/10 blur-3xl pointer-events-none" />
-          <div className="absolute -left-20 -bottom-20 w-80 h-80 rounded-full bg-purple-500/10 blur-3xl pointer-events-none" />
-
-          <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-            <div className="space-y-2.5 max-w-2xl">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-orange-100 dark:bg-orange-950/60 text-[#ea580c] dark:text-orange-400 border border-orange-200 dark:border-orange-800">
-                <Users size={14} strokeWidth={2.5} />
-                <span>Developer Communities</span>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#f1e4d3] dark:border-[#33261d] pb-4">
+          <div className="flex items-center gap-3">
+            <span className="w-10 h-10 rounded-2xl bg-orange-500/10 text-orange-600 dark:text-orange-400 flex items-center justify-center border border-orange-500/20">
+              <Terminal size={20} />
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl sm:text-2xl font-black text-[#1c130d] dark:text-white">
+                  Engineering Communities
+                </h1>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white dark:bg-[#281f18] text-[#8d7565] border border-[#f1e4d3] dark:border-[#382b22] font-bold">
+                  {dbCommunities.length} Active
+                </span>
               </div>
-              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-[#1c130d] dark:text-white">
-                Communities
-              </h1>
-              <p className="text-xs sm:text-sm text-[#6b5546] dark:text-[#c4aba0] leading-relaxed">
-                Join developer communities, share technical knowledge, ask questions, and collaborate with peers.
+              <p className="text-xs text-[#6b5546] dark:text-[#c4aba0]">
+                Specialized technical guilds for code collaboration, security audits, and systems architecture.
               </p>
-
-              <div className="flex flex-wrap items-center gap-2.5 pt-1 text-xs">
-                <span className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] shadow-2xs">
-                  <Layers size={13} className="text-[#ea580c]" />
-                  <strong className="font-bold text-[#1c130d] dark:text-white">{allCommunities.length}</strong>
-                  <span className="text-[#8d7565] dark:text-[#a89080]">Communities</span>
-                </span>
-
-                <span className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] shadow-2xs">
-                  <CheckCircle2 size={13} className="text-emerald-600" />
-                  <strong className="font-bold text-[#1c130d] dark:text-white">{joined.size}</strong>
-                  <span className="text-[#8d7565] dark:text-[#a89080]">Joined</span>
-                </span>
-              </div>
-            </div>
-
-            <div className="flex flex-col sm:flex-row lg:flex-col gap-3 shrink-0">
-              <button
-                onClick={() => setShowForm(true)}
-                className="px-5 py-2.5 rounded-2xl text-xs sm:text-sm font-bold text-white bg-gradient-to-r from-[#ea580c] via-[#f97316] to-[#fb923c] hover:brightness-105 flex items-center justify-center gap-2 shadow-md shadow-orange-500/25 transition-all cursor-pointer active:scale-98"
-              >
-                <Plus size={16} strokeWidth={2.5} />
-                <span>Create Community</span>
-              </button>
             </div>
           </div>
-        </motion.div>
 
-        {/* =========================================================================
-            2. PANEL MODE TABS
-            ========================================================================= */}
-        <div className="flex items-center gap-2 border-b border-[#f1e4d3] dark:border-[#33261d] pb-2 overflow-x-auto no-scrollbar">
-          <button
-            onClick={() => handleTabChange('workspace')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer ${
-              activeTab === 'workspace'
-                ? 'bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white shadow-md shadow-orange-500/20'
-                : 'bg-white dark:bg-[#1f1813] text-[#8d7565] dark:text-[#a89080] hover:text-[#1c130d] dark:hover:text-white border border-[#f1e4d3] dark:border-[#382b22]'
-            }`}
-          >
-            <MessageSquare size={16} />
-            <span>Discussions & Feed</span>
-          </button>
-
-          <button
-            onClick={() => handleTabChange('explore')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer ${
-              activeTab === 'explore'
-                ? 'bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white shadow-md shadow-orange-500/20'
-                : 'bg-white dark:bg-[#1f1813] text-[#8d7565] dark:text-[#a89080] hover:text-[#1c130d] dark:hover:text-white border border-[#f1e4d3] dark:border-[#382b22]'
-            }`}
-          >
-            <Globe size={16} />
-            <span>Explore All ({allCommunities.length})</span>
-          </button>
-
-          <button
-            onClick={() => handleTabChange('my-guilds')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer ${
-              activeTab === 'my-guilds'
-                ? 'bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white shadow-md shadow-orange-500/20'
-                : 'bg-white dark:bg-[#1f1813] text-[#8d7565] dark:text-[#a89080] hover:text-[#1c130d] dark:hover:text-white border border-[#f1e4d3] dark:border-[#382b22]'
-            }`}
-          >
-            <ShieldCheck size={16} />
-            <span>My Communities ({joined.size})</span>
-          </button>
-
-          <button
-            onClick={() => handleTabChange('leaderboard')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap cursor-pointer ${
-              activeTab === 'leaderboard'
-                ? 'bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white shadow-md shadow-orange-500/20'
-                : 'bg-white dark:bg-[#1f1813] text-[#8d7565] dark:text-[#a89080] hover:text-[#1c130d] dark:hover:text-white border border-[#f1e4d3] dark:border-[#382b22]'
-            }`}
-          >
-            <Award size={16} />
-            <span>Leaderboard</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="px-4 py-2 rounded-xl bg-[#ea580c] hover:bg-orange-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+            >
+              <Plus size={14} />
+              <span>Create Community</span>
+            </button>
+          </div>
         </div>
 
         {/* =========================================================================
-            3. TAB 1: COMMUNITY DISCUSSIONS & FEED
+            MAIN 2-COLUMN SAAS WORKSPACE (CLEAN & UNCLUTTERED)
             ========================================================================= */}
-        {activeTab === 'workspace' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
-            {/* LEFT COLUMN: COMMUNITIES SWITCHER (3 COLS) */}
-            <div className="lg:col-span-3 space-y-3">
-              <div className="bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] rounded-2xl p-3.5 shadow-xs flex flex-col gap-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-[#1c130d] dark:text-white flex items-center gap-1.5">
-                    <Terminal size={14} className="text-[#ea580c]" />
-                    <span>Communities</span>
-                  </h3>
-                  <span className="text-[10px] text-[#8d7565] font-mono">
-                    {allCommunities.length} total
-                  </span>
-                </div>
-
-                {/* Filter input */}
-                <div className="relative">
-                  <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8d7565]" />
-                  <input
-                    type="text"
-                    placeholder="Search communities..."
-                    value={guildSearch}
-                    onChange={(e) => setGuildSearch(e.target.value)}
-                    className="w-full text-xs pl-8 pr-3 py-1.5 rounded-xl bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#1c130d] dark:text-white placeholder:text-[#8d7565] focus:outline-none focus:border-[#ea580c]"
-                  />
-                </div>
-
-                {/* Category Filter Chips */}
-                <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
-                  {['all', 'Security', 'AI & ML', 'Systems', 'Web'].map((cat) => (
-                    <button
-                      key={cat}
-                      onClick={() => setGuildCategoryFilter(cat)}
-                      className={`px-2 py-0.8 rounded-lg text-[10px] font-bold transition-all whitespace-nowrap cursor-pointer ${
-                        guildCategoryFilter === cat
-                          ? 'bg-[#ea580c] text-white shadow-2xs'
-                          : 'bg-[#faf6f0] dark:bg-[#281f18] text-[#8d7565] hover:text-[#1c130d] dark:hover:text-white border border-[#f1e4d3] dark:border-[#382b22]'
-                      }`}
-                    >
-                      {cat === 'all' ? 'All' : cat}
-                    </button>
-                  ))}
-                </div>
-
-                {/* All Communities Unified Stream Option */}
-                <button
-                  onClick={() => handleSelectGuild('all')}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
-                    selectedGuildId === 'all'
-                      ? 'bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white shadow-xs'
-                      : 'text-[#6b5546] dark:text-[#a89080] hover:bg-[#fff7ed] dark:hover:bg-[#281f18] hover:text-[#1c130d] dark:hover:text-white'
-                  }`}
-                >
-                  <div className="w-7 h-7 rounded-lg bg-orange-100 dark:bg-orange-950/60 flex items-center justify-center text-sm shrink-0">
-                    🔥
+          {/* -----------------------------------------------------------------------
+              LEFT COLUMN: COMMUNITIES DISCOVERY RAIL (w-[290px] / 3.5 cols)
+              ----------------------------------------------------------------------- */}
+          <div className="lg:col-span-4 xl:col-span-3.5 space-y-3">
+            <div className="bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] rounded-2xl p-3.5 sm:p-4 shadow-xs space-y-3">
+              {/* Directory Header with Quick Create Action */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-orange-500/10 text-[#ea580c] flex items-center justify-center border border-orange-500/20">
+                    <Terminal size={14} />
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate">All Communities Stream</div>
-                    <div className="text-[10px] opacity-80 font-normal">Everything combined</div>
-                  </div>
-                </button>
-
-                <div className="h-px bg-[#f1e4d3] dark:bg-[#33261d] my-1" />
-
-                {/* Communities List */}
-                <div className="flex flex-col gap-1 max-h-[520px] overflow-y-auto no-scrollbar pr-0.5">
-                  {allCommunities
-                    .filter((c) => {
-                      const matchesSearch = guildSearch
-                        ? c.name.toLowerCase().includes(guildSearch.toLowerCase()) ||
-                          c.tags?.some((t) => t.toLowerCase().includes(guildSearch.toLowerCase()))
-                        : true;
-                      const matchesCategory =
-                        guildCategoryFilter === 'all' ? true : c.category === guildCategoryFilter;
-                      return matchesSearch && matchesCategory;
-                    })
-                    .map((comm) => {
-                      const isSelected = selectedGuildId === comm.id || selectedGuildId === comm.slug;
-                      const isUserJoined = joined.has(comm.id);
-
-                      return (
-                        <button
-                          key={comm.id}
-                          onClick={() => handleSelectGuild(comm.id)}
-                          className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl text-xs transition-all text-left cursor-pointer group ${
-                            isSelected
-                              ? 'bg-orange-100/80 dark:bg-[#2e231b] border border-orange-300 dark:border-orange-800 text-[#ea580c] font-bold shadow-2xs'
-                              : 'hover:bg-[#faf6f0] dark:hover:bg-[#281f18] text-[#6b5546] dark:text-[#a89080]'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className="w-7 h-7 rounded-lg bg-[#fff7ed] dark:bg-[#281f18] border border-[#fed7aa] dark:border-[#382b22] flex items-center justify-center shrink-0">
-                              {renderTechIcon(comm, 14)}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="truncate text-xs group-hover:text-[#1c130d] dark:group-hover:text-white font-semibold">
-                                {comm.name}
-                              </div>
-                              <div className="text-[10px] text-[#8d7565] dark:text-[#a89080]">
-                                <span>{comm.member_count || 1} members</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          {isUserJoined && (
-                            <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 shrink-0">
-                              Joined
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                </div>
-              </div>
-            </div>
-
-            {/* CENTER COLUMN: LIVE FEED & DISCUSSIONS STREAM (6 COLS) */}
-            <div className="lg:col-span-6 space-y-4">
-              {/* Header for the current community */}
-              <div className="bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] rounded-2xl p-4 shadow-xs flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-orange-500/10 via-amber-500/10 to-orange-500/5 dark:bg-[#281f18] border border-orange-200/80 dark:border-[#423124] flex items-center justify-center shrink-0 shadow-2xs">
-                    {activeGuild ? renderTechIcon(activeGuild, 22) : <Flame size={22} className="text-[#ea580c]" />}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <h2 className="text-base sm:text-lg font-black text-[#1c130d] dark:text-white truncate">
-                        {activeGuild ? activeGuild.name : 'All Communities Stream'}
-                      </h2>
-                      {activeGuild?.is_verified && (
-                        <ShieldCheck size={14} className="text-blue-500 shrink-0" fill="currentColor" />
-                      )}
-                      {activeGuild?.category && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#faf6f0] dark:bg-[#281f18] text-[#8d7565] border border-[#f1e4d3] dark:border-[#382b22]">
-                          {activeGuild.category}
-                        </span>
-                      )}
-                      {isCurrentAdmin && (
-                        <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-400 border border-amber-300 dark:border-amber-800 flex items-center gap-1">
-                          <Shield size={10} /> Admin
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-[#8d7565] dark:text-[#a89080] truncate mt-0.5">
-                      {activeGuild
-                        ? activeGuild.description
-                        : 'Discussions and updates from across all communities.'}
+                  <div>
+                    <h2 className="text-xs font-black uppercase tracking-wider text-[#1c130d] dark:text-white">
+                      Guild Directory
+                    </h2>
+                    <p className="text-[10px] text-[#8d7565]">
+                      {filteredRailCommunities.length} {filteredRailCommunities.length === 1 ? 'guild' : 'guilds'}
                     </p>
                   </div>
                 </div>
 
-                {activeGuild && (
-                  <button
-                    onClick={(e) => toggleJoin(activeGuild, e)}
-                    disabled={joiningId === activeGuild.id}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer shadow-xs flex items-center gap-1.5 ${
-                      joined.has(activeGuild.id)
-                        ? 'bg-[#faf6f0] dark:bg-[#281f18] text-[#8d7565] border border-[#f1e4d3] dark:border-[#382b22] hover:text-rose-600'
-                        : 'bg-gradient-to-r from-[#ea580c] via-[#f97316] to-[#fb923c] text-white hover:brightness-105 shadow-md shadow-orange-500/20'
-                    }`}
-                  >
-                    {joined.has(activeGuild.id) ? (
-                      <>
-                        <Check size={12} className="text-emerald-500" />
-                        <span>Joined</span>
-                      </>
-                    ) : (
-                      <>
-                        <Plus size={12} />
-                        <span>Join</span>
-                      </>
-                    )}
-                  </button>
-                )}
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="px-2.5 py-1 rounded-lg bg-orange-50 hover:bg-orange-100 dark:bg-orange-950/40 dark:hover:bg-orange-900/40 text-[#ea580c] border border-orange-200 dark:border-orange-900/40 text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+                  title="Create new guild"
+                >
+                  <Plus size={12} />
+                  <span>New</span>
+                </button>
               </div>
 
-              {/* Discussion Feed */}
-              {selectedGuildId === 'all' ? (
-                <Feed
-                  session={session}
-                  placeholder="Post to all communities..."
-                />
-              ) : (
-                <CommunityErrorBoundary key={activeGuild?.id || selectedGuildId}>
-                  <CommunityFeed
-                    session={session}
-                    community={activeGuild}
-                    communityId={activeGuild?.id || selectedGuildId}
-                    isJoined={isCurrentJoined}
-                    isAdmin={isCurrentAdmin}
-                    onToggleJoin={(e) => toggleJoin(activeGuild, e)}
-                    onCommunityUpdated={fetchData}
-                  />
-                </CommunityErrorBoundary>
-              )}
-            </div>
-
-            {/* RIGHT COLUMN: ABOUT COMMUNITY SIDEBAR (3 COLS) */}
-            <div className="lg:col-span-3 space-y-4">
-              {activeGuild ? (
-                <div className="bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] rounded-2xl overflow-hidden shadow-xs space-y-4">
-                  {/* Clean SaaS Workspace Header */}
-                  <div className="p-4 bg-gradient-to-br from-orange-500/10 via-amber-500/5 to-transparent dark:from-orange-500/15 dark:via-[#1f1813] dark:to-[#1f1813] border-b border-[#f1e4d3] dark:border-[#382b22] space-y-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="w-12 h-12 rounded-2xl bg-white dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] shadow-2xs flex items-center justify-center shrink-0">
-                        {renderTechIcon(activeGuild, 24)}
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-orange-100 text-[#ea580c] dark:bg-orange-950/60 dark:text-orange-400 border border-orange-200 dark:border-orange-900/60">
-                          {activeGuild.category || 'Tech'}
-                        </span>
-                        <button
-                          onClick={(e) => handleShare(activeGuild, e)}
-                          title="Share Community"
-                          className="p-1.5 rounded-xl border border-[#f1e4d3] dark:border-[#382b22] bg-white dark:bg-[#281f18] hover:text-[#ea580c] text-[#8d7565] transition-colors cursor-pointer shadow-2xs"
-                        >
-                          <Share2 size={13} />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-1.5">
-                        <h3 className="font-black text-sm text-[#1c130d] dark:text-white leading-tight">
-                          {activeGuild.name}
-                        </h3>
-                        {activeGuild.is_verified && (
-                          <ShieldCheck size={13} className="text-blue-500 shrink-0" fill="currentColor" />
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 text-[11px] text-[#8d7565] font-mono">
-                        <span>@{activeGuild.slug}</span>
-                        <span>•</span>
-                        <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1 font-sans">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          {activeGuild.member_count || 1} Members
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Info Body */}
-                  <div className="p-4 pt-0 space-y-3.5">
-                    <div>
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-[#8d7565] mb-1">
-                        About Community
-                      </h4>
-                      <p className="text-xs text-[#6b5546] dark:text-[#c4aba0] leading-relaxed">
-                        {activeGuild.description || 'Community for technical discussions and sharing.'}
-                      </p>
-                    </div>
-
-                    {/* Tags */}
-                    {activeGuild.tags && activeGuild.tags.length > 0 && (
-                      <div>
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-[#8d7565] mb-1.5">
-                          Topics
-                        </h4>
-                        <div className="flex flex-wrap gap-1">
-                          {activeGuild.tags.map((t) => (
-                            <span
-                              key={t}
-                              className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-[#faf6f0] dark:bg-[#281f18] text-[#8d7565] dark:text-[#a89080] border border-[#f1e4d3] dark:border-[#382b22]"
-                            >
-                              #{t}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Community Rules */}
-                    {activeGuild.rules && activeGuild.rules.length > 0 && (
-                      <div className="pt-2 border-t border-[#f1e4d3] dark:border-[#33261d]">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-[#ea580c] mb-1.5 flex items-center gap-1">
-                          <Shield size={12} />
-                          <span>Community Rules</span>
-                        </h4>
-                        <ul className="space-y-1 text-[11px] text-[#6b5546] dark:text-[#c4aba0]">
-                          {activeGuild.rules.slice(0, 3).map((rule, idx) => (
-                            <li key={idx} className="flex items-start gap-1.5">
-                              <span className="text-[#ea580c] font-bold">•</span>
-                              <span>{rule}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    {/* Admin Management Controls */}
-                    {isCurrentAdmin && (
-                      <div className="pt-2 border-t border-[#f1e4d3] dark:border-[#33261d] space-y-2">
-                        <div className="flex items-center gap-1.5 text-xs font-bold text-amber-700 dark:text-amber-400">
-                          <Shield size={13} />
-                          <span>Admin Management</span>
-                        </div>
-                        <p className="text-[11px] text-[#8d7565]">
-                          You manage this community. You can edit community info or delete posts.
-                        </p>
-                        <div className="flex items-center gap-2 pt-1">
-                          <button
-                            onClick={() => handleOpenEdit(activeGuild)}
-                            className="flex-1 py-1.5 px-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-300 text-xs font-bold hover:bg-amber-100/70 transition-all cursor-pointer text-center"
-                          >
-                            Edit Community
-                          </button>
-                          <button
-                            onClick={() => handleDeleteCommunity(activeGuild)}
-                            className="py-1.5 px-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-600 dark:text-rose-400 text-xs font-bold hover:bg-rose-100/60 transition-all cursor-pointer"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Action button */}
-                    <div className="pt-2">
-                      <Link
-                        to={`/communities/${activeGuild.id}`}
-                        className="w-full py-2 px-3 rounded-xl bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#ea580c] hover:bg-orange-50 font-bold text-xs flex items-center justify-center gap-1 transition-all cursor-pointer"
-                      >
-                        <span>View Community Details</span>
-                        <ChevronRight size={13} />
-                      </Link>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] rounded-2xl p-4 shadow-xs text-center space-y-2">
-                  <Flame size={24} className="mx-auto text-[#ea580c]" />
-                  <h4 className="text-xs font-bold text-[#1c130d] dark:text-white">All Communities Stream</h4>
-                  <p className="text-xs text-[#8d7565] leading-relaxed">
-                    Select a community on the left to view its discussions, rules, and members.
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* =========================================================================
-            4. TAB 2: EXPLORE ALL GUILDS (CATALOG & DIRECTORY)
-            ========================================================================= */}
-        {activeTab === 'explore' && (
-          <div className="space-y-6">
-            {/* Spotlight Banner */}
-            {featuredGuild && selectedCategory === 'all' && !search && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.99 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="relative rounded-3xl p-6 sm:p-7 overflow-hidden border border-emerald-500/30 bg-gradient-to-r from-emerald-500/10 via-white to-white dark:via-[#1f1813] dark:to-[#1a1410] shadow-sm group"
-              >
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
-                  <div className="flex items-start gap-4">
-                    <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-2xl bg-white dark:bg-[#281f18] border-2 border-emerald-500/30 flex items-center justify-center text-4xl shadow-sm shrink-0">
-                      {featuredGuild.icon}
-                    </div>
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                          <Flame size={12} /> Featured Community
-                        </span>
-                        <span className="text-xs text-[#8d7565] flex items-center gap-1">
-                          <Activity size={12} className="text-emerald-500 animate-pulse" />{' '}
-                          {featuredGuild.member_count || 1} members
-                        </span>
-                      </div>
-                      <Link to={`/communities/${featuredGuild.id}`}>
-                        <h2 className="text-lg sm:text-xl font-black text-[#1c130d] dark:text-white group-hover:text-[#ea580c] transition-colors">
-                          {featuredGuild.name}
-                        </h2>
-                      </Link>
-                      <p className="text-xs text-[#6b5546] dark:text-[#c4aba0] max-w-2xl line-clamp-2">
-                        {featuredGuild.description}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2.5 self-end lg:self-center shrink-0">
-                    <button
-                      onClick={(e) => toggleJoin(featuredGuild, e)}
-                      className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs ${
-                        joined.has(featuredGuild.id)
-                          ? 'bg-white dark:bg-[#281f18] text-[#8d7565] border border-[#f1e4d3] dark:border-[#382b22] hover:text-rose-600'
-                          : 'bg-emerald-600 text-white hover:bg-emerald-700'
-                      }`}
-                    >
-                      {joined.has(featuredGuild.id) ? (
-                        <>
-                          <Check size={14} /> Joined
-                        </>
-                      ) : (
-                        <>
-                          <Plus size={14} /> Join
-                        </>
-                      )}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSelectedGuildId(featuredGuild.id);
-                        setActiveTab('workspace');
-                      }}
-                      className="px-4 py-2 rounded-xl text-xs font-bold bg-[#ea580c] text-white hover:brightness-105 flex items-center gap-1 cursor-pointer shadow-xs"
-                    >
-                      <span>View Discussions</span>
-                      <ChevronRight size={14} />
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {/* Search, Sort & Filters Bar */}
-            <div className="space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                {/* Search */}
-                <div className="relative flex-1">
-                  <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8d7565]" />
-                  <input
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search by community name, #tag, or topic (e.g. Security, AI, Python, Rust)..."
-                    className="w-full bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] rounded-2xl pl-10 pr-9 py-2.5 text-xs text-[#1c130d] dark:text-white placeholder:text-[#8d7565] focus:outline-none focus:border-[#ea580c] transition-all shadow-xs"
-                  />
-                  {search && (
-                    <button
-                      onClick={() => setSearch('')}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8d7565] hover:text-[#1c130d] p-1 cursor-pointer"
-                    >
-                      <X size={14} />
-                    </button>
-                  )}
-                </div>
-
-                {/* Sort & View Mode */}
-                <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
-                  <select
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value)}
-                    className="bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] rounded-xl px-3 py-2 text-xs font-bold text-[#1c130d] dark:text-white focus:outline-none focus:border-[#ea580c] cursor-pointer"
-                  >
-                    <option value="popular">Most Members</option>
-                    <option value="active">Most Active</option>
-                    <option value="name">Alphabetical</option>
-                  </select>
-
-                  <div className="flex items-center bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] p-1 rounded-xl">
-                    <button
-                      onClick={() => setViewMode('grid')}
-                      className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                        viewMode === 'grid'
-                          ? 'bg-[#ea580c] text-white shadow-xs'
-                          : 'text-[#8d7565] hover:text-[#1c130d]'
-                      }`}
-                      title="Grid View"
-                    >
-                      <LayoutGrid size={15} />
-                    </button>
-                    <button
-                      onClick={() => setViewMode('list')}
-                      className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                        viewMode === 'list'
-                          ? 'bg-[#ea580c] text-white shadow-xs'
-                          : 'text-[#8d7565] hover:text-[#1c130d]'
-                      }`}
-                      title="List View"
-                    >
-                      <List size={15} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Categories Pills */}
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
-                {COMMUNITY_CATEGORIES.map((cat) => {
-                  const isCatActive = selectedCategory === cat.id;
-                  const count =
-                    cat.id === 'all'
-                      ? allCommunities.length
-                      : cat.id === 'joined'
-                      ? joined.size
-                      : allCommunities.filter(
-                          (c) => c.category?.toLowerCase() === cat.id.toLowerCase()
-                        ).length;
-
+              {/* Segmentation Tabs (All Guilds / Joined / Managed) */}
+              <div className="flex items-center p-1 bg-[#faf6f0] dark:bg-[#281f18] rounded-xl border border-[#f1e4d3] dark:border-[#382b22]">
+                {[
+                  { id: 'all', label: 'All', count: totalGuildsCount },
+                  { id: 'joined', label: 'Joined', count: joinedCount },
+                  { id: 'managed', label: 'Managed', count: managedCount },
+                ].map((tab) => {
+                  const isSelected = railSegment === tab.id;
                   return (
                     <button
-                      key={cat.id}
-                      onClick={() => setSelectedCategory(cat.id)}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
-                        isCatActive
-                          ? 'bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white shadow-xs'
-                          : 'bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] text-[#6b5546] dark:text-[#a89080] hover:text-[#1c130d]'
+                      key={tab.id}
+                      onClick={() => setRailSegment(tab.id)}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-white dark:bg-[#1f1813] text-[#ea580c] shadow-xs border border-[#f1e4d3] dark:border-[#382b22]'
+                          : 'text-[#8d7565] hover:text-[#1c130d] dark:hover:text-white'
                       }`}
                     >
-                      <span>{cat.icon}</span>
-                      <span>{cat.label}</span>
-                      <span
-                        className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                          isCatActive
-                            ? 'bg-white/20 text-white'
-                            : 'bg-[#faf6f0] dark:bg-[#281f18] text-[#8d7565]'
-                        }`}
-                      >
-                        {count}
+                      <span>{tab.label}</span>
+                      <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono ${
+                        isSelected
+                          ? 'bg-orange-100 dark:bg-orange-950/70 text-[#ea580c] font-black'
+                          : 'bg-stone-200/60 dark:bg-stone-800 text-[#8d7565]'
+                      }`}>
+                        {tab.count}
                       </span>
                     </button>
                   );
                 })}
               </div>
-            </div>
 
-            {/* Guilds Grid or List */}
-            {filteredCommunities.length === 0 ? (
-              <div className="text-center py-16 bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] rounded-3xl p-8 space-y-3">
-                <Compass size={48} className="mx-auto text-[#8d7565]/40" />
-                <h3 className="text-base font-bold text-[#1c130d] dark:text-white">No communities found</h3>
-                <p className="text-xs text-[#8d7565] max-w-sm mx-auto leading-relaxed">
-                  We couldn't find any communities matching "{search || selectedCategory}".
-                </p>
-                <button
-                  onClick={() => {
-                    setSearch('');
-                    setSelectedCategory('all');
-                  }}
-                  className="px-4 py-2 rounded-xl text-xs font-bold bg-[#ea580c] text-white cursor-pointer hover:brightness-105 shadow-xs"
-                >
-                  Reset Filters
-                </button>
+              {/* Guild Search Input with Instant Clear */}
+              <div className="relative">
+                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8d7565] pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Search by name, topic, or tag…"
+                  value={guildSearch}
+                  onChange={(e) => setGuildSearch(e.target.value)}
+                  className="w-full text-xs pl-8 pr-7 py-2 rounded-xl bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#1c130d] dark:text-white placeholder:text-[#8d7565] focus:outline-none focus:border-[#ea580c]"
+                />
+                {guildSearch && (
+                  <button
+                    onClick={() => setGuildSearch('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8d7565] hover:text-[#1c130d] cursor-pointer"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
               </div>
-            ) : viewMode === 'grid' ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                {filteredCommunities.map((community, i) => {
-                  const isJoined = joined.has(community.id);
+
+              {/* Category Filter Chips with Lucide Icons */}
+              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
+                {COMMUNITY_CATEGORIES.map((cat) => {
+                  const CatIcon = cat.icon;
+                  const isSelected = guildCategoryFilter === cat.id;
 
                   return (
-                    <motion.div
-                      key={community.id}
-                      initial={{ opacity: 0, y: 15 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.2, delay: i * 0.03 }}
-                      className="bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] rounded-3xl p-5 flex flex-col justify-between hover:border-[#ea580c]/50 hover:shadow-md transition-all group relative overflow-hidden"
+                    <button
+                      key={cat.id}
+                      onClick={() => setGuildCategoryFilter(cat.id)}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all whitespace-nowrap cursor-pointer ${
+                        isSelected
+                          ? 'bg-[#ea580c] text-white shadow-2xs'
+                          : 'bg-[#faf6f0] dark:bg-[#281f18] text-[#8d7565] hover:text-[#1c130d] dark:hover:text-white border border-[#f1e4d3] dark:border-[#382b22]'
+                      }`}
                     >
-                      {/* Top Accent Bar */}
+                      <CatIcon size={11} className={isSelected ? 'text-white' : 'text-[#ea580c]'} />
+                      <span>{cat.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Sort Bar */}
+              <div className="flex items-center justify-between text-[10px] text-[#8d7565] pt-0.5 px-0.5">
+                <span className="font-semibold uppercase tracking-wider text-[9px]">Sort by:</span>
+                <div className="flex items-center gap-1">
+                  {[
+                    { id: 'popular', label: 'Members' },
+                    { id: 'newest', label: 'Newest' },
+                    { id: 'alphabetical', label: 'A-Z' },
+                  ].map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => setGuildSort(s.id)}
+                      className={`px-1.5 py-0.5 rounded font-bold cursor-pointer transition-colors ${
+                        guildSort === s.id
+                          ? 'text-[#ea580c] bg-orange-100 dark:bg-orange-950/60'
+                          : 'hover:text-[#1c130d] dark:hover:text-white'
+                      }`}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="h-px bg-[#f1e4d3] dark:border-[#33261d]" />
+
+              {/* Streamlined Communities List */}
+              <div className="space-y-1 max-h-[560px] overflow-y-auto custom-scrollbar pr-0.5">
+                {filteredRailCommunities.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-[#8d7565] space-y-2">
+                    <p>No guilds found in this view.</p>
+                    {railSegment !== 'all' && (
+                      <button
+                        onClick={() => setRailSegment('all')}
+                        className="text-xs font-bold text-[#ea580c] hover:underline cursor-pointer"
+                      >
+                        Explore all guilds
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  filteredRailCommunities.map((comm) => {
+                    const isSelected = activeGuild?.id === comm.id;
+                    const isUserJoined = joined.has(comm.id);
+                    const isUserAdmin =
+                      comm.creator_id === session?.user?.id ||
+                      userRoles[comm.id] === 'owner' ||
+                      userRoles[comm.id] === 'admin';
+
+                    return (
                       <div
-                        className={`h-1.5 w-full absolute top-0 left-0 bg-gradient-to-r ${
-                          community.gradient || 'from-[#ea580c] to-[#fb923c]'
+                        key={comm.id}
+                        onClick={() => handleSelectGuild(comm.id)}
+                        className={`w-full flex items-center justify-between gap-2.5 p-2.5 rounded-xl text-left transition-all cursor-pointer group relative ${
+                          isSelected
+                            ? 'bg-orange-50/90 dark:bg-[#281c14] border border-orange-300 dark:border-orange-800 text-[#ea580c] shadow-2xs'
+                            : 'hover:bg-[#faf6f0] dark:hover:bg-[#281f18] text-[#6b5546] dark:text-[#a89080] border border-transparent'
                         }`}
-                      />
+                      >
+                        {isSelected && (
+                          <div className="absolute left-0 top-2 bottom-2 w-1 rounded-r bg-[#ea580c]" />
+                        )}
 
-                      <div>
-                        {/* Header: Icon & Badges */}
-                        <div className="flex items-start justify-between mb-3 pt-1">
-                          <div className="w-12 h-12 rounded-2xl bg-[#fff7ed] dark:bg-[#281f18] border border-[#fed7aa] dark:border-[#423124] flex items-center justify-center text-2xl shadow-2xs group-hover:scale-105 transition-transform">
-                            {community.icon || '🛡️'}
-                          </div>
-
-                          <div className="flex items-center gap-1.5">
-                            {community.is_private ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                                <Lock size={10} /> Private
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1 pl-1">
+                          <span className="w-8 h-8 rounded-xl bg-[#fff7ed] dark:bg-[#281f18] border border-[#fed7aa] dark:border-[#382b22] flex items-center justify-center shrink-0">
+                            {renderTechIcon(comm, 15)}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs font-bold truncate text-[#1c130d] dark:text-white group-hover:text-[#ea580c] transition-colors">
+                                {comm.name}
                               </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400">
-                                <Globe size={10} /> Public
-                              </span>
-                            )}
-
-                            {community.is_verified && (
-                              <span title="Verified Hub">
-                                <Shield size={13} className="text-blue-500" fill="currentColor" />
-                              </span>
-                            )}
+                            </div>
+                            <div className="flex items-center gap-1.5 text-[10px] text-[#8d7565] dark:text-[#a89080] truncate">
+                              <span>{comm.member_count || 1} members</span>
+                              <span>•</span>
+                              <span className="capitalize">{comm.category || 'Guild'}</span>
+                            </div>
                           </div>
                         </div>
 
-                        {/* Title */}
-                        <Link to={`/communities/${community.id}`}>
-                          <h3 className="font-bold text-sm sm:text-base text-[#1c130d] dark:text-white group-hover:text-[#ea580c] transition-colors line-clamp-1 mb-1">
-                            {community.name}
-                          </h3>
-                        </Link>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {isUserAdmin ? (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300 dark:border-amber-800 flex items-center gap-0.5">
+                              <Shield size={9} /> Admin
+                            </span>
+                          ) : isUserJoined ? (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 flex items-center gap-0.5">
+                              <Check size={9} /> Joined
+                            </span>
+                          ) : (
+                            <button
+                              onClick={(e) => toggleJoin(comm, e)}
+                              className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-[#faf6f0] dark:bg-[#281f18] text-[#8d7565] hover:text-[#ea580c] hover:bg-orange-50 dark:hover:bg-orange-950/40 border border-[#f1e4d3] dark:border-[#382b22] opacity-80 group-hover:opacity-100 transition-all cursor-pointer"
+                              title="Join guild"
+                            >
+                              + Join
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
 
-                        {/* Description */}
-                        <p className="text-xs text-[#6b5546] dark:text-[#c4aba0] line-clamp-2 leading-relaxed mb-3">
-                          {community.description}
+              {/* Directory Summary Footer */}
+              <div className="pt-2 border-t border-[#f1e4d3] dark:border-[#33261d] flex items-center justify-between text-[10px] text-[#8d7565]">
+                <span>Joined {joinedCount} of {totalGuildsCount} guilds</span>
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="font-bold text-[#ea580c] hover:underline cursor-pointer flex items-center gap-0.5"
+                >
+                  <Plus size={10} /> Create
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* -----------------------------------------------------------------------
+              RIGHT COLUMN: ACTIVE WORKSPACE (flex-1 / 8.5 cols)
+              ----------------------------------------------------------------------- */}
+          <div className="lg:col-span-8 xl:col-span-8.5 space-y-4">
+            {activeGuild ? (
+              <div className="space-y-4">
+
+                {/* 1. Sleek Community Header Card */}
+                <div className="bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] rounded-3xl p-5 sm:p-6 shadow-xs space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                    <div className="flex items-start gap-4 min-w-0">
+                      <span className="w-14 h-14 rounded-2xl bg-gradient-to-br from-orange-500/10 via-amber-500/10 to-orange-500/5 dark:bg-[#281f18] border border-orange-200 dark:border-[#423124] flex items-center justify-center shrink-0 shadow-2xs">
+                        {renderTechIcon(activeGuild, 28)}
+                      </span>
+
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h2 className="text-lg sm:text-xl font-black text-[#1c130d] dark:text-white">
+                            {activeGuild.name}
+                          </h2>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#faf6f0] dark:bg-[#281f18] text-[#8d7565] border border-[#f1e4d3] dark:border-[#382b22]">
+                            {activeGuild.category || 'Security'}
+                          </span>
+                          {isCurrentAdmin && (
+                            <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-400 border border-amber-300 dark:border-amber-800 flex items-center gap-1">
+                              <Shield size={10} /> Admin
+                            </span>
+                          )}
+                        </div>
+
+                        <p className="text-xs text-[#6b5546] dark:text-[#c4aba0] leading-relaxed max-w-2xl">
+                          {activeGuild.description || 'Collaborative engineering hub on Connectra.'}
                         </p>
 
-                        {/* Tags */}
-                        <div className="flex flex-wrap gap-1 mb-4">
-                          {(community.tags || []).slice(0, 3).map((tag) => (
-                            <span
-                              key={tag}
-                              className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-[#faf6f0] dark:bg-[#281f18] text-[#8d7565] dark:text-[#a89080] border border-[#f1e4d3] dark:border-[#382b22]"
-                            >
-                              #{tag}
-                            </span>
-                          ))}
+                        <div className="flex items-center gap-3 pt-1 text-[11px] text-[#8d7565] font-mono">
+                          <span>@{activeGuild.slug}</span>
+                          <span>•</span>
+                          <span className="text-emerald-600 dark:text-emerald-400 font-sans font-semibold flex items-center gap-1">
+                            <Users size={12} />
+                            <span>{activeGuild.member_count || 0} Members</span>
+                          </span>
+                          <span>•</span>
+                          <span className="font-sans">Created {timeAgo(activeGuild.created_at)}</span>
                         </div>
                       </div>
+                    </div>
 
-                      {/* Bottom Bar: Counts & Action */}
-                      <div className="pt-3 border-t border-[#f1e4d3] dark:border-[#33261d] flex items-center justify-between">
-                        <div>
-                          <div className="text-xs font-bold text-[#1c130d] dark:text-white flex items-center gap-1">
-                            <Users size={12} className="text-[#ea580c]" />
-                            <span>{(community.member_count || 1).toLocaleString()}</span>
-                          </div>
-                          <div className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            <span>{community.active_now || 3} online</span>
-                          </div>
-                        </div>
+                    {/* Action Bar */}
+                    <div className="flex items-center gap-2 shrink-0 self-start">
+                      <button
+                        onClick={(e) => toggleJoin(activeGuild, e)}
+                        disabled={joiningId === activeGuild.id}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs ${
+                          isCurrentJoined
+                            ? 'bg-[#faf6f0] dark:bg-[#281f18] text-[#8d7565] border border-[#f1e4d3] dark:border-[#382b22] hover:text-rose-600'
+                            : 'bg-[#ea580c] hover:bg-orange-600 text-white shadow-xs'
+                        }`}
+                      >
+                        {isCurrentJoined ? <Check size={12} className="text-emerald-500" /> : <Plus size={12} />}
+                        <span>{isCurrentJoined ? 'Joined' : 'Join Guild'}</span>
+                      </button>
 
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => {
-                              setSelectedGuildId(community.id);
-                              setActiveTab('workspace');
-                            }}
-                            className="p-1.5 text-[#8d7565] hover:text-[#ea580c] rounded-lg transition-colors cursor-pointer"
-                            title="View Community"
-                          >
-                            <Terminal size={15} />
-                          </button>
+                      <button
+                        onClick={() => setShowInviteModal(true)}
+                        className="px-3.5 py-2 rounded-xl bg-white dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#1c130d] dark:text-white hover:border-[#ea580c] hover:text-[#ea580c] font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                        title="Invite or Add Collaborators"
+                      >
+                        <UserPlus size={13} className="text-[#ea580c]" />
+                        <span>Invite</span>
+                      </button>
 
-                          <button
-                            onClick={(e) => toggleJoin(community, e)}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
-                              isJoined
-                                ? 'bg-[#faf6f0] dark:bg-[#281f18] text-[#8d7565] border-[#f1e4d3] dark:border-[#382b22] hover:text-rose-600'
-                                : 'bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white border-transparent hover:brightness-105 shadow-2xs'
-                            }`}
-                          >
-                            {isJoined ? 'Joined' : 'Join'}
-                          </button>
-                        </div>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {filteredCommunities.map((community, i) => {
-                  const isJoined = joined.has(community.id);
+                      <button
+                        onClick={handleCopyInviteLink}
+                        className="p-2 rounded-xl bg-white dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#8d7565] hover:text-[#ea580c] transition-colors cursor-pointer"
+                        title="Share Link"
+                      >
+                        <Share2 size={14} />
+                      </button>
 
-                  return (
-                    <motion.div
-                      key={community.id}
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ duration: 0.15, delay: i * 0.02 }}
-                      className="bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-[#ea580c]/50 transition-all shadow-xs group"
-                    >
-                      <div className="flex items-center gap-3.5 min-w-0">
-                        <div className="w-11 h-11 rounded-xl bg-[#fff7ed] dark:bg-[#281f18] border border-[#fed7aa] dark:border-[#423124] flex items-center justify-center text-xl shrink-0">
-                          {community.icon || '🛡️'}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <Link to={`/communities/${community.id}`}>
-                              <h3 className="font-bold text-sm text-[#1c130d] dark:text-white group-hover:text-[#ea580c] transition-colors truncate">
-                                {community.name}
-                              </h3>
-                            </Link>
-                            {community.is_verified && (
-                              <Shield size={12} className="text-blue-500 shrink-0" fill="currentColor" />
-                            )}
-                            <span className="text-[10px] font-bold px-2 py-0.2 rounded-full bg-[#faf6f0] dark:bg-[#281f18] text-[#8d7565]">
-                              {community.category || 'Community'}
-                            </span>
-                          </div>
-                          <p className="text-xs text-[#6b5546] dark:text-[#a89080] truncate max-w-xl mt-0.5">
-                            {community.description}
-                          </p>
-                        </div>
-                      </div>
+                      {isCurrentAdmin && (
+                        <button
+                          onClick={() => setActiveWorkspaceTab('settings')}
+                          className={`p-2 rounded-xl border transition-colors cursor-pointer ${
+                            activeWorkspaceTab === 'settings'
+                              ? 'bg-amber-100 dark:bg-amber-950/60 border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-400'
+                              : 'bg-white dark:bg-[#281f18] border-[#f1e4d3] dark:border-[#382b22] text-[#8d7565] hover:text-[#ea580c]'
+                          }`}
+                          title="Admin Settings"
+                        >
+                          <Settings size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
 
-                      <div className="flex items-center justify-between sm:justify-end gap-4 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-[#f1e4d3] dark:border-[#33261d]">
-                        <div className="text-right">
-                          <div className="text-xs font-bold text-[#1c130d] dark:text-white flex items-center gap-1 justify-end">
-                            <Users size={12} className="text-[#ea580c]" />
-                            <span>{(community.member_count || 1).toLocaleString()}</span>
-                          </div>
-                          <div className="text-[10px] text-emerald-600 font-medium flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            <span>{community.member_count || 1} members</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => {
-                              setSelectedGuildId(community.id);
-                              setActiveTab('workspace');
-                            }}
-                            className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#faf6f0] dark:bg-[#281f18] text-[#ea580c] hover:bg-orange-50 border border-[#f1e4d3] dark:border-[#382b22] cursor-pointer"
-                          >
-                            View
-                          </button>
-                          <button
-                            onClick={(e) => toggleJoin(community, e)}
-                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                              isJoined
-                                ? 'bg-[#faf6f0] dark:bg-[#281f18] text-[#8d7565] border border-[#f1e4d3] dark:border-[#382b22] hover:text-rose-600'
-                                : 'bg-[#ea580c] text-white hover:brightness-105'
-                            }`}
-                          >
-                            {isJoined ? 'Joined' : 'Join'}
-                          </button>
-                        </div>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* =========================================================================
-            5. TAB 3: MY GUILDS & MEMBERSHIPS MANAGEMENT
-            ========================================================================= */}
-        {activeTab === 'my-guilds' && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-base sm:text-lg font-bold text-[#1c130d] dark:text-white">
-                  My Communities
-                </h2>
-                <p className="text-xs text-[#8d7565]">
-                  Communities you participate in or have joined
-                </p>
-              </div>
-              <button
-                onClick={() => setShowForm(true)}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-[#ea580c] text-white hover:brightness-105 cursor-pointer flex items-center gap-1.5 shadow-xs"
-              >
-                <Plus size={14} /> Create Community
-              </button>
-            </div>
-
-            {myJoinedGuilds.length === 0 ? (
-              <div className="text-center py-16 bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] rounded-3xl p-8 space-y-3">
-                <ShieldCheck size={48} className="mx-auto text-[#8d7565]/40" />
-                <h3 className="text-base font-bold text-[#1c130d] dark:text-white">
-                  No joined communities yet
-                </h3>
-                <p className="text-xs text-[#8d7565] max-w-sm mx-auto leading-relaxed">
-                  Join developer communities to participate in technical discussions, ask questions, and collaborate with peers.
-                </p>
-                <button
-                  onClick={() => setActiveTab('explore')}
-                  className="px-4 py-2 rounded-xl text-xs font-bold bg-[#ea580c] text-white cursor-pointer hover:brightness-105 shadow-xs"
-                >
-                  Explore Communities
-                </button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {myJoinedGuilds.map((comm) => (
-                  <div
-                    key={comm.id}
-                    className="bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] rounded-3xl p-5 flex flex-col justify-between shadow-xs space-y-4"
-                  >
-                    <div>
-                      <div className="flex items-start justify-between gap-3 mb-3">
-                        <div className="w-12 h-12 rounded-2xl bg-[#fff7ed] dark:bg-[#281f18] border border-[#fed7aa] dark:border-[#423124] flex items-center justify-center text-2xl shadow-2xs">
-                          {comm.icon || '🛡️'}
-                        </div>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                          Verified Member
+                  {/* Technical Tags */}
+                  {activeGuild.tags && activeGuild.tags.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-[#f1e4d3] dark:border-[#33251c]">
+                      <span className="text-[10px] font-bold text-[#8d7565] uppercase mr-1">Topics:</span>
+                      {(Array.isArray(activeGuild.tags) ? activeGuild.tags : String(activeGuild.tags).split(',')).map((t, idx) => (
+                        <span
+                          key={idx}
+                          className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-md bg-[#faf6f0] dark:bg-[#281f18] text-[#8d7565] dark:text-[#a89080] border border-[#f1e4d3] dark:border-[#382b22]"
+                        >
+                          #{String(t).trim()}
                         </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. Workspace Tabs Navigation */}
+                <div className="flex items-center gap-2 border-b border-[#f1e4d3] dark:border-[#33261d] pb-2 overflow-x-auto no-scrollbar">
+                  <button
+                    onClick={() => setActiveWorkspaceTab('feed')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      activeWorkspaceTab === 'feed'
+                        ? 'bg-[#1c130d] text-white dark:bg-white dark:text-black shadow-xs'
+                        : 'bg-white dark:bg-[#1f1813] text-[#8d7565] hover:text-[#1c130d] dark:hover:text-white border border-[#f1e4d3] dark:border-[#382b22]'
+                    }`}
+                  >
+                    <MessageSquare size={13} className={activeWorkspaceTab === 'feed' ? 'text-orange-400' : ''} />
+                    <span>Discussions & Feed</span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveWorkspaceTab('members')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      activeWorkspaceTab === 'members'
+                        ? 'bg-[#1c130d] text-white dark:bg-white dark:text-black shadow-xs'
+                        : 'bg-white dark:bg-[#1f1813] text-[#8d7565] hover:text-[#1c130d] dark:hover:text-white border border-[#f1e4d3] dark:border-[#382b22]'
+                    }`}
+                  >
+                    <Users size={13} className={activeWorkspaceTab === 'members' ? 'text-emerald-400' : ''} />
+                    <span>Members & Roles ({activeGuild.member_count || 0})</span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveWorkspaceTab('about')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      activeWorkspaceTab === 'about'
+                        ? 'bg-[#1c130d] text-white dark:bg-white dark:text-black shadow-xs'
+                        : 'bg-white dark:bg-[#1f1813] text-[#8d7565] hover:text-[#1c130d] dark:hover:text-white border border-[#f1e4d3] dark:border-[#382b22]'
+                    }`}
+                  >
+                    <ShieldCheck size={13} className={activeWorkspaceTab === 'about' ? 'text-blue-400' : ''} />
+                    <span>About & Guidelines</span>
+                  </button>
+
+                  {isCurrentAdmin && (
+                    <button
+                      onClick={() => setActiveWorkspaceTab('settings')}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        activeWorkspaceTab === 'settings'
+                          ? 'bg-amber-600 text-white shadow-xs'
+                          : 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-900/60'
+                      }`}
+                    >
+                      <Settings size={13} />
+                      <span>Admin Console</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* 3. Workspace Tab Viewports */}
+                {activeWorkspaceTab === 'feed' && (
+                  /* TAB 1: DISCUSSIONS FEED */
+                  <CommunityErrorBoundary key={activeGuild.id}>
+                    <CommunityFeed
+                      session={session}
+                      community={activeGuild}
+                      communityId={activeGuild.id}
+                      isJoined={isCurrentJoined}
+                      isAdmin={isCurrentAdmin}
+                      onToggleJoin={(e) => toggleJoin(activeGuild, e)}
+                      onCommunityUpdated={fetchData}
+                    />
+                  </CommunityErrorBoundary>
+                )}
+
+                {activeWorkspaceTab === 'members' && (
+                  /* TAB 2: MEMBERS & ROLES DIRECTORY (100% REAL DATABASE MEMBERS) */
+                  <div className="bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] rounded-3xl p-5 sm:p-6 shadow-xs space-y-5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#f1e4d3] dark:border-[#33251c]">
+                      <div>
+                        <h3 className="text-sm sm:text-base font-extrabold text-[#1c130d] dark:text-white flex items-center gap-2">
+                          <Users size={16} className="text-[#ea580c]" />
+                          <span>Community Roster ({guildMembers.length} Members)</span>
+                        </h3>
+                        <p className="text-xs text-[#8d7565]">
+                          Manage team access, promote moderators, and view members verified in database.
+                        </p>
                       </div>
 
-                      <h3 className="font-bold text-sm text-[#1c130d] dark:text-white mb-1">
-                        {comm.name}
+                      <button
+                        onClick={() => setShowInviteModal(true)}
+                        className="px-3.5 py-2 rounded-xl bg-[#ea580c] hover:bg-orange-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer self-start sm:self-auto"
+                      >
+                        <UserPlus size={13} />
+                        <span>+ Add / Invite Member</span>
+                      </button>
+                    </div>
+
+                    {/* Member Controls: Search & Role Filters */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="relative flex-1 max-w-sm">
+                        <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8d7565] pointer-events-none" />
+                        <input
+                          type="text"
+                          placeholder="Search members by username..."
+                          value={memberSearchQuery}
+                          onChange={(e) => setMemberSearchQuery(e.target.value)}
+                          className="w-full text-xs pl-8 pr-3 py-2 rounded-xl bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#1c130d] dark:text-white placeholder:text-[#8d7565] focus:outline-none focus:border-[#ea580c]"
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                        {['all', 'admins', 'member'].map((r) => (
+                          <button
+                            key={r}
+                            onClick={() => setMemberRoleFilter(r)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all capitalize cursor-pointer ${
+                              memberRoleFilter === r
+                                ? 'bg-[#1c130d] text-white dark:bg-white dark:text-black'
+                                : 'bg-[#faf6f0] dark:bg-[#281f18] text-[#8d7565] hover:text-[#1c130d] border border-[#f1e4d3] dark:border-[#382b22]'
+                            }`}
+                          >
+                            {r === 'all' ? 'All Roles' : r === 'admins' ? 'Admins & Mods' : 'Members'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Members List */}
+                    {loadingMembers ? (
+                      <div className="p-8 text-center text-xs text-[#8d7565]">
+                        Loading community roster from database...
+                      </div>
+                    ) : filteredRosterMembers.length === 0 ? (
+                      <div className="p-12 text-center rounded-2xl bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] space-y-2">
+                        <Users size={28} className="mx-auto text-orange-500 opacity-50" />
+                        <h4 className="text-xs font-bold text-[#1c130d] dark:text-white">No members matched the filter</h4>
+                        <p className="text-xs text-[#8d7565]">Invite fellow engineers to join this community workspace.</p>
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-[#f1e4d3] dark:divide-[#33251c]">
+                        {filteredRosterMembers.map((member) => {
+                          const prof = member.profile;
+                          const isLead = member.role === 'owner' || activeGuild.creator_id === member.user_id;
+
+                          return (
+                            <div key={member.id} className="py-3.5 flex items-center justify-between gap-4">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <img
+                                  src={prof.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100'}
+                                  alt={prof.username}
+                                  className="w-10 h-10 rounded-xl object-cover border border-[#f1e4d3] dark:border-[#382b22]"
+                                />
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <Link
+                                      to={`/profile/${prof.username}`}
+                                      className="font-bold text-xs text-[#1c130d] dark:text-white hover:text-orange-500 transition-colors truncate"
+                                    >
+                                      {prof.full_name || prof.username}
+                                    </Link>
+                                    <span className="text-xs text-[#8d7565] truncate">@{prof.username}</span>
+
+                                    {/* Role Badge */}
+                                    <span
+                                      className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${
+                                        isLead
+                                          ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+                                          : member.role === 'moderator'
+                                          ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300 border-purple-300 dark:border-purple-800'
+                                          : 'bg-stone-100 dark:bg-stone-800 text-[#8d7565] border-stone-200 dark:border-stone-700'
+                                      }`}
+                                    >
+                                      {isLead ? 'Lead Architect' : member.role}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-2 mt-0.5 text-[10px] text-[#8d7565]">
+                                    <span>Joined {timeAgo(member.joined_at)}</span>
+                                    <span>•</span>
+                                    <span>Lvl {prof.level || 1} ({prof.xp || 0} XP)</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Admin Actions on Member */}
+                              {isCurrentAdmin && !isLead && member.user_id !== session?.user?.id && (
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <select
+                                    value={member.role}
+                                    onChange={(e) => handleChangeRole(member.id, e.target.value)}
+                                    className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#1c130d] dark:text-white outline-none cursor-pointer"
+                                  >
+                                    <option value="member">Member</option>
+                                    <option value="moderator">Moderator</option>
+                                    <option value="admin">Admin</option>
+                                  </select>
+
+                                  <button
+                                    onClick={() => handleRemoveMember(member.id, member.user_id)}
+                                    className="p-1.5 rounded-lg text-[#8d7565] hover:text-rose-600 transition-colors cursor-pointer"
+                                    title="Remove from Community"
+                                  >
+                                    <UserMinus size={14} />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {activeWorkspaceTab === 'about' && (
+                  /* TAB 3: ABOUT & COMMUNITY GUIDELINES */
+                  <div className="bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] rounded-3xl p-5 sm:p-6 shadow-xs space-y-6">
+                    <div>
+                      <h3 className="text-sm sm:text-base font-extrabold text-[#1c130d] dark:text-white flex items-center gap-2 mb-2">
+                        <BookOpen size={16} className="text-[#ea580c]" />
+                        <span>About {activeGuild.name}</span>
                       </h3>
-                      <p className="text-xs text-[#6b5546] dark:text-[#a89080] line-clamp-2 leading-relaxed">
-                        {comm.description}
+                      <p className="text-xs sm:text-sm text-[#6b5546] dark:text-[#c4aba0] leading-relaxed">
+                        {activeGuild.description || 'Dedicated technical guild for specialized engineering collaboration.'}
                       </p>
                     </div>
 
-                    <div className="pt-3 border-t border-[#f1e4d3] dark:border-[#33261d] flex items-center justify-between gap-2">
-                      <button
-                        onClick={() => {
-                          setSelectedGuildId(comm.id);
-                          setActiveTab('workspace');
-                        }}
-                        className="flex-1 py-1.5 px-3 rounded-xl bg-[#ea580c] text-white hover:brightness-105 text-xs font-bold text-center cursor-pointer shadow-2xs"
-                      >
-                        View Feed
-                      </button>
+                    <div className="pt-4 border-t border-[#f1e4d3] dark:border-[#33251c] space-y-3">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-[#ea580c] flex items-center gap-1.5">
+                        <ShieldCheck size={14} />
+                        <span>Verified Guild Guidelines</span>
+                      </h4>
+                      <ul className="space-y-2 text-xs text-[#6b5546] dark:text-[#c4aba0]">
+                        <li className="flex items-start gap-2">
+                          <CheckCircle2 size={13} className="text-emerald-500 shrink-0 mt-0.5" />
+                          <span>All code snippets must follow zero-trust security standards. Secret tokens and credentials are automatically redacted.</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <CheckCircle2 size={13} className="text-emerald-500 shrink-0 mt-0.5" />
+                          <span>Constructive architecture feedback: accompany critical reviews with actionable solutions and reproduction test cases.</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <CheckCircle2 size={13} className="text-emerald-500 shrink-0 mt-0.5" />
+                          <span>Keep discussions technical, actionable, and aligned with guild tags and topics.</span>
+                        </li>
+                      </ul>
+                    </div>
+
+                    {activeGuild.profiles && (
+                      <div className="pt-4 border-t border-[#f1e4d3] dark:border-[#33251c] flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={activeGuild.profiles.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100'}
+                            alt=""
+                            className="w-10 h-10 rounded-xl object-cover border border-[#f1e4d3] dark:border-[#382b22]"
+                          />
+                          <div>
+                            <span className="text-[10px] uppercase font-bold text-[#8d7565]">Guild Founder</span>
+                            <Link
+                              to={`/profile/${activeGuild.profiles.username}`}
+                              className="text-xs font-bold text-[#1c130d] dark:text-white hover:text-orange-500 block"
+                            >
+                              @{activeGuild.profiles.username}
+                            </Link>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {activeWorkspaceTab === 'settings' && isCurrentAdmin && (
+                  /* TAB 4: ADMIN CONSOLE & COMMUNITY SETTINGS */
+                  <div className="bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] rounded-3xl p-5 sm:p-6 shadow-xs space-y-6">
+                    <div className="border-b border-[#f1e4d3] dark:border-[#33251c] pb-4">
+                      <h3 className="text-sm sm:text-base font-extrabold text-[#1c130d] dark:text-white flex items-center gap-2">
+                        <Settings size={16} className="text-amber-600" />
+                        <span>Community Administration</span>
+                      </h3>
+                      <p className="text-xs text-[#8d7565]">
+                        Manage metadata, category classification, privacy, and community lifecycle in Supabase.
+                      </p>
+                    </div>
+
+                    <form onSubmit={handleSaveEdit} className="space-y-4">
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-[#1c130d] dark:text-white">Community Name</label>
+                        <input
+                          type="text"
+                          value={editForm.name}
+                          onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                          className="w-full text-xs px-3.5 py-2.5 rounded-xl bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#1c130d] dark:text-white focus:outline-none focus:border-[#ea580c]"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-[#1c130d] dark:text-white">Category</label>
+                        <select
+                          value={editForm.category}
+                          onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
+                          className="w-full text-xs px-3.5 py-2.5 rounded-xl bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#1c130d] dark:text-white focus:outline-none focus:border-[#ea580c]"
+                        >
+                          <option value="Security">Security & Audits</option>
+                          <option value="AI & ML">AI & Agentic Systems</option>
+                          <option value="Systems">Systems & Rust</option>
+                          <option value="Cloud">Cloud & DevOps</option>
+                          <option value="Web">Web & TypeScript</option>
+                          <option value="Data">Data & Microservices</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-[#1c130d] dark:text-white">Description</label>
+                        <textarea
+                          rows={3}
+                          value={editForm.description}
+                          onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                          className="w-full text-xs px-3.5 py-2.5 rounded-xl bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#1c130d] dark:text-white focus:outline-none focus:border-[#ea580c]"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-[#1c130d] dark:text-white">Technical Tags (comma separated)</label>
+                        <input
+                          type="text"
+                          value={editForm.tags}
+                          onChange={(e) => setEditForm({ ...editForm, tags: e.target.value })}
+                          className="w-full text-xs px-3.5 py-2.5 rounded-xl bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#1c130d] dark:text-white focus:outline-none focus:border-[#ea580c]"
+                        />
+                      </div>
 
                       <button
-                        onClick={(e) => toggleJoin(comm, e)}
-                        className="py-1.5 px-3 rounded-xl bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#8d7565] hover:text-rose-600 text-xs font-bold cursor-pointer"
+                        type="submit"
+                        disabled={savingEdit}
+                        className="px-5 py-2.5 rounded-xl bg-[#ea580c] hover:bg-orange-600 text-white font-bold text-xs transition-colors cursor-pointer shadow-xs disabled:opacity-50"
                       >
-                        Leave
+                        {savingEdit ? 'Saving Changes...' : 'Save Settings'}
+                      </button>
+                    </form>
+
+                    {/* Danger Zone: Community Deletion */}
+                    <div className="pt-6 border-t border-rose-200 dark:border-rose-950/60 space-y-3">
+                      <h4 className="text-xs font-bold uppercase text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
+                        <Trash2 size={13} />
+                        <span>Danger Zone</span>
+                      </h4>
+                      <p className="text-xs text-[#8d7565]">
+                        Permanently delete this community, its posts, and member associations. This action cannot be reversed.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleDeleteCommunity}
+                        className="px-4 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900 text-xs font-bold hover:bg-rose-100 transition-colors cursor-pointer"
+                      >
+                        Delete Community Permanently
                       </button>
                     </div>
                   </div>
-                ))}
+                )}
+
+              </div>
+            ) : (
+              <div className="p-16 text-center rounded-3xl bg-white dark:bg-[#1a1410] border border-[#f1e4d3] dark:border-[#382b22] space-y-3">
+                <Compass size={40} className="mx-auto text-orange-500 opacity-40 animate-pulse" />
+                <h3 className="font-extrabold text-base text-[#1c130d] dark:text-white">Select a Community</h3>
+                <p className="text-xs text-[#8d7565]">Choose a community from the left rail or launch a new guild.</p>
               </div>
             )}
           </div>
-        )}
 
-        {/* =========================================================================
-            6. TAB 4: LEADERBOARD & COMMUNITY DISCUSSIONS
-            ========================================================================= */}
-        {activeTab === 'leaderboard' && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-            {/* Community Rankings */}
-            <div className="bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] rounded-3xl p-5 shadow-xs space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-[#f1e4d3] dark:border-[#33261d]">
-                <div className="flex items-center gap-2">
-                  <Award size={18} className="text-[#ea580c]" />
-                  <h3 className="text-sm font-bold text-[#1c130d] dark:text-white">
-                    Top Communities
-                  </h3>
-                </div>
-                <span className="text-[11px] text-[#8d7565]">By Members</span>
-              </div>
-
-              <div className="space-y-3">
-                {[...allCommunities]
-                  .sort((a, b) => (b.member_count || 1) - (a.member_count || 1))
-                  .slice(0, 6)
-                  .map((comm, idx) => (
-                    <div
-                      key={comm.id}
-                      className="flex items-center justify-between p-3 rounded-2xl bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22]"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="w-6 h-6 rounded-lg bg-orange-100 dark:bg-orange-950/60 text-[#ea580c] font-black text-xs flex items-center justify-center shrink-0">
-                          #{idx + 1}
-                        </span>
-                        <span className="text-lg shrink-0">{comm.icon || '💬'}</span>
-                        <div className="min-w-0">
-                          <h4 className="text-xs font-bold text-[#1c130d] dark:text-white truncate">
-                            {comm.name}
-                          </h4>
-                          <span className="text-[10px] text-[#8d7565]">
-                            {comm.category || 'General'}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="text-right shrink-0">
-                        <span className="text-xs font-black text-[#ea580c]">
-                          {(comm.member_count || 1).toLocaleString()} members
-                        </span>
-                        <div className="mt-1">
-                          <button
-                            onClick={() => {
-                              setSelectedGuildId(comm.id);
-                              setActiveTab('workspace');
-                            }}
-                            className="text-[10px] text-[#ea580c] hover:underline font-bold cursor-pointer"
-                          >
-                            Open Feed →
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            </div>
-
-            {/* Community Events & Discussions */}
-            <div className="bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] rounded-3xl p-5 shadow-xs space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-[#f1e4d3] dark:border-[#33261d]">
-                <div className="flex items-center gap-2">
-                  <Calendar size={18} className="text-[#ea580c]" />
-                  <h3 className="text-sm font-bold text-[#1c130d] dark:text-white">
-                    Community Events & Discussions
-                  </h3>
-                </div>
-                <Link
-                  to="/events"
-                  className="text-xs font-bold text-[#ea580c] hover:underline"
-                >
-                  All Events →
-                </Link>
-              </div>
-
-              <div className="p-8 text-center space-y-3 bg-[#faf6f0] dark:bg-[#281f18] rounded-2xl border border-[#f1e4d3] dark:border-[#382b22]">
-                <Calendar size={36} className="mx-auto text-[#ea580c]" />
-                <h4 className="text-sm font-bold text-[#1c130d] dark:text-white">
-                  Developer Events & Meetups
-                </h4>
-                <p className="text-xs text-[#8d7565] max-w-sm mx-auto leading-relaxed">
-                  Join hackathons, tech talks, and open discussions organized across our developer communities.
-                </p>
-                <div className="pt-2">
-                  <Link
-                    to="/events"
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-[#ea580c] text-white hover:brightness-105 shadow-xs"
-                  >
-                    <span>Browse Events Hub</span>
-                    <ChevronRight size={14} />
-                  </Link>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        </div>
 
       </div>
 
       {/* =========================================================================
-          7. CREATE COMMUNITY MODAL
+          INVITE & ADD MEMBERS MODAL (ADMIN & TEAM MANAGEMENT)
           ========================================================================= */}
       <AnimatePresence>
-        {showForm && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md px-4 py-6 overflow-y-auto cursor-pointer"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) setShowForm(false);
-            }}
+        {showInviteModal && activeGuild && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/75 backdrop-blur-sm"
+            onClick={() => setShowInviteModal(false)}
           >
             <motion.div
-              initial={{ scale: 0.95, opacity: 0, y: 15 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] rounded-3xl p-6 sm:p-7 w-full max-w-lg shadow-2xl relative my-auto space-y-5 cursor-default"
+              className="w-full max-w-lg bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] rounded-3xl p-6 shadow-2xl space-y-5"
             >
-              <div className="flex items-center justify-between pb-3 border-b border-[#f1e4d3] dark:border-[#33261d]">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-orange-100 dark:bg-orange-950/60 flex items-center justify-center text-[#ea580c]">
-                    <Plus size={20} strokeWidth={2.8} />
-                  </div>
-                  <div>
-                    <h2 className="text-base sm:text-lg font-black text-[#1c130d] dark:text-white">
-                      Create a Community
-                    </h2>
-                    <p className="text-xs text-[#8d7565]">Start a developer community on Connectra</p>
-                  </div>
+              <div className="flex items-center justify-between border-b border-[#f1e4d3] dark:border-[#33251c] pb-3">
+                <div className="flex items-center gap-2">
+                  <UserPlus size={18} className="text-[#ea580c]" />
+                  <h3 className="font-extrabold text-sm sm:text-base text-[#1c130d] dark:text-white">
+                    Invite Collaborators to {activeGuild.name}
+                  </h3>
                 </div>
                 <button
-                  onClick={() => setShowForm(false)}
-                  className="p-1.5 text-[#8d7565] hover:text-[#1c130d] dark:hover:text-white rounded-xl hover:bg-[#faf6f0] dark:hover:bg-[#281f18] cursor-pointer"
+                  onClick={() => setShowInviteModal(false)}
+                  className="p-1 text-[#8d7565] hover:text-[#1c130d] dark:hover:text-white transition-colors cursor-pointer"
                 >
-                  <X size={18} />
+                  <X size={16} />
                 </button>
               </div>
 
-              <form onSubmit={handleCreate} className="space-y-4">
-                {/* Glyph Picker */}
-                <div>
-                  <label className="text-[11px] font-bold text-[#6b5546] dark:text-[#a89080] uppercase tracking-wider mb-2 block">
-                    Community Icon
-                  </label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {DEFAULT_ICONS.map((icon) => (
-                      <button
-                        key={icon}
-                        type="button"
-                        onClick={() => setForm((p) => ({ ...p, icon }))}
-                        className={`text-xl p-2 rounded-xl transition-all border cursor-pointer ${
-                          form.icon === icon
-                            ? 'bg-orange-100 dark:bg-orange-950/60 border-[#ea580c] scale-110 shadow-xs'
-                            : 'bg-[#faf6f0] dark:bg-[#281f18] border-[#f1e4d3] dark:border-[#382b22] hover:border-[#ea580c]/50'
-                        }`}
-                      >
-                        {icon}
-                      </button>
-                    ))}
-                  </div>
+              {/* 1. Shareable Link Section */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-[#8d7565] uppercase">Shareable Guild Invite Link</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${window.location.origin}/communities?community=${activeGuild.id}`}
+                    className="flex-1 text-xs px-3.5 py-2.5 rounded-xl bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#1c130d] dark:text-white font-mono select-all outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCopyInviteLink}
+                    className="px-4 py-2.5 rounded-xl bg-[#ea580c] hover:bg-orange-600 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Copy size={13} />
+                    <span>Copy</span>
+                  </button>
                 </div>
+              </div>
 
-                {/* Name & Category */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  <div className="sm:col-span-2">
-                    <label className="text-[11px] font-bold text-[#6b5546] dark:text-[#a89080] uppercase tracking-wider mb-1 block">
-                      Community Name *
-                    </label>
-                    <input
-                      required
-                      value={form.name}
-                      onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-                      placeholder="e.g. Python & FastAPI Developers"
-                      className="w-full text-xs px-3 py-2 rounded-xl bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#1c130d] dark:text-white focus:outline-none focus:border-[#ea580c]"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-bold text-[#6b5546] dark:text-[#a89080] uppercase tracking-wider mb-1 block">
-                      Category
-                    </label>
+              <div className="h-px bg-[#f1e4d3] dark:bg-[#33251c]" />
+
+              {/* 2. Direct Database Search & Add */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-[#8d7565] uppercase">Add Developer Directly</label>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-[#8d7565]">Assign Role:</span>
                     <select
-                      value={form.category}
-                      onChange={(e) => setForm((p) => ({ ...p, category: e.target.value }))}
-                      className="w-full text-xs px-2.5 py-2 rounded-xl bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#1c130d] dark:text-white focus:outline-none focus:border-[#ea580c] cursor-pointer font-semibold"
+                      value={selectedRoleToAssign}
+                      onChange={(e) => setSelectedRoleToAssign(e.target.value)}
+                      className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#1c130d] dark:text-white outline-none cursor-pointer"
                     >
-                      <option value="Security">Security</option>
-                      <option value="AI & ML">AI & ML</option>
-                      <option value="Systems">Systems</option>
-                      <option value="Web">Web</option>
-                      <option value="Creative">Creative</option>
-                      <option value="Community">Founders</option>
+                      <option value="member">Member</option>
+                      <option value="moderator">Moderator</option>
+                      <option value="admin">Admin</option>
                     </select>
                   </div>
                 </div>
 
-                {/* Description */}
-                <div>
-                  <label className="text-[11px] font-bold text-[#6b5546] dark:text-[#a89080] uppercase tracking-wider mb-1 block">
-                    Community Description
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={form.description}
-                    onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
-                    placeholder="Describe what this community is about and what members can share..."
-                    className="w-full text-xs px-3 py-2 rounded-xl bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#1c130d] dark:text-white focus:outline-none focus:border-[#ea580c] resize-none"
+                <div className="relative">
+                  <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8d7565] pointer-events-none" />
+                  <input
+                    type="text"
+                    value={userSearchQuery}
+                    onChange={(e) => handleSearchUsers(e.target.value)}
+                    placeholder="Search developer by username or full name..."
+                    className="w-full text-xs pl-9 pr-3.5 py-2.5 rounded-xl bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#1c130d] dark:text-white placeholder:text-[#8d7565] focus:outline-none focus:border-[#ea580c]"
                   />
                 </div>
 
-                {/* Tags and Privacy */}
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                  <div className="flex-1">
-                    <input
-                      type="text"
-                      value={form.tags}
-                      onChange={(e) => setForm((p) => ({ ...p, tags: e.target.value }))}
-                      placeholder="Tags (e.g. Python, API, Backend)"
-                      className="w-full text-xs px-3 py-2 rounded-xl bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#1c130d] dark:text-white focus:outline-none focus:border-[#ea580c]"
-                    />
-                  </div>
+                {/* Search Results List */}
+                <div className="max-h-56 overflow-y-auto custom-scrollbar space-y-1">
+                  {searchingUsers ? (
+                    <p className="text-xs text-[#8d7565] py-2 text-center">Searching database profiles...</p>
+                  ) : userSearchResults.length > 0 ? (
+                    userSearchResults.map((user) => {
+                      const isAlreadyMember = guildMembers.some((m) => m.user_id === user.id);
 
-                  <label className="flex items-center gap-2 cursor-pointer text-xs select-none px-3 py-2 bg-[#faf6f0] dark:bg-[#281f18] rounded-xl border border-[#f1e4d3] dark:border-[#382b22]">
-                    <input
-                      type="checkbox"
-                      checked={form.is_private}
-                      onChange={(e) => setForm((p) => ({ ...p, is_private: e.target.checked }))}
-                      className="rounded text-[#ea580c] focus:ring-0 cursor-pointer"
-                    />
-                    <span className="text-[11px] font-bold text-[#6b5546] dark:text-[#a89080]">
-                      Private Community
-                    </span>
-                  </label>
-                </div>
+                      return (
+                        <div
+                          key={user.id}
+                          className="p-2.5 rounded-xl bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] flex items-center justify-between gap-3"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <img
+                              src={user.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100'}
+                              alt=""
+                              className="w-8 h-8 rounded-lg object-cover"
+                            />
+                            <div className="min-w-0">
+                              <span className="text-xs font-bold block truncate text-[#1c130d] dark:text-white">
+                                {user.full_name || user.username}
+                              </span>
+                              <span className="text-[10px] text-[#8d7565] block truncate">@{user.username}</span>
+                            </div>
+                          </div>
 
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#ea580c] via-[#f97316] to-[#fb923c] text-white font-black text-xs hover:brightness-105 transition-all shadow-md shadow-orange-500/25 flex items-center justify-center gap-2 cursor-pointer active:scale-98 disabled:opacity-50"
-                >
-                  {submitting ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Creating Community...</span>
-                    </>
+                          <button
+                            type="button"
+                            disabled={isAlreadyMember || addingUserId === user.id}
+                            onClick={() => handleAddMember(user.id)}
+                            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                              isAlreadyMember
+                                ? 'bg-stone-200 dark:bg-stone-800 text-[#8d7565] cursor-not-allowed'
+                                : 'bg-[#ea580c] hover:bg-orange-600 text-white shadow-2xs'
+                            }`}
+                          >
+                            {isAlreadyMember ? 'Already in Guild' : addingUserId === user.id ? 'Adding...' : 'Add to Guild'}
+                          </button>
+                        </div>
+                      );
+                    })
+                  ) : userSearchQuery ? (
+                    <p className="text-xs text-[#8d7565] py-2 text-center">No developers found matching "{userSearchQuery}".</p>
                   ) : (
-                    <>
-                      <Sparkles size={14} />
-                      <span>Create Community</span>
-                    </>
+                    <p className="text-xs text-[#8d7565] py-2 text-center">Type a username to discover engineers to add.</p>
                   )}
-                </button>
-              </form>
+                </div>
+              </div>
             </motion.div>
-          </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
       {/* =========================================================================
-          8. EDIT COMMUNITY MODAL (ADMIN ONLY)
+          CREATE COMMUNITY MODAL (CLEAN SAAS FORM)
           ========================================================================= */}
       <AnimatePresence>
-        {showEditModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md px-4 py-6 overflow-y-auto cursor-pointer"
-            onClick={(e) => {
-              if (e.target === e.currentTarget) setShowEditModal(false);
-            }}
+        {showCreateModal && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/75 backdrop-blur-sm"
+            onClick={() => setShowCreateModal(false)}
           >
             <motion.div
-              initial={{ scale: 0.95, opacity: 0, y: 15 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] rounded-3xl p-6 sm:p-7 w-full max-w-lg shadow-2xl relative my-auto space-y-5 cursor-default"
+              className="w-full max-w-lg bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] rounded-3xl p-6 shadow-2xl space-y-4"
             >
-              <div className="flex items-center justify-between pb-3 border-b border-[#f1e4d3] dark:border-[#33261d]">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-amber-100 dark:bg-amber-950/60 flex items-center justify-center text-amber-700 dark:text-amber-400">
-                    <Shield size={20} strokeWidth={2.5} />
-                  </div>
-                  <div>
-                    <h2 className="text-base sm:text-lg font-black text-[#1c130d] dark:text-white">
-                      Edit Community Details
-                    </h2>
-                    <p className="text-xs text-[#8d7565]">Manage topics, description, and settings</p>
-                  </div>
+              <div className="flex items-center justify-between border-b border-[#f1e4d3] dark:border-[#33251c] pb-3">
+                <div className="flex items-center gap-2">
+                  <Terminal size={18} className="text-[#ea580c]" />
+                  <h3 className="font-extrabold text-sm sm:text-base text-[#1c130d] dark:text-white">
+                    Create Technical Guild
+                  </h3>
                 </div>
                 <button
-                  onClick={() => setShowEditModal(false)}
-                  className="p-1.5 text-[#8d7565] hover:text-[#1c130d] dark:hover:text-white rounded-xl hover:bg-[#faf6f0] dark:hover:bg-[#281f18] cursor-pointer"
+                  onClick={() => setShowCreateModal(false)}
+                  className="p-1 text-[#8d7565] hover:text-[#1c130d] dark:hover:text-white transition-colors cursor-pointer"
                 >
-                  <X size={18} />
+                  <X size={16} />
                 </button>
               </div>
 
-              <form onSubmit={handleSaveEdit} className="space-y-4">
-                {/* Icon Picker */}
-                <div>
-                  <label className="text-[11px] font-bold text-[#6b5546] dark:text-[#a89080] uppercase tracking-wider mb-2 block">
-                    Community Icon
-                  </label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {DEFAULT_ICONS.map((icon) => (
-                      <button
-                        key={icon}
-                        type="button"
-                        onClick={() => setEditForm((p) => ({ ...p, icon }))}
-                        className={`text-xl p-2 rounded-xl transition-all border cursor-pointer ${
-                          editForm.icon === icon
-                            ? 'bg-amber-100 dark:bg-amber-950/60 border-amber-500 scale-110 shadow-xs'
-                            : 'bg-[#faf6f0] dark:bg-[#281f18] border-[#f1e4d3] dark:border-[#382b22] hover:border-amber-500/50'
-                        }`}
-                      >
-                        {icon}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Name & Category */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  <div className="sm:col-span-2">
-                    <label className="text-[11px] font-bold text-[#6b5546] dark:text-[#a89080] uppercase tracking-wider mb-1 block">
-                      Community Name *
-                    </label>
-                    <input
-                      required
-                      value={editForm.name}
-                      onChange={(e) => setEditForm((p) => ({ ...p, name: e.target.value }))}
-                      className="w-full text-xs px-3 py-2 rounded-xl bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#1c130d] dark:text-white focus:outline-none focus:border-[#ea580c]"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-bold text-[#6b5546] dark:text-[#a89080] uppercase tracking-wider mb-1 block">
-                      Category
-                    </label>
-                    <select
-                      value={editForm.category}
-                      onChange={(e) => setEditForm((p) => ({ ...p, category: e.target.value }))}
-                      className="w-full text-xs px-2.5 py-2 rounded-xl bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#1c130d] dark:text-white focus:outline-none focus:border-[#ea580c] cursor-pointer font-semibold"
-                    >
-                      <option value="Security">Security</option>
-                      <option value="AI & ML">AI & ML</option>
-                      <option value="Systems">Systems</option>
-                      <option value="Web">Web</option>
-                      <option value="Creative">Creative</option>
-                      <option value="Community">Founders</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Description */}
-                <div>
-                  <label className="text-[11px] font-bold text-[#6b5546] dark:text-[#a89080] uppercase tracking-wider mb-1 block">
-                    Community Description
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={editForm.description}
-                    onChange={(e) => setEditForm((p) => ({ ...p, description: e.target.value }))}
-                    className="w-full text-xs px-3 py-2 rounded-xl bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#1c130d] dark:text-white focus:outline-none focus:border-[#ea580c] resize-none"
-                  />
-                </div>
-
-                {/* Topics / Tags */}
-                <div>
-                  <label className="text-[11px] font-bold text-[#6b5546] dark:text-[#a89080] uppercase tracking-wider mb-1 block">
-                    Topics / Tags (comma-separated)
-                  </label>
+              <form onSubmit={handleCreateCommunity} className="space-y-3.5">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-[#1c130d] dark:text-white">Community Name</label>
                   <input
                     type="text"
-                    value={editForm.tags}
-                    onChange={(e) => setEditForm((p) => ({ ...p, tags: e.target.value }))}
-                    placeholder="e.g. Llama-3.3, Groq, LangChain"
-                    className="w-full text-xs px-3 py-2 rounded-xl bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#1c130d] dark:text-white focus:outline-none focus:border-[#ea580c]"
+                    required
+                    placeholder="e.g. Distributed Systems & Go"
+                    value={createForm.name}
+                    onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
+                    className="w-full text-xs px-3.5 py-2.5 rounded-xl bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#1c130d] dark:text-white placeholder:text-[#8d7565] focus:outline-none focus:border-[#ea580c]"
                   />
                 </div>
 
-                <div className="flex items-center gap-2 pt-2">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-[#1c130d] dark:text-white">Category</label>
+                  <select
+                    value={createForm.category}
+                    onChange={(e) => setCreateForm({ ...createForm, category: e.target.value })}
+                    className="w-full text-xs px-3.5 py-2.5 rounded-xl bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#1c130d] dark:text-white focus:outline-none focus:border-[#ea580c]"
+                  >
+                    <option value="Security">Security & Audits</option>
+                    <option value="AI & ML">AI & Agentic Systems</option>
+                    <option value="Systems">Systems & Rust</option>
+                    <option value="Cloud">Cloud & DevOps</option>
+                    <option value="Web">Web & TypeScript</option>
+                    <option value="Data">Data & Async Microservices</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-[#1c130d] dark:text-white">Description</label>
+                  <textarea
+                    rows={3}
+                    placeholder="Focus area, mission, and technical goals..."
+                    value={createForm.description}
+                    onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
+                    className="w-full text-xs px-3.5 py-2.5 rounded-xl bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#1c130d] dark:text-white placeholder:text-[#8d7565] focus:outline-none focus:border-[#ea580c]"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-[#1c130d] dark:text-white">Tags (comma separated)</label>
+                  <input
+                    type="text"
+                    placeholder="Rust, Linux, Concurrency"
+                    value={createForm.tags}
+                    onChange={(e) => setCreateForm({ ...createForm, tags: e.target.value })}
+                    className="w-full text-xs px-3.5 py-2.5 rounded-xl bg-[#faf6f0] dark:bg-[#281f18] border border-[#f1e4d3] dark:border-[#382b22] text-[#1c130d] dark:text-white placeholder:text-[#8d7565] focus:outline-none focus:border-[#ea580c]"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#f1e4d3] dark:border-[#33251c]">
                   <button
                     type="button"
-                    onClick={() => setShowEditModal(false)}
-                    className="flex-1 py-2.5 rounded-xl border border-[#f1e4d3] dark:border-[#382b22] text-xs font-bold text-[#8d7565] hover:text-[#1c130d] cursor-pointer"
+                    onClick={() => setShowCreateModal(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-[#8d7565] hover:text-[#1c130d] dark:hover:text-white cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    disabled={savingEdit}
-                    className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#ea580c] via-[#f97316] to-[#fb923c] text-white font-black text-xs hover:brightness-105 transition-all shadow-md shadow-orange-500/25 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                    disabled={submittingCreate}
+                    className="px-5 py-2 rounded-xl bg-[#ea580c] hover:bg-orange-600 text-white font-bold text-xs transition-colors cursor-pointer shadow-xs disabled:opacity-50"
                   >
-                    {savingEdit ? 'Saving Changes...' : 'Save Changes'}
+                    {submittingCreate ? 'Creating...' : 'Create Guild'}
                   </button>
                 </div>
               </form>
             </motion.div>
-          </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

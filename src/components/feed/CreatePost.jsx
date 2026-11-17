@@ -14,11 +14,14 @@ import {
   KeyRound,
   CheckCircle2,
   Lock,
+  Code2,
+  Film,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from '../../lib/toast';
-import { reviewCodeAndSecurity, polishPostContent, screenContentSafety } from '../../lib/ai';
+import { reviewCodeAndSecurity, polishPostContent, screenContentSafety, polishCodeSnippet } from '../../lib/ai';
 import { scanForSecrets, redactSecrets } from '../../lib/secretScanner';
+import { detectCodeLanguage, getLanguageDisplayName, SUPPORTED_LANGUAGES } from '../../lib/codeDetector';
 import AIAnalysisCard from './AIAnalysisCard';
 import { createNotification } from '../../lib/notifications';
 
@@ -26,15 +29,27 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
   const [content, setContent] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [codeSnippet, setCodeSnippet] = useState('');
-  const [codeLang, setCodeLang] = useState('');
+  const [codeLang, setCodeLang] = useState('javascript');
+  const [isAutoDetected, setIsAutoDetected] = useState(false);
   const [showExtras, setShowExtras] = useState(false);
   const [loading, setLoading] = useState(false);
   const [imageFile, setImageFile] = useState(null);
   const [videoFile, setVideoFile] = useState(null);
   const [videoUrl, setVideoUrl] = useState('');
   const [videoPreview, setVideoPreview] = useState(null);
-  const [activeMediaType, setActiveMediaType] = useState('image'); // 'image' | 'video'
+  const [activeMediaType, setActiveMediaType] = useState('image'); // 'image' | 'video' | 'code'
   const [userProfile, setUserProfile] = useState(null);
+
+  const handleCodeSnippetChange = (newCode) => {
+    setCodeSnippet(newCode);
+    if (newCode && newCode.trim()) {
+      const detected = detectCodeLanguage(newCode);
+      if (detected) {
+        setCodeLang(detected);
+        setIsAutoDetected(true);
+      }
+    }
+  };
 
   const handleVideoChange = (e) => {
     const file = e.target.files?.[0];
@@ -80,12 +95,35 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
   }, [session?.user?.id]);
 
   const handlePolishPost = async () => {
-    if (!content.trim()) return;
+    const hasText = Boolean(content && content.trim());
+    const hasCode = Boolean(codeSnippet && codeSnippet.trim());
+    if (!hasText && !hasCode) return;
     setAiPolishing(true);
     try {
-      const polished = await polishPostContent({ content });
-      setContent(polished);
-      toast.success('Post polished with AI! 🚀');
+      if (hasCode) {
+        const detected = detectCodeLanguage(codeSnippet);
+        const activeLang = detected || codeLang || 'python';
+        if (detected && detected !== codeLang) {
+          setCodeLang(detected);
+          setIsAutoDetected(true);
+        }
+        const polished = await polishCodeSnippet({ code: codeSnippet, language: activeLang });
+        setCodeSnippet(polished);
+
+        // Security scan and reflection
+        const review = await reviewCodeAndSecurity({ code: polished, language: activeLang });
+        setCodeReviewResult(review);
+        setShowCodeReview(true);
+      }
+
+      if (hasText) {
+        const polished = await polishPostContent({ content });
+        setContent(polished);
+      } else if (hasCode) {
+        const langName = getLanguageDisplayName(codeLang || 'python');
+        setContent(`Optimized and security-reviewed ${langName} implementation.\n\n#${codeLang || 'code'} #cleancode`);
+      }
+      toast.success('Post & code polished with AI! 🚀');
     } catch {
       toast.error('Failed to polish post');
     } finally {
@@ -101,12 +139,18 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
     setAiScanning(true);
     setShowCodeReview(true);
     try {
-      const result = await reviewCodeAndSecurity({ code: codeSnippet, language: codeLang || 'javascript' });
+      const detected = detectCodeLanguage(codeSnippet);
+      const activeLang = detected || codeLang || 'python';
+      if (detected && detected !== codeLang) {
+        setCodeLang(detected);
+        setIsAutoDetected(true);
+      }
+      const result = await reviewCodeAndSecurity({ code: codeSnippet, language: activeLang });
       setCodeReviewResult(result);
       if (result.isClean) {
-        toast.success('Zero critical vulnerabilities found! 🛡️');
+        toast.success(`Zero critical vulnerabilities in ${getLanguageDisplayName(activeLang)}! 🛡️`);
       } else {
-        toast.error(`Identified ${result.vulnerabilityCount || 1} security advisories.`);
+        toast.error(`Identified ${result.vulnerabilityCount || 1} security advisories in ${getLanguageDisplayName(activeLang)}.`);
       }
     } catch {
       toast.error('Failed to run code scan');
@@ -369,7 +413,7 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
             placeholder={displayPlaceholder}
             className="w-full bg-transparent text-sm text-[#2b1f17] placeholder-[#a89284] outline-none"
           />
-          {content.trim().length > 5 && (
+          {(content.trim().length > 3 || codeSnippet.trim().length > 3) && (
             <button
               type="button"
               onClick={handlePolishPost}
@@ -464,6 +508,22 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
                 >
                   <Video size={13} />
                   <span>🎬 Video / Reel</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveMediaType('code')}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    activeMediaType === 'code'
+                      ? 'bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white shadow-xs'
+                      : 'bg-white text-[#8d7565] hover:text-[#2b1f17] border border-[#f1e4d3]'
+                  }`}
+                >
+                  <Code2 size={13} />
+                  <span>
+                    {codeSnippet.trim()
+                      ? `Code (${getLanguageDisplayName(codeLang).toUpperCase()})`
+                      : 'Code Snippet'}
+                  </span>
                 </button>
               </div>
 
@@ -561,29 +621,51 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
                 </div>
               )}
 
-              {/* Code snippet input with SAST Scan button */}
-              <div className="flex flex-col gap-1.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-[11px] text-[#8d7565] font-semibold">Code snippet</span>
-                  {codeSnippet.trim() && (
-                    <button
-                      type="button"
-                      onClick={handleScanCode}
-                      disabled={aiScanning}
-                      className="text-[11px] px-2.5 py-0.5 rounded-md bg-orange-500/10 text-[#ea580c] hover:bg-orange-500/20 font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
-                    >
-                      {aiScanning ? <RefreshCw size={11} className="animate-spin" /> : <Shield size={11} />}
-                      <span>{aiScanning ? 'Scanning...' : 'Run LLM-SAST Scan'}</span>
-                    </button>
-                  )}
+              {/* Code snippet input with language selector & SAST Scan button */}
+              {(activeMediaType === 'code' || codeSnippet.trim().length > 0) && (
+                <div className="flex flex-col gap-1.5 pt-1">
+                  <div className="flex justify-between items-center flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <Code2 size={13} className="text-[#ea580c]" />
+                      <span className="text-[11px] text-[#8d7565] font-semibold">Language</span>
+                      <select
+                        value={codeLang || 'javascript'}
+                        onChange={(e) => {
+                          setCodeLang(e.target.value);
+                          setIsAutoDetected(false);
+                        }}
+                        className="text-xs px-2.5 py-1 rounded-lg bg-white border border-[#f1e4d3] text-[#2b1f17] font-mono font-bold focus:outline-none focus:border-orange-500 cursor-pointer"
+                      >
+                        {SUPPORTED_LANGUAGES.map((l) => (
+                          <option key={l.id} value={l.id}>{l.label}</option>
+                        ))}
+                      </select>
+                      {isAutoDetected && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200 flex items-center gap-1 shadow-2xs">
+                          <Sparkles size={10} /> Auto-detected
+                        </span>
+                      )}
+                    </div>
+                    {codeSnippet.trim() && (
+                      <button
+                        type="button"
+                        onClick={handleScanCode}
+                        disabled={aiScanning}
+                        className="text-[11px] px-2.5 py-1 rounded-md bg-orange-500/10 text-[#ea580c] hover:bg-orange-500/20 font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+                      >
+                        {aiScanning ? <RefreshCw size={11} className="animate-spin" /> : <Shield size={11} />}
+                        <span>{aiScanning ? 'Scanning...' : `Audit Code (${getLanguageDisplayName(codeLang).toUpperCase()})`}</span>
+                      </button>
+                    )}
+                  </div>
+                  <textarea
+                    value={codeSnippet}
+                    onChange={(e) => handleCodeSnippetChange(e.target.value)}
+                    placeholder={`# Paste your ${getLanguageDisplayName(codeLang)} code snippet here…`}
+                    className="w-full bg-[#2b1f17] rounded-lg p-2.5 text-xs font-mono text-amber-300 outline-none resize-y min-h-[75px] leading-relaxed"
+                  />
                 </div>
-                <textarea
-                  value={codeSnippet}
-                  onChange={(e) => setCodeSnippet(e.target.value)}
-                  placeholder="Paste your code snippet here (SQL, JavaScript, Python, etc.)..."
-                  className="w-full bg-[#2b1f17] rounded-lg p-2.5 text-xs font-mono text-amber-300 outline-none resize-y min-h-[70px]"
-                />
-              </div>
+              )}
 
               {/* Structured SAST Results Card with 1-Click Apply */}
               {showCodeReview && (
@@ -594,6 +676,8 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
                     onClose={() => setShowCodeReview(false)}
                     onApplyFix={(fixedCode) => {
                       setCodeSnippet(fixedCode);
+                      const detected = detectCodeLanguage(fixedCode);
+                      if (detected) setCodeLang(detected);
                       toast.success('Remediation patch applied to snippet!');
                     }}
                   />
@@ -629,6 +713,25 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
           >
             <Video size={15} className="text-[#f97316]" />
             <span>Video</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setShowExtras(true);
+              setActiveMediaType('code');
+            }}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold text-[#8d7565] hover:text-[#ea580c] hover:bg-[#fff7ed] transition-all cursor-pointer relative"
+          >
+            <Code2 size={15} className="text-[#ea580c]" />
+            <span>
+              {codeSnippet.trim()
+                ? `Code (${getLanguageDisplayName(codeLang).toUpperCase()})`
+                : 'Code'}
+            </span>
+            {Boolean(codeSnippet.trim()) && (
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 ring-2 ring-white" />
+            )}
           </button>
 
           <button
