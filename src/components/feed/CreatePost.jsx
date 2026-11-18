@@ -689,18 +689,18 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
       </AnimatePresence>
 
       {/* Action Buttons Row */}
-      <div className="flex items-center justify-between pt-1">
-        <div className="flex items-center gap-1 sm:gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+        <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap">
           <button
             type="button"
             onClick={() => {
               setShowExtras(true);
               setActiveMediaType('image');
             }}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold text-[#8d7565] hover:text-[#ea580c] hover:bg-[#fff7ed] transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg text-xs font-bold text-[#8d7565] hover:text-[#ea580c] hover:bg-[#fff7ed] transition-all cursor-pointer"
           >
             <ImageIcon size={15} className="text-[#ea580c]" />
-            <span>Image</span>
+            <span className="hidden sm:inline">Image</span>
           </button>
 
           <button
@@ -709,10 +709,10 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
               setShowExtras(true);
               setActiveMediaType('video');
             }}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold text-[#8d7565] hover:text-[#ea580c] hover:bg-[#fff7ed] transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg text-xs font-bold text-[#8d7565] hover:text-[#ea580c] hover:bg-[#fff7ed] transition-all cursor-pointer"
           >
             <Video size={15} className="text-[#f97316]" />
-            <span>Video</span>
+            <span className="hidden sm:inline">Video</span>
           </button>
 
           <button
@@ -721,7 +721,7 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
               setShowExtras(true);
               setActiveMediaType('code');
             }}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold text-[#8d7565] hover:text-[#ea580c] hover:bg-[#fff7ed] transition-all cursor-pointer relative"
+            className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg text-xs font-bold text-[#8d7565] hover:text-[#ea580c] hover:bg-[#fff7ed] transition-all cursor-pointer relative"
           >
             <Code2 size={15} className="text-[#ea580c]" />
             <span>
@@ -737,19 +737,19 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
           <button
             type="button"
             onClick={() => setShowExtras(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold text-[#8d7565] hover:text-[#ea580c] hover:bg-[#fff7ed] transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg text-xs font-bold text-[#8d7565] hover:text-[#ea580c] hover:bg-[#fff7ed] transition-all cursor-pointer"
           >
             <Calendar size={15} className="text-[#ea580c]" />
-            <span>Event</span>
+            <span className="hidden sm:inline">Event</span>
           </button>
 
           <button
             type="button"
             onClick={() => setShowExtras(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold text-[#8d7565] hover:text-[#ea580c] hover:bg-[#fff7ed] transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg text-xs font-bold text-[#8d7565] hover:text-[#ea580c] hover:bg-[#fff7ed] transition-all cursor-pointer"
           >
             <MoreHorizontal size={15} />
-            <span>More</span>
+            <span className="hidden sm:inline">More</span>
           </button>
         </div>
 

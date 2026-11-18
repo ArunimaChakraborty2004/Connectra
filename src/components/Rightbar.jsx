@@ -298,7 +298,7 @@ export default function Rightbar({ profile }) {
   };
 
   return (
-    <aside className="sticky top-20 flex flex-col gap-3.5 w-full select-none">
+    <aside className="flex flex-col gap-3.5 w-full select-none">
       {/* 1. CyberSec & AI Daily Intel Brief */}
       <div className="bg-gradient-to-br from-[#fff7ed] to-[#fffdfa] border border-[#fed7aa] rounded-2xl p-3.5 flex flex-col gap-2 shadow-xs relative overflow-hidden">
         <div className="flex items-center justify-between">

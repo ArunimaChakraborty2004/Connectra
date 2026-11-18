@@ -82,7 +82,7 @@ export default function ReelsPage({ session }) {
   if (loading) return <Loader fullScreen />;
 
   return (
-    <div className="h-[calc(100vh-56px)] w-full bg-black relative flex justify-center overflow-hidden">
+    <div className="h-[calc(100dvh-120px)] lg:h-[calc(100vh-72px)] w-full bg-black relative flex justify-center overflow-hidden">
       {/* Floating Exit / Cross Button to return to Home Feed */}
       <button 
         onClick={() => navigate('/')}

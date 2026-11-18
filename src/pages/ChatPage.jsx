@@ -1316,10 +1316,10 @@ export default function ChatPage({ session }) {
 
   return (
     <div
-      className="min-h-screen py-6 px-4 md:px-8"
+      className="min-h-screen py-3 sm:py-6 px-2 sm:px-4 md:px-8 pb-20 lg:pb-6"
       style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)' }}
     >
-      <div className="max-w-6xl mx-auto flex flex-col md:flex-row gap-6 h-[calc(100vh-130px)]">
+      <div className="max-w-6xl mx-auto flex flex-col md:flex-row gap-4 sm:gap-6 h-[calc(100dvh-140px)] md:h-[calc(100vh-130px)]">
         {/* Left Sidebar: Conversations & Groups */}
         <motion.div
           initial={{ opacity: 0, x: -16 }}

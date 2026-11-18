@@ -331,7 +331,8 @@ export default function ProfilePage({ session }) {
   return (
     <div className="min-h-screen bg-background text-main font-sans">
       <div className="max-w-[1400px] mx-auto px-6 py-8 flex flex-col lg:flex-row gap-8 relative items-start justify-center z-10">
-        <div className="hidden lg:block w-full max-w-[300px] shrink-0">
+        {/* Left Sticky Sidebar */}
+        <div className="hidden lg:block w-[260px] xl:w-[280px] shrink-0 sticky top-20 self-start max-h-[calc(100vh-5.5rem)] overflow-y-auto custom-scrollbar">
           <Sidebar profile={currentUserProfile} stats={{followers:0,following:0}} />
         </div>
         

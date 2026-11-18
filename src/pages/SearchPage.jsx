@@ -665,8 +665,8 @@ export default function SearchPage({ session }) {
       style={{ backgroundColor: 'var(--bg-color)', color: 'var(--text-color)' }}
     >
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-8 flex flex-col lg:flex-row gap-8 relative items-start justify-center z-10">
-        {/* Left Sidebar */}
-        <div className="hidden lg:block w-full max-w-[300px] shrink-0">
+        {/* Left Sticky Sidebar */}
+        <div className="hidden lg:block w-[260px] xl:w-[280px] shrink-0 sticky top-20 self-start max-h-[calc(100vh-5.5rem)] overflow-y-auto custom-scrollbar">
           <Sidebar
             profile={profile || { id: currentUserId, username: session?.user?.email?.split('@')[0] || 'User' }}
             stats={{ followers: followersCount, following: followingCount }}

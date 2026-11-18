@@ -108,7 +108,7 @@ export default function Sidebar({ profile, stats: initialStats, onClose }) {
   ];
 
   return (
-    <aside className="sticky top-20 flex flex-col gap-3.5 w-full max-w-[240px] select-none">
+    <aside className="flex flex-col gap-3.5 w-full select-none">
       {/* Mobile close button */}
       {onClose && (
         <button
