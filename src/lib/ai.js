@@ -1,18 +1,19 @@
 // Groq API integration (Free tier, ultra-fast Llama 3 models)
 // Docs: https://console.groq.com/docs/quickstart
 
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const DIRECT_GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const PROXY_GROQ_URL = '/api/groq';
 const CANDIDATE_MODELS = [
   'qwen/qwen3.8-27b',
   'openai/gpt-oss-120b',
   'openai/gpt-oss-20b',
-  'llama-3.3-70b-versatile',
-  'llama-3.1-8b-instant',
 ];
 const DEFAULT_MODEL = 'qwen/qwen3.8-27b';
 
 export function getGroqApiKey() {
-  const key = import.meta.env.VITE_GROQ_API_KEY;
+  const key =
+    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GROQ_API_KEY) ||
+    (typeof process !== 'undefined' && process.env?.VITE_GROQ_API_KEY);
   if (!key || key === 'your_groq_api_key_here' || key.trim() === '') {
     return null;
   }
@@ -20,7 +21,7 @@ export function getGroqApiKey() {
 }
 
 /**
- * Core caller for Groq API with automatic fallback across working models
+ * Core caller for Groq API with local proxy support and automatic fallback across working models
  */
 export async function callGroq({
   messages,
@@ -34,41 +35,57 @@ export async function callGroq({
     throw new Error('MISSING_KEY');
   }
 
+  // In browser, try local same-origin proxy '/api/groq' first to bypass ad-blockers / CORS issues,
+  // then fallback seamlessly to direct https://api.groq.com
+  const endpointsToTry = typeof window !== 'undefined'
+    ? [PROXY_GROQ_URL, DIRECT_GROQ_URL]
+    : [DIRECT_GROQ_URL];
+
   const modelsToTry = [model, ...CANDIDATE_MODELS.filter(m => m !== model)];
   let lastError = null;
 
-  for (const candidate of modelsToTry) {
-    try {
-      const response = await fetch(GROQ_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: candidate,
-          messages,
-          temperature,
-          max_tokens,
-        }),
-      });
+  for (const endpoint of endpointsToTry) {
+    for (const candidate of modelsToTry) {
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: candidate,
+            messages,
+            temperature,
+            max_tokens,
+          }),
+        });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-          errorData?.error?.message || `Groq API Error (${response.status})`
-        );
-      }
+        if (!response.ok) {
+          // If local proxy returned 404/502 (e.g. running without dev server proxy), switch to direct endpoint
+          if (endpoint === PROXY_GROQ_URL && (response.status === 404 || response.status === 502)) {
+            break;
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(
+            errorData?.error?.message || `Groq API Error (${response.status})`
+          );
+        }
 
-      const data = await response.json();
-      const content = data.choices?.[0]?.message?.content;
-      if (content !== undefined && content !== null) {
-        return content;
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (content !== undefined && content !== null) {
+          return content;
+        }
+      } catch (err) {
+        lastError = err;
+        // If local proxy failed at network level, immediately switch to direct endpoint
+        if (endpoint === PROXY_GROQ_URL) {
+          break;
+        }
+        // Try next candidate model
+        continue;
       }
-    } catch (err) {
-      lastError = err;
-      // Try next candidate model seamlessly
-      continue;
     }
   }
 
@@ -434,6 +451,7 @@ Your persona:
 User Context:
 ${context.username ? `- Current User: @${context.username}` : ''}
 ${context.techStack ? `- User Stack: ${context.techStack}` : ''}
+${context.priorCopilotChats ? `\n=== VERIFIED PRIOR COPILOT SESSIONS (HISTORY) ===\n${context.priorCopilotChats}\n=== END PRIOR COPILOT SESSIONS ===\n` : ''}
 ${context.ragContext ? context.ragContext : ''}
 
 Response Guidelines:
@@ -448,7 +466,13 @@ Response Guidelines:
    - Use bold headers, concise bullet points, and high-signal formatting so it's effortless to scan.
 5. 🔍 **Connectra Community & Feed Grounding**:
    - When real-time database context (posts, developer profiles, projects) is provided in your context, prioritize it directly to answer factual queries (e.g. "what was the last post by @username", "recent feed posts", "what projects are active").
-   - Clearly state the author handle (@username), exact publication date/time, and the post content/code.`;
+   - Clearly state the author handle (@username), exact publication date/time, and the post content/code.
+6. 💬 **Prior Chat & Conversation Awareness**:
+   - When the user asks to see or summarize prior chats, previous conversations, or past questions:
+     NEVER state that you lack access to previous sessions or conversation history.
+     Directly inspect the "VERIFIED PRIOR COPILOT SESSIONS" and any "DIRECT CHAT MESSAGES" in your context.
+     Present a clear, structured summary of the topics discussed and key solutions given.
+     Remind the user that they can click the History (clock icon) in the Copilot toolbar to reopen and continue any specific past session.`;
 
   try {
     const response = await callGroq({
@@ -470,7 +494,20 @@ Response Guidelines:
     if (!apiKey) {
       return `Hello! I'm your Connectra Copilot. 🚀\n\nIt looks like your \`VITE_GROQ_API_KEY\` is not set yet in \`.env\`. Grab a free key in 30 seconds at [console.groq.com](https://console.groq.com/keys) and paste it into your \`.env\` file to activate instant ultra-fast responses!`;
     }
-    return `⚠️ I ran into a temporary issue connecting to the AI inference service (${err.message || 'Service busy'}). Please try sending your query again in a moment.`;
+
+    // High-value offline / RAG fallback: If we already retrieved verified records or prior sessions, present them directly!
+    if (context.priorCopilotChats) {
+      return `### 🕒 Verified Prior Copilot Conversations\nHere are your saved prior conversations from your local session vault:\n\n${context.priorCopilotChats}\n\n*Tip: Click the **History (Clock)** icon in the toolbar above to load and resume any past conversation.*`;
+    }
+
+    if (context.ragContext) {
+      const cleanedDocs = context.ragContext
+        .replace(/===.*?===/g, '')
+        .trim();
+      return `### 📚 Verified Connectra Records\nHere are the verified records retrieved directly from your Connectra database:\n\n${cleanedDocs}\n\n*Notice: Cloud AI inference encountered a network delay (${err.message || 'connection glitch'}). Grounded database results above were retrieved successfully.*`;
+    }
+
+    return `⚠️ I ran into a temporary issue connecting to the AI inference service (${err.message || 'Service busy'}). If you have an ad-blocker or Brave Shields active, make sure \`api.groq.com\` is allowed, or restart your dev server to use the local proxy.`;
   }
 }
 
@@ -652,7 +689,7 @@ Output strictly valid JSON with no markdown fences:
         { role: 'system', content: 'You are an AI safety classifier that outputs strictly valid JSON only.' },
         { role: 'user', content: prompt },
       ],
-      model: 'llama-3.1-8b-instant', // Ultra-low latency for guardrails
+      model: 'openai/gpt-oss-20b', // Ultra-low latency for guardrails
       temperature: 0.1,
     });
 

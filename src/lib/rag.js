@@ -506,6 +506,67 @@ ${topDevs.map((d, idx) => `${idx + 1}. @${d.username} (${d.full_name || ''}) - L
 === END DEVELOPERS RECORD ===`);
       }
     }
+
+    // 5. If query asks about direct messages, chat conversations, or prior messages
+    const isAskingAboutMessages =
+      lower.includes('chat') ||
+      lower.includes('message') ||
+      lower.includes('dm') ||
+      lower.includes('conversation') ||
+      lower.includes('inbox') ||
+      lower.includes('prior chat') ||
+      lower.includes('previous chat');
+
+    if (isAskingAboutMessages) {
+      try {
+        const { data: rawMessages } = await supabase
+          .from('messages')
+          .select('id, sender_id, receiver_id, content, created_at')
+          .order('created_at', { ascending: false })
+          .limit(10);
+
+        if (rawMessages && rawMessages.length > 0) {
+          const userIds = new Set();
+          rawMessages.forEach(m => {
+            if (m.sender_id) userIds.add(m.sender_id);
+            if (m.receiver_id) userIds.add(m.receiver_id);
+          });
+
+          const profileMap = {};
+          if (userIds.size > 0) {
+            const { data: profiles } = await supabase
+              .from('profiles')
+              .select('id, username')
+              .in('id', Array.from(userIds));
+
+            if (profiles) {
+              profiles.forEach(p => {
+                profileMap[p.id] = p.username;
+              });
+            }
+          }
+
+          sources.push({
+            id: 'live-direct-messages',
+            title: 'Live Connectra Direct Messages Database',
+            type: 'database',
+            score: 0.96,
+          });
+
+          contextBlocks.push(`=== VERIFIED DATABASE RECORD: DIRECT CHAT MESSAGES (Newest First) ===
+${rawMessages.map((msg, idx) => {
+  const sender = profileMap[msg.sender_id] ? `@${profileMap[msg.sender_id]}` : 'Developer';
+  const receiver = profileMap[msg.receiver_id] ? `@${profileMap[msg.receiver_id]}` : 'Developer';
+  return `[Message #${idx + 1}] From: ${sender} -> To: ${receiver}
+Date/Time: ${new Date(msg.created_at).toLocaleString()}
+Content: "${msg.content || ''}"`;
+}).join('\n\n')}
+=== END DIRECT CHAT MESSAGES RECORD ===`);
+        }
+      } catch (chatDbErr) {
+        console.warn('Realtime chat DB retrieval error:', chatDbErr);
+      }
+    }
   } catch (err) {
     console.warn('Realtime Connectra DB context error:', err);
   }
