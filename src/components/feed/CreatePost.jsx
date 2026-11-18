@@ -17,13 +17,16 @@ import {
   Code2,
   Film,
   Bot,
+  Layers,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from '../../lib/toast';
-import { reviewCodeAndSecurity, polishPostContent, screenContentSafety, polishCodeSnippet, generatePeerCodeReviewBotCritique } from '../../lib/ai';
+import { reviewCodeAndSecurity, polishPostContent, screenContentSafety, polishCodeSnippet, generatePeerCodeReviewBotCritique, generateMermaidArchitectureDiagram } from '../../lib/ai';
 import { scanForSecrets, redactSecrets } from '../../lib/secretScanner';
 import { detectCodeLanguage, getLanguageDisplayName, SUPPORTED_LANGUAGES } from '../../lib/codeDetector';
+import { generateSemanticVector384 } from '../../lib/rag';
 import AIAnalysisCard from './AIAnalysisCard';
+import MermaidDiagramCard from '../ai/MermaidDiagramCard';
 import { createNotification } from '../../lib/notifications';
 
 export default function CreatePost({ session, onPostCreated, placeholder, communityId = null }) {
@@ -38,8 +41,25 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
   const [videoFile, setVideoFile] = useState(null);
   const [videoUrl, setVideoUrl] = useState('');
   const [videoPreview, setVideoPreview] = useState(null);
-  const [activeMediaType, setActiveMediaType] = useState('image'); // 'image' | 'video' | 'code'
+  const [activeMediaType, setActiveMediaType] = useState('image'); // 'image' | 'video' | 'code' | 'diagram'
+  const [diagramCode, setDiagramCode] = useState('');
+  const [diagramPrompt, setDiagramPrompt] = useState('');
+  const [generatingDiagram, setGeneratingDiagram] = useState(false);
   const [userProfile, setUserProfile] = useState(null);
+
+  const handleGenerateDiagram = async (presetTopic = null) => {
+    const topic = presetTopic || diagramPrompt || content || 'Modern Microservices Architecture with Redis & Supabase';
+    setGeneratingDiagram(true);
+    try {
+      const generated = await generateMermaidArchitectureDiagram({ prompt: topic });
+      setDiagramCode(generated);
+      toast.success('Architecture diagram generated! 📐✨');
+    } catch {
+      toast.error('Failed to generate diagram');
+    } finally {
+      setGeneratingDiagram(false);
+    }
+  };
 
   const handleCodeSnippetChange = (newCode) => {
     setCodeSnippet(newCode);
@@ -166,7 +186,7 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
    */
   const executePublish = async (overrideContent, overrideCode) => {
     setLoading(true);
-    const finalContent = overrideContent !== undefined ? overrideContent : content;
+    let finalContent = overrideContent !== undefined ? overrideContent : content;
     const finalCode = overrideCode !== undefined ? overrideCode : codeSnippet;
 
     let finalImageUrl = imageUrl;
@@ -257,11 +277,22 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
       code_language: codeLang || null,
     };
 
+    if (diagramCode && diagramCode.trim()) {
+      if (!finalContent.includes('```mermaid')) {
+        finalContent = `${finalContent}\n\n\`\`\`mermaid\n${diagramCode.trim()}\n\`\`\``.trim();
+        postPayload.content = finalContent;
+      }
+      postPayload.poll_data = {
+        ...(postPayload.poll_data || {}),
+        diagram_code: diagramCode.trim(),
+      };
+    }
+
     if (communityId && !communityId.startsWith('guild-')) {
       postPayload.community_id = communityId;
     }
     if (communityId) {
-      postPayload.poll_data = { community_id: communityId };
+      postPayload.poll_data = { ...(postPayload.poll_data || {}), community_id: communityId };
     }
 
     let createdPostId = null;
@@ -275,6 +306,31 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
 
     if (!error && newPost) {
       createdPostId = newPost.id;
+      // Index new post into Supabase pgvector store (documents_embeddings) in database
+      try {
+        const textToEmbed = `${finalContent} ${finalCode || ''} ${diagramCode || ''}`.trim();
+        const embedding = generateSemanticVector384(textToEmbed);
+        supabase
+          .from('documents_embeddings')
+          .upsert({
+            id: `post-${createdPostId}`,
+            title: `Post by @${session?.user?.user_metadata?.username || userProfile?.username || 'developer'}`,
+            content: textToEmbed,
+            type: 'post',
+            metadata: {
+              post_id: createdPostId,
+              author: session?.user?.user_metadata?.username || userProfile?.username,
+              has_code: Boolean(finalCode),
+              has_diagram: Boolean(diagramCode),
+            },
+            embedding: embedding,
+          })
+          .then(({ error: vErr }) => {
+            if (vErr) console.warn('Vector embedding index notice:', vErr.message);
+          });
+      } catch (vErr) {
+        console.warn('Vector embedding generation notice:', vErr);
+      }
     } else {
       console.warn('Posts insert notice:', error?.message);
     }
@@ -291,6 +347,7 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
       code_snippet: finalCode || null,
       code_language: codeLang || null,
       community_id: communityId || null,
+      poll_data: postPayload.poll_data || null,
       created_at: new Date().toISOString(),
       profiles: {
         username: session?.user?.user_metadata?.username || userProfile?.username || 'You',
@@ -400,6 +457,8 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
     setShowCodeReview(false);
     setGuardrailViolation(null);
     setShowSecretModal(false);
+    setDiagramCode('');
+    setDiagramPrompt('');
 
     window.dispatchEvent(new Event('refreshFeed'));
     toast.success(finalVideoUrl ? 'Reel published & reflected in Feed! 🎬🚀' : 'Post published safely! 🛡️🚀');
@@ -750,6 +809,96 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
                 </div>
               )}
 
+              {/* Architecture Diagram (Mermaid) Section */}
+              {activeMediaType === 'diagram' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap pb-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[11px] text-[#8d7565] font-semibold">Templates:</span>
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateDiagram('Microservices Architecture with API Gateway, Kafka & Supabase')}
+                        className="text-[11px] px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-950/60 text-[#ea580c] font-semibold border border-orange-200/80 hover:bg-orange-200/60 transition-colors cursor-pointer"
+                      >
+                        ⚡ Microservices
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateDiagram('Relational Database Schema for User Profiles, Posts, and Follows')}
+                        className="text-[11px] px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-950/60 text-[#ea580c] font-semibold border border-orange-200/80 hover:bg-orange-200/60 transition-colors cursor-pointer"
+                      >
+                        🗄️ Database ERD
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateDiagram('OAuth 2.0 PKCE Authentication Sequence Flow')}
+                        className="text-[11px] px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-950/60 text-[#ea580c] font-semibold border border-orange-200/80 hover:bg-orange-200/60 transition-colors cursor-pointer"
+                      >
+                        🔄 Auth Sequence
+                      </button>
+                    </div>
+
+                    {diagramCode && (
+                      <button
+                        type="button"
+                        onClick={() => setDiagramCode('')}
+                        className="text-[11px] text-stone-400 hover:text-rose-600 font-semibold cursor-pointer"
+                      >
+                        Clear Diagram
+                      </button>
+                    )}
+                  </div>
+
+                  {/* AI Diagram Prompt Generator Input */}
+                  <div className="flex items-center gap-2 bg-orange-50/60 dark:bg-orange-950/30 p-2 rounded-xl border border-orange-200/80 dark:border-orange-900/40">
+                    <input
+                      type="text"
+                      value={diagramPrompt}
+                      onChange={(e) => setDiagramPrompt(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && !generatingDiagram && handleGenerateDiagram()}
+                      placeholder="Prompt AI: e.g. Event-driven architecture with Redis pub/sub and WebSocket workers..."
+                      className="flex-1 bg-white dark:bg-[#1a120b] border border-orange-200 dark:border-[#382416] rounded-lg px-3 py-1.5 text-xs text-[#2b1f17] dark:text-stone-100 outline-none focus:border-orange-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateDiagram()}
+                      disabled={generatingDiagram}
+                      className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white text-xs font-bold shrink-0 flex items-center gap-1.5 hover:brightness-105 disabled:opacity-40 cursor-pointer shadow-2xs"
+                    >
+                      {generatingDiagram ? (
+                        <>
+                          <RefreshCw size={12} className="animate-spin" />
+                          <span>Generating...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles size={12} />
+                          <span>Generate Diagram</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Mermaid Code Editor */}
+                  <textarea
+                    value={diagramCode}
+                    onChange={(e) => setDiagramCode(e.target.value)}
+                    placeholder={`flowchart TD\n    Client["Web App"] --> API["API Gateway"]\n    API --> DB[("PostgreSQL")]`}
+                    className="w-full bg-[#1b120c] rounded-xl p-3 text-xs font-mono text-amber-300 outline-none resize-y min-h-[90px] leading-relaxed border border-orange-500/20"
+                  />
+
+                  {/* Live Diagram Preview */}
+                  {diagramCode.trim() && (
+                    <div className="space-y-1">
+                      <span className="text-[11px] font-bold text-[#ea580c] flex items-center gap-1">
+                        <Layers size={13} /> Live Interactive Diagram Preview (Exportable):
+                      </span>
+                      <MermaidDiagramCard code={diagramCode} />
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Structured SAST Results Card with 1-Click Apply */}
               {showCodeReview && (
                 <div className="mt-2">
@@ -813,6 +962,21 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
                 : 'Code'}
             </span>
             {Boolean(codeSnippet.trim()) && (
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 ring-2 ring-white" />
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setShowExtras(true);
+              setActiveMediaType('diagram');
+            }}
+            className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg text-xs font-bold text-[#8d7565] hover:text-[#ea580c] hover:bg-[#fff7ed] transition-all cursor-pointer relative"
+          >
+            <Layers size={15} className="text-[#f59e0b]" />
+            <span>Diagram</span>
+            {Boolean(diagramCode.trim()) && (
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 ring-2 ring-white" />
             )}
           </button>

@@ -834,5 +834,124 @@ ${code.trim()}
   }
 }
 
+/**
+ * Generate Live Mermaid Architecture Diagrams & Schemas for Post Composer
+ */
+export async function generateMermaidArchitectureDiagram({
+  prompt,
+  diagramType = 'flowchart',
+}) {
+  const systemPrompt = `You are an expert Principal Solutions Architect.
+Generate a clean, modern, and 100% valid Mermaid.js diagram based on the user's specification.
+
+Instructions:
+1. Output ONLY the raw Mermaid diagram code. Do NOT wrap in markdown backticks (\`\`\`mermaid) and do NOT include any introductory or concluding text.
+2. Ensure syntax is valid:
+   - For flowcharts: use 'flowchart TD' or 'flowchart LR'. Quote node descriptions that contain special characters or spaces like id["Label with Spaces (v1)"].
+   - For sequence diagrams: use 'sequenceDiagram', use 'autonumber', define participants cleanly.
+   - For database schemas: use 'erDiagram' with valid entity attributes.
+3. Keep the diagram concise, visually balanced, and production-grade.`;
+
+  try {
+    const raw = await callGroq({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Generate a ${diagramType} diagram for: ${prompt}` },
+      ],
+      model: 'qwen/qwen3.8-27b',
+      temperature: 0.2,
+      max_tokens: 1000,
+    });
+
+    const cleaned = raw
+      .replace(/^```(?:mermaid)?/im, '')
+      .replace(/```$/m, '')
+      .trim();
+
+    return cleaned;
+  } catch (err) {
+    console.warn('AI diagram generation fallback:', err.message);
+    const lower = (prompt || '').toLowerCase();
+
+    if (lower.includes('auth') || lower.includes('oauth') || lower.includes('login') || diagramType === 'sequence') {
+      return `sequenceDiagram
+    autonumber
+    actor User as Developer Client
+    participant App as Connectra Web (React 19)
+    participant Auth as Supabase Auth Service
+    participant DB as PostgreSQL (RLS)
+
+    User->>App: Login Request (OAuth / Credentials)
+    App->>Auth: Authenticate with PKCE Challenge
+    Auth-->>App: Return JWT Bearer & Refresh Token
+    App->>DB: Query User Profile with Bearer Header
+    DB-->>App: Return Profile & Permissions (Row-Level Security)
+    App-->>User: Render Authorized Workspace`;
+    }
+
+    if (lower.includes('db') || lower.includes('schema') || lower.includes('database') || lower.includes('er') || diagramType === 'er') {
+      return `erDiagram
+    USERS ||--o{ POSTS : authors
+    USERS ||--o{ COMMENTS : writes
+    USERS ||--o{ RELEASES : publishes
+    POSTS ||--o{ COMMENTS : contains
+    POSTS ||--o{ LIKES : receives
+
+    USERS {
+        uuid id PK
+        string username
+        string tech_stack
+        int xp
+    }
+    POSTS {
+        uuid id PK
+        uuid user_id FK
+        text content
+        text code_snippet
+        jsonb poll_data
+        timestamp created_at
+    }
+    COMMENTS {
+        uuid id PK
+        uuid post_id FK
+        uuid user_id FK
+        text content
+    }`;
+    }
+
+    return `flowchart TD
+    subgraph ClientLayer["Frontend Client Tier"]
+        UI["Connectra Web App (React 19 + Vite)"]
+        State["Optimistic State & LocalVault"]
+    end
+
+    subgraph GatewayLayer["API & Ingestion Gateway"]
+        Proxy["Vite Reverse Proxy / API Gateway"]
+        Guard["LLM-SAST Security Guardrails"]
+    end
+
+    subgraph ServiceLayer["Core Services"]
+        Vector["pgvector Semantic Engine (384D)"]
+        Bot["AI Peer Reviewer (Qwen 3.8 / Groq)"]
+        RT["Supabase Realtime Broadcast"]
+    end
+
+    subgraph PersistenceLayer["High-Availability Storage"]
+        PG[("PostgreSQL DB with RLS")]
+        HNSW["HNSW Cosine Vector Index"]
+    end
+
+    UI --> Proxy
+    Proxy --> Guard
+    Guard --> Vector
+    Guard --> Bot
+    Vector --> HNSW
+    HNSW --> PG
+    PG --> RT
+    RT --> State`;
+  }
+}
+
+
 
 

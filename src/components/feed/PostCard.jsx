@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Heart, MessageSquare, Share2, Trash2, Edit2, Bookmark, MoreHorizontal, Sparkles, Shield, Loader2, Eye, EyeOff, MessageCircleOff, Film, Copy, Check, BarChart3, CheckCircle2, Bot } from 'lucide-react';
+import { Heart, MessageSquare, Share2, Trash2, Edit2, Bookmark, MoreHorizontal, Sparkles, Shield, Loader2, Eye, EyeOff, MessageCircleOff, Film, Copy, Check, BarChart3, CheckCircle2, Bot, Layers } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from '../../lib/toast';
 import { Link } from 'react-router-dom';
 import { explainCodeSnippet, reviewCodeAndSecurity, generatePeerCodeReviewBotCritique } from '../../lib/ai';
 import AIAnalysisCard from './AIAnalysisCard';
 import AIPeerReviewCommentCard from './AIPeerReviewCommentCard';
+import MermaidDiagramCard from '../ai/MermaidDiagramCard';
 import { createNotification } from '../../lib/notifications';
 
 export default function PostCard({ post, session, onUpdate, isHighlighted = false, autoOpenComments = false, isCommunityAdmin = false }) {
@@ -749,9 +750,25 @@ export default function PostCard({ post, session, onUpdate, isHighlighted = fals
               </button>
             </div>
           </div>
-        ) : (
-          <p className="whitespace-pre-wrap">{renderContent(post.content)}</p>
-        )}
+        ) : (() => {
+          const mermaidRegex = /```mermaid\n([\s\S]*?)```/i;
+          const mermaidMatch = post.content ? post.content.match(mermaidRegex) : null;
+          const diagramCode = post.poll_data?.diagram_code || (mermaidMatch ? mermaidMatch[1] : null);
+          const textWithoutMermaid = post.content ? post.content.replace(mermaidRegex, '').trim() : '';
+
+          return (
+            <div className="space-y-2.5">
+              {textWithoutMermaid && (
+                <p className="whitespace-pre-wrap">{renderContent(textWithoutMermaid)}</p>
+              )}
+              {diagramCode && (
+                <div className="mt-1">
+                  <MermaidDiagramCard code={diagramCode} />
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* SaaS Developer Poll */}
