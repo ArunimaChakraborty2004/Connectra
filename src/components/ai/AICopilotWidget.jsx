@@ -22,6 +22,7 @@ import {
   Plus,
   History,
   Clock,
+  MessageSquare,
   BookOpen,
   Database,
   FlaskConical,
@@ -141,17 +142,37 @@ export default function AICopilotWidget({ session }) {
   const devName = userProfile?.username || session?.user?.email?.split('@')[0] || 'Developer';
   const devStack = userProfile?.tech_stack || 'Full-Stack Web & Cybersecurity';
 
-  // Multi-session chat management (New Chat + Previous Chats)
-  const [sessions, setSessions] = useState(() => {
+  // Helper to retrieve saved Copilot sessions across user-specific & global keys
+  const getStoredSessions = (uid) => {
     try {
-      const saved = localStorage.getItem(`connectra_copilot_sessions_${session?.user?.id || 'guest'}`);
-      if (saved) {
-        const parsed = JSON.parse(saved);
+      if (uid) {
+        const userSaved = localStorage.getItem(`connectra_copilot_sessions_${uid}`);
+        if (userSaved) {
+          const parsed = JSON.parse(userSaved);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      }
+      const globalSaved = localStorage.getItem('connectra_copilot_sessions_global');
+      if (globalSaved) {
+        const parsed = JSON.parse(globalSaved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      const guestSaved = localStorage.getItem('connectra_copilot_sessions_guest');
+      if (guestSaved) {
+        const parsed = JSON.parse(guestSaved);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch {
       // fallback
     }
+    return null;
+  };
+
+  // Multi-session chat management (New Chat + Previous Chats)
+  const [sessions, setSessions] = useState(() => {
+    const saved = getStoredSessions(session?.user?.id);
+    if (saved && saved.length > 0) return saved;
+
     const initialId = `session_${Date.now()}`;
     return [
       {
@@ -172,19 +193,37 @@ export default function AICopilotWidget({ session }) {
     return sessions[0]?.id || `session_${Date.now()}`;
   });
 
+  const prevUserIdRef = useRef(session?.user?.id);
+
+  // When auth session resolves, re-hydrate user-specific stored sessions safely
+  useEffect(() => {
+    const currentUid = session?.user?.id;
+    if (currentUid && currentUid !== prevUserIdRef.current) {
+      prevUserIdRef.current = currentUid;
+      const userSessions = getStoredSessions(currentUid);
+      if (userSessions && userSessions.length > 0) {
+        setSessions(userSessions);
+        setActiveSessionId(userSessions[0].id);
+      }
+    }
+  }, [session?.user?.id]);
+
   const activeSession = useMemo(() => {
     return sessions.find(s => s.id === activeSessionId) || sessions[0];
   }, [sessions, activeSessionId]);
 
   const messages = activeSession?.messages || [];
 
-  // Save sessions to storage
+  // Save sessions to both user-specific and global storage so history is never lost
   useEffect(() => {
     try {
-      localStorage.setItem(
-        `connectra_copilot_sessions_${session?.user?.id || 'guest'}`,
-        JSON.stringify(sessions)
-      );
+      const payload = JSON.stringify(sessions);
+      if (session?.user?.id) {
+        localStorage.setItem(`connectra_copilot_sessions_${session.user.id}`, payload);
+      } else {
+        localStorage.setItem('connectra_copilot_sessions_guest', payload);
+      }
+      localStorage.setItem('connectra_copilot_sessions_global', payload);
     } catch {
       // ignore storage quota issues
     }
@@ -263,6 +302,25 @@ export default function AICopilotWidget({ session }) {
     setInput('');
     setLoading(true);
 
+    // Auto-reveal history drawer and extract prior session summaries if asking about previous chats
+    const isAskingAboutPriorChats =
+      /\b(prior|previous|past|earlier|history|old|before)\b.*\b(chat|conversation|message|session|question|thread|discussion)\b|\b(show|see|view|what was|check|list)\b.*\b(prior|previous|past|last|earlier)\b/i.test(textToSend);
+    if (isAskingAboutPriorChats) {
+      setShowHistoryDrawer(true);
+    }
+
+    // Build summaries of other sessions in storage to empower cross-session memory
+    const otherSessions = sessions.filter(s => s.id !== activeSession?.id);
+    let priorCopilotChats = '';
+    if (otherSessions.length > 0) {
+      priorCopilotChats = otherSessions.slice(0, 6).map((s, idx) => {
+        const userMsgs = (s.messages || []).filter(m => m.role === 'user');
+        const firstTopic = userMsgs[0]?.content?.slice(0, 120) || '(No user messages)';
+        const lastTopic = userMsgs.length > 1 ? userMsgs[userMsgs.length - 1]?.content?.slice(0, 120) : '';
+        return `• [Session #${idx + 1}: "${s.title}"] (${new Date(s.timestamp).toLocaleString()}):\n  - Initial question: "${firstTopic}"${lastTopic ? `\n  - Subsequent query: "${lastTopic}"` : ''}\n  - Exchanges: ${s.messages.length}`;
+      }).join('\n');
+    }
+
     try {
       // 1. Contextual RAG Retrieval across indexed workspace items & Live Database
       let ragContext = '';
@@ -302,6 +360,7 @@ export default function AICopilotWidget({ session }) {
         context: {
           username: devName,
           techStack: devStack,
+          priorCopilotChats,
           ragContext,
         },
       });
