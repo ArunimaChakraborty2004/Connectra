@@ -65,19 +65,19 @@ export default function Dashboard({ session }) {
 
   return (
     <div className="min-h-screen bg-[#faf6f0] text-[#2b1f17]">
-      <div className="max-w-[1380px] mx-auto px-4 py-6 flex gap-6 items-start">
-        {/* Left Sidebar */}
-        <div className="hidden lg:block shrink-0 w-[210px]">
+      <div className="max-w-[1380px] mx-auto px-3 sm:px-4 py-6 flex gap-6 items-start justify-center">
+        {/* Left Sticky Sidebar (Desktop) */}
+        <div className="hidden lg:block shrink-0 w-[240px] sticky top-20 self-start max-h-[calc(100vh-5.5rem)] overflow-y-auto custom-scrollbar">
           <Sidebar profile={profile} stats={stats} />
         </div>
 
         {/* Main Feed */}
-        <div className="flex-1 min-w-0 max-w-[650px]">
+        <div className="flex-1 min-w-0 max-w-[650px] w-full">
           <Feed session={session} />
         </div>
 
-        {/* Right Sidebar */}
-        <div className="hidden xl:block shrink-0 w-[300px]">
+        {/* Right Sticky Sidebar (Large Desktop) */}
+        <div className="hidden xl:block shrink-0 w-[320px] sticky top-20 self-start max-h-[calc(100vh-5.5rem)] overflow-y-auto custom-scrollbar">
           <Rightbar profile={profile} onProfileUpdate={loadData} />
         </div>
       </div>

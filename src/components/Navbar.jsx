@@ -479,8 +479,8 @@ export default function Navbar({ onOpenSidebar, session: propSession, profile: p
             </AnimatePresence>
           </div>
 
-          {/* User Profile Pill */}
-          <div className="flex items-center gap-2 pl-2">
+          {/* User Profile Pill & Actions */}
+          <div className="flex items-center gap-1 sm:gap-2 pl-1 sm:pl-2">
             <Link
               to={`/profile/${currentProfile?.username || authorName}`}
               className="flex items-center gap-2.5 hover:opacity-90 transition-opacity p-1.5 rounded-full hover:bg-[#fff4e6] dark:hover:bg-white/5"

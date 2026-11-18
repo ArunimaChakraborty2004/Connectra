@@ -686,8 +686,8 @@ export default function ExplorePage({ session }) {
     <div className="min-h-screen bg-[#faf6f0] dark:bg-[#150f0c] text-[#1c130d] dark:text-[#faf6f0] transition-colors duration-200 pb-20 select-none">
       <div className="max-w-[1440px] mx-auto px-3 sm:px-6 py-6 flex flex-col lg:flex-row gap-6 relative z-10">
 
-        {/* 1. LEFT SIDEBAR */}
-        <div className="hidden lg:block w-[280px] shrink-0">
+        {/* 1. LEFT STICKY SIDEBAR */}
+        <div className="hidden lg:block w-[260px] xl:w-[280px] shrink-0 sticky top-20 self-start max-h-[calc(100vh-5.5rem)] overflow-y-auto custom-scrollbar">
           <Sidebar
             profile={currentUserProfile || { id: currentUserId, username: session?.user?.email?.split('@')[0] || 'Developer' }}
             stats={userStats}

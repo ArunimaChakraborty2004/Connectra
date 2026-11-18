@@ -811,9 +811,9 @@ export default function CommunitiesPage({ session }) {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
           {/* -----------------------------------------------------------------------
-              LEFT COLUMN: COMMUNITIES DISCOVERY RAIL (w-[290px] / 3.5 cols)
+              LEFT COLUMN: COMMUNITIES DISCOVERY RAIL (Sticky on Desktop)
               ----------------------------------------------------------------------- */}
-          <div className="lg:col-span-4 xl:col-span-3.5 space-y-3">
+          <div className="lg:col-span-4 xl:col-span-4 space-y-3 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-5.5rem)] lg:overflow-y-auto custom-scrollbar">
             <div className="bg-white dark:bg-[#1f1813] border border-[#f1e4d3] dark:border-[#382b22] rounded-2xl p-3.5 sm:p-4 shadow-xs space-y-3">
               {/* Directory Header with Quick Create Action */}
               <div className="flex items-center justify-between">
@@ -1035,9 +1035,9 @@ export default function CommunitiesPage({ session }) {
           </div>
 
           {/* -----------------------------------------------------------------------
-              RIGHT COLUMN: ACTIVE WORKSPACE (flex-1 / 8.5 cols)
+              RIGHT COLUMN: ACTIVE WORKSPACE (flex-1 / 8 cols)
               ----------------------------------------------------------------------- */}
-          <div className="lg:col-span-8 xl:col-span-8.5 space-y-4">
+          <div className="lg:col-span-8 xl:col-span-8 space-y-4 min-w-0">
             {activeGuild ? (
               <div className="space-y-4">
 

@@ -369,7 +369,7 @@ export default function CollabBoardPage({ session }) {
   ];
 
   return (
-    <div className="min-h-screen pt-20 px-4 max-w-5xl mx-auto pb-12" style={{ color: 'var(--text-color)' }}>
+    <div className="min-h-screen py-6 px-3 sm:px-6 max-w-5xl mx-auto pb-16 lg:pb-12" style={{ color: 'var(--text-color)' }}>
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-3">
