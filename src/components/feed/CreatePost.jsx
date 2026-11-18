@@ -278,7 +278,10 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
     };
 
     if (diagramCode && diagramCode.trim()) {
-      if (!finalContent.includes('```mermaid')) {
+      if (!finalContent || !finalContent.trim()) {
+        finalContent = `\`\`\`mermaid\n${diagramCode.trim()}\n\`\`\``;
+        postPayload.content = finalContent;
+      } else if (!finalContent.includes('```mermaid')) {
         finalContent = `${finalContent}\n\n\`\`\`mermaid\n${diagramCode.trim()}\n\`\`\``.trim();
         postPayload.content = finalContent;
       }
@@ -286,6 +289,11 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
         ...(postPayload.poll_data || {}),
         diagram_code: diagramCode.trim(),
       };
+    } else if (!finalContent || !finalContent.trim()) {
+      if (finalCode) {
+        finalContent = 'Shared code snippet';
+        postPayload.content = finalContent;
+      }
     }
 
     if (communityId && !communityId.startsWith('guild-')) {
@@ -469,10 +477,19 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
    * Pre-Publish Interceptor (Secret Detection + AI Guardrails)
    */
   const handlePost = async () => {
-    if (!content.trim() && !imageUrl.trim() && !videoUrl.trim() && !codeSnippet.trim() && !imageFile && !videoFile) return;
+    const hasMedia = Boolean(
+      (content && content.trim()) ||
+      (imageUrl && imageUrl.trim()) ||
+      (videoUrl && videoUrl.trim()) ||
+      (codeSnippet && codeSnippet.trim()) ||
+      (diagramCode && diagramCode.trim()) ||
+      imageFile ||
+      videoFile
+    );
+    if (!hasMedia) return;
 
     // 1. Secret & Key Leak Scanner
-    const combinedText = `${content}\n${codeSnippet}`;
+    const combinedText = `${content}\n${codeSnippet}\n${diagramCode}`;
     const secretScan = scanForSecrets(combinedText);
     if (secretScan.hasSecrets) {
       setSecretDetections(secretScan.detections);
@@ -482,7 +499,7 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
 
     // 2. AI Guardrail Safety Screener
     setLoading(true);
-    const safetyCheck = await screenContentSafety({ text: content, code: codeSnippet });
+    const safetyCheck = await screenContentSafety({ text: `${content}\n${diagramCode}`, code: codeSnippet });
     setLoading(false);
 
     if (!safetyCheck.safe) {
@@ -1004,16 +1021,19 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
         <button
           type="button"
           onClick={handlePost}
-          disabled={loading || (!content && !imageUrl && !videoUrl && !codeSnippet && !imageFile && !videoFile)}
-          className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#ea580c] via-[#f97316] to-[#fb923c] hover:brightness-105 text-white font-extrabold text-xs transition-all shadow-md shadow-orange-500/25 disabled:opacity-40 cursor-pointer active:scale-95 flex items-center gap-1.5"
+          disabled={loading || (!content?.trim() && !imageUrl?.trim() && !videoUrl?.trim() && !codeSnippet?.trim() && !diagramCode?.trim() && !imageFile && !videoFile)}
+          className="px-6 py-2 rounded-xl bg-gradient-to-r from-[#ea580c] via-[#f97316] to-[#fb923c] hover:brightness-110 text-white font-extrabold text-xs transition-all shadow-md shadow-orange-500/25 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-95 flex items-center gap-1.5"
         >
           {loading ? (
             <>
               <RefreshCw size={12} className="animate-spin" />
-              <span>Verifying...</span>
+              <span>Publishing...</span>
             </>
           ) : (
-            <span>Post</span>
+            <>
+              <Send size={13} />
+              <span>Post</span>
+            </>
           )}
         </button>
       </div>
