@@ -31,6 +31,7 @@ import { chatWithCopilot } from '../../lib/ai';
 import { supabase } from '../../lib/supabase';
 import { buildDocumentIndex, searchIndex, formatRAGContextForPrompt, extractProjectKnowledgeChunks, fetchRealtimeConnectraContext } from '../../lib/rag';
 import AIBenchmarkModal from './AIBenchmarkModal';
+import MermaidDiagramCard from './MermaidDiagramCard';
 
 const QUICK_PROMPT_CATEGORIES = {
   Cybersecurity: [
@@ -38,8 +39,8 @@ const QUICK_PROMPT_CATEGORIES = {
     { icon: Zap, text: 'How do I secure JWT tokens and Supabase RLS policies?' },
   ],
   Architecture: [
-    { icon: Lightbulb, text: 'Suggest an innovative project idea blending AI & Cybersecurity' },
-    { icon: Terminal, text: 'Explain how to prevent SQL injection in modern Node.js' },
+    { icon: Lightbulb, text: 'Generate microservices architecture with Kafka, Redis & Supabase (Mermaid)' },
+    { icon: Terminal, text: 'Design database ER diagram for developer social network (Mermaid)' },
   ],
   'Code Review': [
     { icon: Terminal, text: 'Review my React component state management & performance' },
@@ -481,6 +482,17 @@ export default function AICopilotWidget({ session }) {
         const lines = part.slice(3, -3).trim().split('\n');
         const lang = lines[0].trim() || 'code';
         const code = lines.slice(lang === lines[0].trim() && lines.length > 1 ? 1 : 0).join('\n');
+
+        // Interactive Mermaid Live Architecture Diagrammer
+        if (lang.toLowerCase() === 'mermaid') {
+          return (
+            <MermaidDiagramCard
+              key={i}
+              code={code}
+              isDark={isDark}
+            />
+          );
+        }
 
         return (
           <div

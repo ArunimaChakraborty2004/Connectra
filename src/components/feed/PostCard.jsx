@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Heart, MessageSquare, Share2, Trash2, Edit2, Bookmark, MoreHorizontal, Sparkles, Shield, Loader2, Eye, EyeOff, MessageCircleOff, Film, Copy, Check, BarChart3, CheckCircle2 } from 'lucide-react';
+import { Heart, MessageSquare, Share2, Trash2, Edit2, Bookmark, MoreHorizontal, Sparkles, Shield, Loader2, Eye, EyeOff, MessageCircleOff, Film, Copy, Check, BarChart3, CheckCircle2, Bot, Layers } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from '../../lib/toast';
 import { Link } from 'react-router-dom';
-import { explainCodeSnippet, reviewCodeAndSecurity } from '../../lib/ai';
+import { explainCodeSnippet, reviewCodeAndSecurity, generatePeerCodeReviewBotCritique } from '../../lib/ai';
 import AIAnalysisCard from './AIAnalysisCard';
+import AIPeerReviewCommentCard from './AIPeerReviewCommentCard';
+import MermaidDiagramCard from '../ai/MermaidDiagramCard';
 import { createNotification } from '../../lib/notifications';
 
 export default function PostCard({ post, session, onUpdate, isHighlighted = false, autoOpenComments = false, isCommunityAdmin = false }) {
@@ -171,6 +173,93 @@ export default function PostCard({ post, session, onUpdate, isHighlighted = fals
       toast.error('AI security scan failed');
     } finally {
       setAiAnalysisLoading(false);
+    }
+  };
+
+  const [aiReviewLoading, setAiReviewLoading] = useState(false);
+
+  const handleRequestAIReview = async () => {
+    if (!post.code_snippet) {
+      toast.error('No code snippet found to review.');
+      return;
+    }
+    if (aiReviewLoading) return;
+    setAiReviewLoading(true);
+    setShowComments(true);
+    toast.info('Connectra AI Peer Review bot is auditing code... 🤖');
+
+    try {
+      const critique = await generatePeerCodeReviewBotCritique({
+        code: post.code_snippet,
+        language: post.code_language || 'javascript',
+        authorUsername: post.profiles?.username || 'developer',
+      });
+
+      const tempId = `ai-review-${Date.now()}`;
+      const botCommentObj = {
+        id: tempId,
+        post_id: post.id,
+        user_id: session?.user?.id || 'connectra-ai-bot',
+        content: critique,
+        created_at: new Date().toISOString(),
+        profiles: {
+          username: 'connectra-ai-bot',
+          avatar_url: null,
+        },
+      };
+
+      setComments((prev) => [...prev, botCommentObj]);
+
+      // Try inserting into Supabase comments
+      let inserted = botCommentObj;
+      try {
+        if (session?.user?.id) {
+          const { data, error } = await supabase
+            .from('comments')
+            .insert({
+              post_id: post.id,
+              user_id: session.user.id,
+              content: critique,
+            })
+            .select('id, post_id, user_id, content, created_at, profiles(username, avatar_url)')
+            .single();
+
+          if (!error && data) {
+            inserted = data;
+            setComments((prev) => prev.map((c) => (c.id === tempId ? data : c)));
+          }
+        }
+      } catch (dbErr) {
+        console.warn('DB AI review comment warning:', dbErr);
+      }
+
+      // Persist to local comments
+      const localComments = JSON.parse(localStorage.getItem(`connectra_post_comments_${post.id}`) || '[]');
+      localStorage.setItem(`connectra_post_comments_${post.id}`, JSON.stringify([...localComments, inserted]));
+
+      // Also persist to connectra_active_posts in localStorage so it stays attached across reloads
+      try {
+        const activePosts = JSON.parse(localStorage.getItem('connectra_active_posts') || '[]');
+        const updatedPosts = activePosts.map((p) => {
+          if (p.id === post.id) {
+            return {
+              ...p,
+              comments: [...(p.comments || []), inserted],
+              comments_count: (p.comments_count || 0) + 1,
+            };
+          }
+          return p;
+        });
+        localStorage.setItem('connectra_active_posts', JSON.stringify(updatedPosts));
+      } catch (e) {}
+
+      window.dispatchEvent(new CustomEvent('refreshFeed'));
+      toast.success('AI Peer Review bot delivered structured critique! 🤖🚀');
+    } catch (err) {
+      console.error('AI peer review error:', err);
+      toast.error('AI review generation failed: ' + (err.message || 'Service busy'));
+    } finally {
+      setAiReviewLoading(false);
     }
   };
 
@@ -661,9 +750,25 @@ export default function PostCard({ post, session, onUpdate, isHighlighted = fals
               </button>
             </div>
           </div>
-        ) : (
-          <p className="whitespace-pre-wrap">{renderContent(post.content)}</p>
-        )}
+        ) : (() => {
+          const mermaidRegex = /```mermaid\n([\s\S]*?)```/i;
+          const mermaidMatch = post.content ? post.content.match(mermaidRegex) : null;
+          const diagramCode = post.poll_data?.diagram_code || (mermaidMatch ? mermaidMatch[1] : null);
+          const textWithoutMermaid = post.content ? post.content.replace(mermaidRegex, '').trim() : '';
+
+          return (
+            <div className="space-y-2.5">
+              {textWithoutMermaid && (
+                <p className="whitespace-pre-wrap">{renderContent(textWithoutMermaid)}</p>
+              )}
+              {diagramCode && (
+                <div className="mt-1">
+                  <MermaidDiagramCard code={diagramCode} />
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* SaaS Developer Poll */}
@@ -861,6 +966,20 @@ export default function PostCard({ post, session, onUpdate, isHighlighted = fals
                 )}
                 AI Security
               </button>
+              <button
+                type="button"
+                onClick={handleRequestAIReview}
+                disabled={aiReviewLoading || aiAnalysisLoading}
+                className="flex items-center gap-1 text-[11px] font-sans font-bold px-2 py-0.5 rounded-md bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 transition-all cursor-pointer"
+                title="Request an in-depth AI Peer Review (Time/Space Complexity, Edge Cases & Refactor)"
+              >
+                {aiReviewLoading ? (
+                  <Loader2 size={11} className="animate-spin text-purple-400" />
+                ) : (
+                  <Bot size={11} className="text-purple-400" />
+                )}
+                AI Review
+              </button>
             </div>
           </div>
           <pre className="p-3 text-xs font-mono text-amber-300 overflow-x-auto">
@@ -946,7 +1065,24 @@ export default function PostCard({ post, session, onUpdate, isHighlighted = fals
                 <p className="text-xs text-[#8d7565] italic py-1">No comments yet. Start the discussion!</p>
               ) : (
                 comments.map((c) => {
+                  const isBotReview = Boolean(
+                    (c.content && c.content.includes('Connectra AI Peer Review')) ||
+                    c.profiles?.username === 'connectra-ai-bot'
+                  );
                   const canDelete = isOwner || isCommunityAdmin || c.user_id === session?.user?.id || session?.user?.user_metadata?.is_admin;
+
+                  if (isBotReview) {
+                    return (
+                      <AIPeerReviewCommentCard
+                        key={c.id}
+                        comment={c}
+                        onDelete={handleDeleteComment}
+                        canDelete={canDelete}
+                        timeAgo={timeAgo}
+                      />
+                    );
+                  }
+
                   return (
                     <div key={c.id} className="flex gap-2.5 text-xs group">
                       <Link to={`/profile/${c.profiles?.username || ''}`} className="shrink-0">

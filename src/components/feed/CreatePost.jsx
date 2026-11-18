@@ -16,13 +16,17 @@ import {
   Lock,
   Code2,
   Film,
+  Bot,
+  Layers,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from '../../lib/toast';
-import { reviewCodeAndSecurity, polishPostContent, screenContentSafety, polishCodeSnippet } from '../../lib/ai';
+import { reviewCodeAndSecurity, polishPostContent, screenContentSafety, polishCodeSnippet, generatePeerCodeReviewBotCritique, generateMermaidArchitectureDiagram } from '../../lib/ai';
 import { scanForSecrets, redactSecrets } from '../../lib/secretScanner';
 import { detectCodeLanguage, getLanguageDisplayName, SUPPORTED_LANGUAGES } from '../../lib/codeDetector';
+import { generateSemanticVector384 } from '../../lib/rag';
 import AIAnalysisCard from './AIAnalysisCard';
+import MermaidDiagramCard from '../ai/MermaidDiagramCard';
 import { createNotification } from '../../lib/notifications';
 
 export default function CreatePost({ session, onPostCreated, placeholder, communityId = null }) {
@@ -37,8 +41,25 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
   const [videoFile, setVideoFile] = useState(null);
   const [videoUrl, setVideoUrl] = useState('');
   const [videoPreview, setVideoPreview] = useState(null);
-  const [activeMediaType, setActiveMediaType] = useState('image'); // 'image' | 'video' | 'code'
+  const [activeMediaType, setActiveMediaType] = useState('image'); // 'image' | 'video' | 'code' | 'diagram'
+  const [diagramCode, setDiagramCode] = useState('');
+  const [diagramPrompt, setDiagramPrompt] = useState('');
+  const [generatingDiagram, setGeneratingDiagram] = useState(false);
   const [userProfile, setUserProfile] = useState(null);
+
+  const handleGenerateDiagram = async (presetTopic = null) => {
+    const topic = presetTopic || diagramPrompt || content || 'Modern Microservices Architecture with Redis & Supabase';
+    setGeneratingDiagram(true);
+    try {
+      const generated = await generateMermaidArchitectureDiagram({ prompt: topic });
+      setDiagramCode(generated);
+      toast.success('Architecture diagram generated! 📐✨');
+    } catch {
+      toast.error('Failed to generate diagram');
+    } finally {
+      setGeneratingDiagram(false);
+    }
+  };
 
   const handleCodeSnippetChange = (newCode) => {
     setCodeSnippet(newCode);
@@ -75,6 +96,7 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
   const [aiScanning, setAiScanning] = useState(false);
   const [codeReviewResult, setCodeReviewResult] = useState(null);
   const [showCodeReview, setShowCodeReview] = useState(false);
+  const [requestAIReviewOnPublish, setRequestAIReviewOnPublish] = useState(true);
 
   // Cybersecurity Pre-Publish Interceptors
   const [secretDetections, setSecretDetections] = useState([]);
@@ -164,7 +186,7 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
    */
   const executePublish = async (overrideContent, overrideCode) => {
     setLoading(true);
-    const finalContent = overrideContent !== undefined ? overrideContent : content;
+    let finalContent = overrideContent !== undefined ? overrideContent : content;
     const finalCode = overrideCode !== undefined ? overrideCode : codeSnippet;
 
     let finalImageUrl = imageUrl;
@@ -255,11 +277,30 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
       code_language: codeLang || null,
     };
 
+    if (diagramCode && diagramCode.trim()) {
+      if (!finalContent || !finalContent.trim()) {
+        finalContent = `\`\`\`mermaid\n${diagramCode.trim()}\n\`\`\``;
+        postPayload.content = finalContent;
+      } else if (!finalContent.includes('```mermaid')) {
+        finalContent = `${finalContent}\n\n\`\`\`mermaid\n${diagramCode.trim()}\n\`\`\``.trim();
+        postPayload.content = finalContent;
+      }
+      postPayload.poll_data = {
+        ...(postPayload.poll_data || {}),
+        diagram_code: diagramCode.trim(),
+      };
+    } else if (!finalContent || !finalContent.trim()) {
+      if (finalCode) {
+        finalContent = 'Shared code snippet';
+        postPayload.content = finalContent;
+      }
+    }
+
     if (communityId && !communityId.startsWith('guild-')) {
       postPayload.community_id = communityId;
     }
     if (communityId) {
-      postPayload.poll_data = { community_id: communityId };
+      postPayload.poll_data = { ...(postPayload.poll_data || {}), community_id: communityId };
     }
 
     let createdPostId = null;
@@ -273,6 +314,31 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
 
     if (!error && newPost) {
       createdPostId = newPost.id;
+      // Index new post into Supabase pgvector store (documents_embeddings) in database
+      try {
+        const textToEmbed = `${finalContent} ${finalCode || ''} ${diagramCode || ''}`.trim();
+        const embedding = generateSemanticVector384(textToEmbed);
+        supabase
+          .from('documents_embeddings')
+          .upsert({
+            id: `post-${createdPostId}`,
+            title: `Post by @${session?.user?.user_metadata?.username || userProfile?.username || 'developer'}`,
+            content: textToEmbed,
+            type: 'post',
+            metadata: {
+              post_id: createdPostId,
+              author: session?.user?.user_metadata?.username || userProfile?.username,
+              has_code: Boolean(finalCode),
+              has_diagram: Boolean(diagramCode),
+            },
+            embedding: embedding,
+          })
+          .then(({ error: vErr }) => {
+            if (vErr) console.warn('Vector embedding index notice:', vErr.message);
+          });
+      } catch (vErr) {
+        console.warn('Vector embedding generation notice:', vErr);
+      }
     } else {
       console.warn('Posts insert notice:', error?.message);
     }
@@ -289,6 +355,7 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
       code_snippet: finalCode || null,
       code_language: codeLang || null,
       community_id: communityId || null,
+      poll_data: postPayload.poll_data || null,
       created_at: new Date().toISOString(),
       profiles: {
         username: session?.user?.user_metadata?.username || userProfile?.username || 'You',
@@ -324,6 +391,68 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
         .catch(() => {});
     }
 
+    // Trigger automated AI Peer Review bot if developer opted in
+    const targetPostId = createdPostId || newOptimisticPost.id;
+    if (requestAIReviewOnPublish && finalCode && targetPostId) {
+      (async () => {
+        try {
+          const critique = await generatePeerCodeReviewBotCritique({
+            code: finalCode,
+            language: codeLang || 'javascript',
+            authorUsername: session?.user?.user_metadata?.username || userProfile?.username || 'developer',
+          });
+
+          const botCommentId = `ai-review-${Date.now()}`;
+          const botComment = {
+            id: botCommentId,
+            post_id: targetPostId,
+            user_id: session?.user?.id || 'connectra-ai-bot',
+            content: critique,
+            created_at: new Date().toISOString(),
+            profiles: {
+              username: 'connectra-ai-bot',
+              avatar_url: null,
+            },
+          };
+
+          // Save to Supabase
+          try {
+            if (session?.user?.id && createdPostId) {
+              await supabase.from('comments').insert({
+                post_id: createdPostId,
+                user_id: session.user.id,
+                content: critique,
+              });
+            }
+          } catch (dbErr) {
+            console.warn('Auto AI review Supabase comment notice:', dbErr);
+          }
+
+          // Save to local comments cache
+          const localComments = JSON.parse(localStorage.getItem(`connectra_post_comments_${targetPostId}`) || '[]');
+          localStorage.setItem(`connectra_post_comments_${targetPostId}`, JSON.stringify([...localComments, botComment]));
+
+          // Update connectra_active_posts
+          const activePosts = JSON.parse(localStorage.getItem('connectra_active_posts') || '[]');
+          const updatedActive = activePosts.map((p) => {
+            if (p.id === targetPostId) {
+              return {
+                ...p,
+                comments: [...(p.comments || []), botComment],
+                comments_count: (p.comments_count || 0) + 1,
+              };
+            }
+            return p;
+          });
+          localStorage.setItem('connectra_active_posts', JSON.stringify(updatedActive));
+          window.dispatchEvent(new Event('refreshFeed'));
+          toast.success('🤖 AI Peer Reviewer delivered an algorithmic critique!');
+        } catch (botErr) {
+          console.warn('Auto AI peer review error:', botErr);
+        }
+      })();
+    }
+
     setContent('');
     setImageUrl('');
     setImageFile(null);
@@ -336,6 +465,8 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
     setShowCodeReview(false);
     setGuardrailViolation(null);
     setShowSecretModal(false);
+    setDiagramCode('');
+    setDiagramPrompt('');
 
     window.dispatchEvent(new Event('refreshFeed'));
     toast.success(finalVideoUrl ? 'Reel published & reflected in Feed! 🎬🚀' : 'Post published safely! 🛡️🚀');
@@ -346,10 +477,19 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
    * Pre-Publish Interceptor (Secret Detection + AI Guardrails)
    */
   const handlePost = async () => {
-    if (!content.trim() && !imageUrl.trim() && !videoUrl.trim() && !codeSnippet.trim() && !imageFile && !videoFile) return;
+    const hasMedia = Boolean(
+      (content && content.trim()) ||
+      (imageUrl && imageUrl.trim()) ||
+      (videoUrl && videoUrl.trim()) ||
+      (codeSnippet && codeSnippet.trim()) ||
+      (diagramCode && diagramCode.trim()) ||
+      imageFile ||
+      videoFile
+    );
+    if (!hasMedia) return;
 
     // 1. Secret & Key Leak Scanner
-    const combinedText = `${content}\n${codeSnippet}`;
+    const combinedText = `${content}\n${codeSnippet}\n${diagramCode}`;
     const secretScan = scanForSecrets(combinedText);
     if (secretScan.hasSecrets) {
       setSecretDetections(secretScan.detections);
@@ -359,7 +499,7 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
 
     // 2. AI Guardrail Safety Screener
     setLoading(true);
-    const safetyCheck = await screenContentSafety({ text: content, code: codeSnippet });
+    const safetyCheck = await screenContentSafety({ text: `${content}\n${diagramCode}`, code: codeSnippet });
     setLoading(false);
 
     if (!safetyCheck.safe) {
@@ -664,6 +804,115 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
                     placeholder={`# Paste your ${getLanguageDisplayName(codeLang)} code snippet here…`}
                     className="w-full bg-[#2b1f17] rounded-lg p-2.5 text-xs font-mono text-amber-300 outline-none resize-y min-h-[75px] leading-relaxed"
                   />
+                  {codeSnippet.trim() && (
+                    <div className="mt-2 flex items-center justify-between gap-2 p-2 rounded-lg bg-orange-50/70 dark:bg-orange-950/30 border border-orange-200/70 dark:border-orange-900/40">
+                      <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-semibold text-[#8d7565] dark:text-stone-300">
+                        <input
+                          type="checkbox"
+                          checked={requestAIReviewOnPublish}
+                          onChange={(e) => setRequestAIReviewOnPublish(e.target.checked)}
+                          className="w-3.5 h-3.5 rounded accent-orange-600 cursor-pointer"
+                        />
+                        <span className="flex items-center gap-1.5 text-orange-800 dark:text-orange-300 font-bold">
+                          <Bot size={13} className="text-[#ea580c]" />
+                          Request AI Peer Reviewer bot critique upon publish
+                        </span>
+                      </label>
+                      <span className="text-[10px] text-[#8d7565] font-mono hidden sm:inline">
+                        Time O(n) • Memory • Edge Cases
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Architecture Diagram (Mermaid) Section */}
+              {activeMediaType === 'diagram' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap pb-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[11px] text-[#8d7565] font-semibold">Templates:</span>
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateDiagram('Microservices Architecture with API Gateway, Kafka & Supabase')}
+                        className="text-[11px] px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-950/60 text-[#ea580c] font-semibold border border-orange-200/80 hover:bg-orange-200/60 transition-colors cursor-pointer"
+                      >
+                        ⚡ Microservices
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateDiagram('Relational Database Schema for User Profiles, Posts, and Follows')}
+                        className="text-[11px] px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-950/60 text-[#ea580c] font-semibold border border-orange-200/80 hover:bg-orange-200/60 transition-colors cursor-pointer"
+                      >
+                        🗄️ Database ERD
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateDiagram('OAuth 2.0 PKCE Authentication Sequence Flow')}
+                        className="text-[11px] px-2 py-0.5 rounded-md bg-orange-100 dark:bg-orange-950/60 text-[#ea580c] font-semibold border border-orange-200/80 hover:bg-orange-200/60 transition-colors cursor-pointer"
+                      >
+                        🔄 Auth Sequence
+                      </button>
+                    </div>
+
+                    {diagramCode && (
+                      <button
+                        type="button"
+                        onClick={() => setDiagramCode('')}
+                        className="text-[11px] text-stone-400 hover:text-rose-600 font-semibold cursor-pointer"
+                      >
+                        Clear Diagram
+                      </button>
+                    )}
+                  </div>
+
+                  {/* AI Diagram Prompt Generator Input */}
+                  <div className="flex items-center gap-2 bg-orange-50/60 dark:bg-orange-950/30 p-2 rounded-xl border border-orange-200/80 dark:border-orange-900/40">
+                    <input
+                      type="text"
+                      value={diagramPrompt}
+                      onChange={(e) => setDiagramPrompt(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && !generatingDiagram && handleGenerateDiagram()}
+                      placeholder="Prompt AI: e.g. Event-driven architecture with Redis pub/sub and WebSocket workers..."
+                      className="flex-1 bg-white dark:bg-[#1a120b] border border-orange-200 dark:border-[#382416] rounded-lg px-3 py-1.5 text-xs text-[#2b1f17] dark:text-stone-100 outline-none focus:border-orange-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateDiagram()}
+                      disabled={generatingDiagram}
+                      className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white text-xs font-bold shrink-0 flex items-center gap-1.5 hover:brightness-105 disabled:opacity-40 cursor-pointer shadow-2xs"
+                    >
+                      {generatingDiagram ? (
+                        <>
+                          <RefreshCw size={12} className="animate-spin" />
+                          <span>Generating...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles size={12} />
+                          <span>Generate Diagram</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Mermaid Code Editor */}
+                  <textarea
+                    value={diagramCode}
+                    onChange={(e) => setDiagramCode(e.target.value)}
+                    placeholder={`flowchart TD\n    Client["Web App"] --> API["API Gateway"]\n    API --> DB[("PostgreSQL")]`}
+                    className="w-full bg-[#1b120c] rounded-xl p-3 text-xs font-mono text-amber-300 outline-none resize-y min-h-[90px] leading-relaxed border border-orange-500/20"
+                  />
+
+                  {/* Live Diagram Preview */}
+                  {diagramCode.trim() && (
+                    <div className="space-y-1">
+                      <span className="text-[11px] font-bold text-[#ea580c] flex items-center gap-1">
+                        <Layers size={13} /> Live Interactive Diagram Preview (Exportable):
+                      </span>
+                      <MermaidDiagramCard code={diagramCode} />
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -736,6 +985,21 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
 
           <button
             type="button"
+            onClick={() => {
+              setShowExtras(true);
+              setActiveMediaType('diagram');
+            }}
+            className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg text-xs font-bold text-[#8d7565] hover:text-[#ea580c] hover:bg-[#fff7ed] transition-all cursor-pointer relative"
+          >
+            <Layers size={15} className="text-[#f59e0b]" />
+            <span>Diagram</span>
+            {Boolean(diagramCode.trim()) && (
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 ring-2 ring-white" />
+            )}
+          </button>
+
+          <button
+            type="button"
             onClick={() => setShowExtras(true)}
             className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg text-xs font-bold text-[#8d7565] hover:text-[#ea580c] hover:bg-[#fff7ed] transition-all cursor-pointer"
           >
@@ -757,16 +1021,19 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
         <button
           type="button"
           onClick={handlePost}
-          disabled={loading || (!content && !imageUrl && !videoUrl && !codeSnippet && !imageFile && !videoFile)}
-          className="px-5 py-2 rounded-xl bg-gradient-to-r from-[#ea580c] via-[#f97316] to-[#fb923c] hover:brightness-105 text-white font-extrabold text-xs transition-all shadow-md shadow-orange-500/25 disabled:opacity-40 cursor-pointer active:scale-95 flex items-center gap-1.5"
+          disabled={loading || (!content?.trim() && !imageUrl?.trim() && !videoUrl?.trim() && !codeSnippet?.trim() && !diagramCode?.trim() && !imageFile && !videoFile)}
+          className="px-6 py-2 rounded-xl bg-gradient-to-r from-[#ea580c] via-[#f97316] to-[#fb923c] hover:brightness-110 text-white font-extrabold text-xs transition-all shadow-md shadow-orange-500/25 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-95 flex items-center gap-1.5"
         >
           {loading ? (
             <>
               <RefreshCw size={12} className="animate-spin" />
-              <span>Verifying...</span>
+              <span>Publishing...</span>
             </>
           ) : (
-            <span>Post</span>
+            <>
+              <Send size={13} />
+              <span>Post</span>
+            </>
           )}
         </button>
       </div>
