@@ -16,10 +16,11 @@ import {
   Lock,
   Code2,
   Film,
+  Bot,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from '../../lib/toast';
-import { reviewCodeAndSecurity, polishPostContent, screenContentSafety, polishCodeSnippet } from '../../lib/ai';
+import { reviewCodeAndSecurity, polishPostContent, screenContentSafety, polishCodeSnippet, generatePeerCodeReviewBotCritique } from '../../lib/ai';
 import { scanForSecrets, redactSecrets } from '../../lib/secretScanner';
 import { detectCodeLanguage, getLanguageDisplayName, SUPPORTED_LANGUAGES } from '../../lib/codeDetector';
 import AIAnalysisCard from './AIAnalysisCard';
@@ -75,6 +76,7 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
   const [aiScanning, setAiScanning] = useState(false);
   const [codeReviewResult, setCodeReviewResult] = useState(null);
   const [showCodeReview, setShowCodeReview] = useState(false);
+  const [requestAIReviewOnPublish, setRequestAIReviewOnPublish] = useState(true);
 
   // Cybersecurity Pre-Publish Interceptors
   const [secretDetections, setSecretDetections] = useState([]);
@@ -322,6 +324,68 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
           }
         })
         .catch(() => {});
+    }
+
+    // Trigger automated AI Peer Review bot if developer opted in
+    const targetPostId = createdPostId || newOptimisticPost.id;
+    if (requestAIReviewOnPublish && finalCode && targetPostId) {
+      (async () => {
+        try {
+          const critique = await generatePeerCodeReviewBotCritique({
+            code: finalCode,
+            language: codeLang || 'javascript',
+            authorUsername: session?.user?.user_metadata?.username || userProfile?.username || 'developer',
+          });
+
+          const botCommentId = `ai-review-${Date.now()}`;
+          const botComment = {
+            id: botCommentId,
+            post_id: targetPostId,
+            user_id: session?.user?.id || 'connectra-ai-bot',
+            content: critique,
+            created_at: new Date().toISOString(),
+            profiles: {
+              username: 'connectra-ai-bot',
+              avatar_url: null,
+            },
+          };
+
+          // Save to Supabase
+          try {
+            if (session?.user?.id && createdPostId) {
+              await supabase.from('comments').insert({
+                post_id: createdPostId,
+                user_id: session.user.id,
+                content: critique,
+              });
+            }
+          } catch (dbErr) {
+            console.warn('Auto AI review Supabase comment notice:', dbErr);
+          }
+
+          // Save to local comments cache
+          const localComments = JSON.parse(localStorage.getItem(`connectra_post_comments_${targetPostId}`) || '[]');
+          localStorage.setItem(`connectra_post_comments_${targetPostId}`, JSON.stringify([...localComments, botComment]));
+
+          // Update connectra_active_posts
+          const activePosts = JSON.parse(localStorage.getItem('connectra_active_posts') || '[]');
+          const updatedActive = activePosts.map((p) => {
+            if (p.id === targetPostId) {
+              return {
+                ...p,
+                comments: [...(p.comments || []), botComment],
+                comments_count: (p.comments_count || 0) + 1,
+              };
+            }
+            return p;
+          });
+          localStorage.setItem('connectra_active_posts', JSON.stringify(updatedActive));
+          window.dispatchEvent(new Event('refreshFeed'));
+          toast.success('🤖 AI Peer Reviewer delivered an algorithmic critique!');
+        } catch (botErr) {
+          console.warn('Auto AI peer review error:', botErr);
+        }
+      })();
     }
 
     setContent('');
@@ -664,6 +728,25 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
                     placeholder={`# Paste your ${getLanguageDisplayName(codeLang)} code snippet here…`}
                     className="w-full bg-[#2b1f17] rounded-lg p-2.5 text-xs font-mono text-amber-300 outline-none resize-y min-h-[75px] leading-relaxed"
                   />
+                  {codeSnippet.trim() && (
+                    <div className="mt-2 flex items-center justify-between gap-2 p-2 rounded-lg bg-orange-50/70 dark:bg-orange-950/30 border border-orange-200/70 dark:border-orange-900/40">
+                      <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-semibold text-[#8d7565] dark:text-stone-300">
+                        <input
+                          type="checkbox"
+                          checked={requestAIReviewOnPublish}
+                          onChange={(e) => setRequestAIReviewOnPublish(e.target.checked)}
+                          className="w-3.5 h-3.5 rounded accent-orange-600 cursor-pointer"
+                        />
+                        <span className="flex items-center gap-1.5 text-orange-800 dark:text-orange-300 font-bold">
+                          <Bot size={13} className="text-[#ea580c]" />
+                          Request AI Peer Reviewer bot critique upon publish
+                        </span>
+                      </label>
+                      <span className="text-[10px] text-[#8d7565] font-mono hidden sm:inline">
+                        Time O(n) • Memory • Edge Cases
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 
