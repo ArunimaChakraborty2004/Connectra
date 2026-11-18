@@ -222,6 +222,9 @@ export default function ExplorePage({ session }) {
     };
 
     loadUser();
+
+    window.addEventListener('refreshStats', loadUser);
+    return () => window.removeEventListener('refreshStats', loadUser);
   }, [currentUserId, session?.user]);
 
   // 2. Fetch 100% Real Database Data (Posts, Profiles, Communities, Likes, Comments)
@@ -463,10 +466,22 @@ export default function ExplorePage({ session }) {
     const isFollowing = followingMap[targetUserId] || followingMap[targetUsername];
     const newStatus = !isFollowing;
 
+    // 1. Optimistically update follow button state
     setFollowingMap(prev => ({
       ...prev,
       [targetUserId]: newStatus,
       [targetUsername]: newStatus,
+    }));
+
+    // 2. Optimistically update KPI Following count instantly
+    setUserStats(prev => ({
+      ...prev,
+      following: Math.max(0, (prev.following || 0) + (newStatus ? 1 : -1)),
+    }));
+
+    // 3. Dispatch global event with optimistic delta
+    window.dispatchEvent(new CustomEvent('refreshStats', {
+      detail: { deltaFollowing: newStatus ? 1 : -1 }
     }));
 
     toast.success(newStatus ? `Following @${targetUsername} 🤝` : `Unfollowed @${targetUsername}`);
