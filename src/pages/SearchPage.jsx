@@ -345,7 +345,8 @@ export default function SearchPage({ session }) {
         type: 'follow',
         entityId: targetId,
       });
-      window.dispatchEvent(new Event('refreshStats'));
+      setFollowingCount(c => c + 1);
+      window.dispatchEvent(new CustomEvent('refreshStats', { detail: { deltaFollowing: 1 } }));
     }
   };
 
@@ -367,7 +368,8 @@ export default function SearchPage({ session }) {
       setFollowingMap((prev) => ({ ...prev, [targetId]: true }));
     } else {
       toast.info('Unfollowed');
-      window.dispatchEvent(new Event('refreshStats'));
+      setFollowingCount(c => Math.max(0, c - 1));
+      window.dispatchEvent(new CustomEvent('refreshStats', { detail: { deltaFollowing: -1 } }));
     }
   };
 
@@ -389,7 +391,8 @@ export default function SearchPage({ session }) {
       setFollowersMap((prev) => ({ ...prev, [targetId]: true }));
     } else {
       toast.info('Removed from followers');
-      window.dispatchEvent(new Event('refreshStats'));
+      setFollowersCount(c => Math.max(0, c - 1));
+      window.dispatchEvent(new CustomEvent('refreshStats', { detail: { deltaFollowers: -1 } }));
     }
   };
 

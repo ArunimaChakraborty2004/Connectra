@@ -289,7 +289,7 @@ export default function Rightbar({ profile }) {
           setFollowingIds((prev) => new Set(prev).add(targetId));
         }
       }
-      window.dispatchEvent(new Event('refreshStats'));
+      window.dispatchEvent(new CustomEvent('refreshStats', { detail: { deltaFollowing: 1 } }));
     } catch {
       toast.error('Could not follow developer');
     } finally {

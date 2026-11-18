@@ -31,7 +31,17 @@ export default function Sidebar({ profile, stats: initialStats, onClose }) {
     following: initialStats?.following ?? 0,
   }));
 
-  // Fetch or sync counts
+  // Sync state whenever parent component passes updated stats
+  useEffect(() => {
+    if (initialStats) {
+      setLiveStats(prev => ({
+        followers: initialStats.followers ?? prev.followers,
+        following: initialStats.following ?? prev.following,
+      }));
+    }
+  }, [initialStats?.followers, initialStats?.following]);
+
+  // Fetch or sync counts and listen to global refresh events
   useEffect(() => {
     if (!profile?.id) return;
 
@@ -45,12 +55,9 @@ export default function Sidebar({ profile, stats: initialStats, onClose }) {
           supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', profile.id),
         ]);
 
-        const fCount = followersCount ?? initialStats?.followers ?? 0;
-        const ingCount = followingCount ?? initialStats?.following ?? 0;
-
         setLiveStats({
-          followers: fCount,
-          following: ingCount,
+          followers: followersCount ?? 0,
+          following: followingCount ?? 0,
         });
       } catch (err) {
         console.warn('Error fetching sidebar stats:', err);
@@ -58,7 +65,39 @@ export default function Sidebar({ profile, stats: initialStats, onClose }) {
     };
 
     fetchCountsAndActivity();
-  }, [profile?.id, initialStats?.followers, initialStats?.following]);
+
+    // Listen to refreshStats event across the app with optimistic instant delta support
+    const handleRefresh = (e) => {
+      if (e?.detail?.deltaFollowing !== undefined) {
+        setLiveStats(prev => ({
+          ...prev,
+          following: Math.max(0, prev.following + e.detail.deltaFollowing),
+        }));
+      }
+      if (e?.detail?.deltaFollowers !== undefined) {
+        setLiveStats(prev => ({
+          ...prev,
+          followers: Math.max(0, prev.followers + e.detail.deltaFollowers),
+        }));
+      }
+      fetchCountsAndActivity();
+    };
+
+    window.addEventListener('refreshStats', handleRefresh);
+
+    // Supabase Realtime subscription for cross-tab follow sync
+    const channel = supabase
+      .channel(`sidebar-follows-${profile.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'follows' }, () => {
+        fetchCountsAndActivity();
+      })
+      .subscribe();
+
+    return () => {
+      window.removeEventListener('refreshStats', handleRefresh);
+      channel.unsubscribe();
+    };
+  }, [profile?.id]);
 
   const followers = liveStats.followers;
   const following = liveStats.following;
