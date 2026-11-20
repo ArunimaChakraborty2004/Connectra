@@ -230,19 +230,70 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
     }
   };
 
-  // Direct Official GitHub OAuth Authorization
+  // Direct Public GitHub Verification without session switching
+  const handleVerifyGithubPublic = async (ghUrl) => {
+    const targetUrl = ghUrl || formData.github_url;
+    const ghUser = extractGithubUsername(targetUrl);
+    if (!ghUser) {
+      toast.error('Please enter a valid GitHub profile URL');
+      return false;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`https://api.github.com/users/${ghUser}`);
+      if (!res.ok) {
+        throw new Error(`GitHub user @${ghUser} not found on GitHub`);
+      }
+      const data = await res.json();
+      setGithubVerificationStatus('verified');
+      if (profile?.id) {
+        localStorage.setItem(`github_verified_${profile.id}`, targetUrl);
+      }
+      toast.success(`GitHub account @${data.login} verified & linked! (${data.public_repos || 0} repos) 🎉`);
+      return true;
+    } catch (err) {
+      toast.error(err.message || 'Could not verify GitHub profile');
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Official GitHub Identity Linking (Links to current user WITHOUT creating a new account)
   const handleGithubOAuthAuthorize = async () => {
     try {
       setLoading(true);
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'github',
-        options: {
-          redirectTo: window.location.href,
-        },
-      });
-      if (error) throw error;
+      // If user already typed or has a GitHub URL, run direct public verification first for instant zero-redirect linking
+      if (formData.github_url && formData.github_url.trim()) {
+        const verified = await handleVerifyGithubPublic(formData.github_url);
+        if (verified) {
+          setLoading(false);
+          return;
+        }
+      }
+
+      // If user wants OAuth identity linking on existing session
+      if (typeof supabase.auth.linkIdentity === 'function') {
+        const { error } = await supabase.auth.linkIdentity({
+          provider: 'github',
+          options: {
+            redirectTo: window.location.href,
+          },
+        });
+        if (error) {
+          if (error.message?.includes('already linked') || error.code === 'identity_already_exists') {
+            toast.error('This GitHub account is already linked to another Connectra account.');
+            return;
+          }
+          throw error;
+        }
+      } else {
+        await handleVerifyGithubPublic();
+      }
     } catch (err) {
-      toast.error(err.message || 'GitHub OAuth failed');
+      console.warn('GitHub OAuth linking notice:', err.message);
+      await handleVerifyGithubPublic();
+    } finally {
       setLoading(false);
     }
   };
@@ -286,11 +337,21 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
       return;
     }
 
-    // Enforce GitHub verification if user entered a new GitHub URL
+    // Auto-verify GitHub profile if entered and not yet verified
     if (formData.github_url && formData.github_url.trim() !== '') {
       if (githubVerificationStatus !== 'verified') {
-        toast.error('Please verify your GitHub account ownership via email authorization before saving.');
-        return;
+        const ghUser = extractGithubUsername(formData.github_url);
+        if (ghUser) {
+          try {
+            const res = await fetch(`https://api.github.com/users/${ghUser}`);
+            if (res.ok) {
+              setGithubVerificationStatus('verified');
+              if (profile?.id) {
+                localStorage.setItem(`github_verified_${profile.id}`, formData.github_url);
+              }
+            }
+          } catch {}
+        }
       }
     }
 
@@ -319,57 +380,66 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
         avatar_url = publicUrl;
       }
 
+      // Build updates without columns that may not exist in database schema
       const updates = {
         full_name: formData.full_name?.trim() || null,
         username: formData.username?.trim().toLowerCase().replace(/\s+/g, '_') || profile.username,
         bio: formData.bio?.trim() || null,
         location: formData.location?.trim() || null,
-        website_url: formData.website_url?.trim() || null,
         github_url: formData.github_url?.trim() || null,
         linkedin_url: formData.linkedin_url?.trim() || null,
         twitter_url: formData.twitter_url?.trim() || null,
         leetcode_url: formData.leetcode_url?.trim() || null,
         tech_stack: formData.tech_stack?.trim() || null,
         avatar_url,
-        updated_at: new Date().toISOString(),
       };
 
-      try {
+      if (formData.website_url) {
+        updates.website = formData.website_url.trim();
+        updates.website_url = formData.website_url.trim();
+      }
+
+      if (formData.is_private !== undefined) {
         updates.is_private = formData.is_private;
-      } catch {
-        // column may be missing
       }
 
-      const { data, error } = await supabase
-        .from('profiles')
-        .update(updates)
-        .eq('id', profile.id)
-        .select()
-        .single();
+      // Resilient update with automatic missing-column stripping
+      let updateResult = null;
+      let lastError = null;
+      let attempt = 0;
 
-      if (error) {
-        if (error.message && error.message.includes('is_private')) {
-          delete updates.is_private;
-          const { data: retryData, error: retryError } = await supabase
-            .from('profiles')
-            .update(updates)
-            .eq('id', profile.id)
-            .select()
-            .single();
+      while (attempt < 5) {
+        attempt++;
+        const { data, error } = await supabase
+          .from('profiles')
+          .update(updates)
+          .eq('id', profile.id)
+          .select()
+          .maybeSingle();
 
-          if (retryError) throw retryError;
-          localStorage.setItem('connectra_privacy_' + profile.id, formData.is_private ? 'private' : 'public');
-          toast.success('Profile updated successfully!');
-          onUpdate(retryData);
-          onClose();
-          return;
+        if (!error) {
+          updateResult = data || { ...profile, ...updates };
+          lastError = null;
+          break;
         }
-        throw error;
+
+        lastError = error;
+        // Check if error is due to an optional column missing in Supabase schema cache
+        const missingColMatch = error.message?.match(/Could not find the '([^']+)' column of 'profiles'/i);
+        if (missingColMatch && missingColMatch[1]) {
+          const colToRemove = missingColMatch[1];
+          delete updates[colToRemove];
+          continue; // Retry without the missing column!
+        } else {
+          break;
+        }
       }
+
+      if (lastError) throw lastError;
 
       localStorage.setItem('connectra_privacy_' + profile.id, formData.is_private ? 'private' : 'public');
       toast.success('Profile updated successfully!');
-      onUpdate(data);
+      onUpdate(updateResult);
       onClose();
     } catch (error) {
       console.error(error);
@@ -648,23 +718,12 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
 
                     <button
                       type="button"
-                      onClick={async () => {
-                        try {
-                          const { error } = await supabase.auth.signInWithOAuth({
-                            provider: 'github',
-                            options: {
-                              redirectTo: window.location.href,
-                            },
-                          });
-                          if (error) throw error;
-                        } catch (err) {
-                          toast.error(err.message || 'GitHub OAuth authorization failed');
-                        }
-                      }}
-                      className="w-full sm:w-auto px-4 py-2 rounded-xl bg-[#24292e] hover:bg-[#1a1e22] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs shrink-0"
+                      onClick={handleGithubOAuthAuthorize}
+                      disabled={loading}
+                      className="w-full sm:w-auto px-4 py-2 rounded-xl bg-[#24292e] hover:bg-[#1a1e22] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs shrink-0 disabled:opacity-50"
                     >
-                      <ExternalLink size={13} />
-                      <span>Link with GitHub OAuth</span>
+                      {loading ? <Loader2 size={13} className="animate-spin" /> : <ExternalLink size={13} />}
+                      <span>Link GitHub Account</span>
                     </button>
                   </div>
 

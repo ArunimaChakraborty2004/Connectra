@@ -207,21 +207,44 @@ export default function SettingsPage({ session }) {
         }
       }
 
-      const { data, error } = await supabase
-        .from('profiles')
-        .update({
-          is_private: isPrivate,
-          full_name: fullName.trim() || null,
-          username: cleanUsername,
-        })
-        .eq('id', session.user.id)
-        .select()
-        .single();
+      const updates = {
+        is_private: isPrivate,
+        full_name: fullName.trim() || null,
+        username: cleanUsername,
+      };
 
-      if (error) {
-        toast.error(error.message);
+      let updatedData = null;
+      let updateError = null;
+      let attempt = 0;
+
+      while (attempt < 4) {
+        attempt++;
+        const { data, error } = await supabase
+          .from('profiles')
+          .update(updates)
+          .eq('id', session.user.id)
+          .select()
+          .maybeSingle();
+
+        if (!error) {
+          updatedData = data || { ...profile, ...updates };
+          updateError = null;
+          break;
+        }
+
+        updateError = error;
+        const missingCol = error.message?.match(/Could not find the '([^']+)' column of 'profiles'/i);
+        if (missingCol && missingCol[1]) {
+          delete updates[missingCol[1]];
+          continue;
+        }
+        break;
+      }
+
+      if (updateError) {
+        toast.error(updateError.message);
       } else {
-        setProfile(data);
+        setProfile(updatedData);
         window.dispatchEvent(new Event('refreshStats'));
         toast.success('Settings and profile updated successfully!');
       }
