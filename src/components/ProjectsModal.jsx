@@ -5,6 +5,7 @@ import { X, FolderGit2, ExternalLink, GitBranch, Plus, Code2 as GithubIcon, Down
 import { Link, useNavigate } from 'react-router-dom';
 import { callGroq } from '../lib/ai';
 import { toast } from '../lib/toast';
+import ShareRepoModal from './projects/ShareRepoModal';
 
 export default function ProjectsModal({ session, onClose }) {
   const navigate = useNavigate();
@@ -14,7 +15,7 @@ export default function ProjectsModal({ session, onClose }) {
   const [repoUrl, setRepoUrl] = useState('');
   const [demoUrl, setDemoUrl] = useState('');
   const [addMode, setAddMode] = useState('none'); // 'none', 'manual', 'github'
-  const [postingId, setPostingId] = useState(null);
+  const [sharingProject, setSharingProject] = useState(null);
   
   // GitHub Import State
   const [githubUsername, setGithubUsername] = useState('');
@@ -233,12 +234,11 @@ export default function ProjectsModal({ session, onClose }) {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => handlePostToFeed(p)}
-                        disabled={postingId === p.id}
-                        className="px-2.5 py-1.5 bg-[#ffedd5] hover:bg-[#fed7aa] text-[#ea580c] font-bold text-xs rounded-xl transition-all border border-[#fed7aa] flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                        title="Publish this repository to your Feed for followers to see and comment"
+                        onClick={() => setSharingProject(p)}
+                        className="px-2.5 py-1.5 bg-[#ffedd5] hover:bg-[#fed7aa] text-[#ea580c] font-bold text-xs rounded-xl transition-all border border-[#fed7aa] flex items-center gap-1.5 cursor-pointer"
+                        title="Customize, refine with AI, attach screenshot, and share to Feed"
                       >
-                        {postingId === p.id ? <Loader2 size={13} className="animate-spin text-[#ea580c]" /> : <Share2 size={13} />}
+                        <Share2 size={13} />
                         <span>Share to Feed</span>
                       </button>
                       {p.repo_url && (
@@ -451,6 +451,19 @@ export default function ProjectsModal({ session, onClose }) {
           </button>
         </div>
       </motion.div>
+
+      {/* Share & Edit Project Announcement Modal */}
+      {sharingProject && (
+        <ShareRepoModal
+          project={sharingProject}
+          session={session}
+          onClose={() => setSharingProject(null)}
+          onPostCreated={() => {
+            onClose();
+            navigate('/');
+          }}
+        />
+      )}
     </div>
   );
 }
