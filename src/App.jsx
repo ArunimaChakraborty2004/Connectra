@@ -38,6 +38,9 @@ function AppInner({ session }) {
   useEffect(() => {
     const loadProfile = async () => {
       try {
+        const ghUser = session.user.user_metadata?.user_name || session.user.user_metadata?.preferred_username;
+        const ghUrl = ghUser ? `https://github.com/${ghUser}` : null;
+
         const { data } = await supabase
           .from('profiles')
           .select('id, username, full_name, bio, tech_stack, github_url, xp, level, avatar_url')
@@ -45,15 +48,21 @@ function AppInner({ session }) {
           .single();
         if (data) {
           if (!data.username) {
-            const fallbackName = session.user.user_metadata?.username || session.user.email?.split('@')[0] || 'developer';
+            const fallbackName = session.user.user_metadata?.username || ghUser || session.user.email?.split('@')[0] || 'developer';
             supabase.from('profiles').update({ username: fallbackName }).eq('id', session.user.id).then(() => {});
             data.username = fallbackName;
           }
+          if (ghUrl && (!data.github_url || data.github_url !== ghUrl)) {
+            supabase.from('profiles').update({ github_url: ghUrl }).eq('id', session.user.id).then(() => {});
+            data.github_url = ghUrl;
+            localStorage.setItem(`github_verified_${session.user.id}`, ghUrl);
+          }
           setProfile(data);
         } else {
-          const fallbackName = session.user.user_metadata?.username || session.user.email?.split('@')[0] || 'User';
-          supabase.from('profiles').upsert({ id: session.user.id, username: fallbackName }).then(() => {});
-          setProfile({ id: session.user.id, username: fallbackName, xp: 0, level: 1 });
+          const fallbackName = session.user.user_metadata?.username || ghUser || session.user.email?.split('@')[0] || 'User';
+          supabase.from('profiles').upsert({ id: session.user.id, username: fallbackName, github_url: ghUrl }).then(() => {});
+          if (ghUrl) localStorage.setItem(`github_verified_${session.user.id}`, ghUrl);
+          setProfile({ id: session.user.id, username: fallbackName, github_url: ghUrl, xp: 0, level: 1 });
         }
 
         const { count: fCount } = await supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', session.user.id);

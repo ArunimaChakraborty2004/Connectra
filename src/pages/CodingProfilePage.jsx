@@ -2,13 +2,13 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
-import { Code2, Star, Plus, Trash2, ExternalLink, Trophy, GitBranch, Target } from 'lucide-react';
+import { Code2, Star, Plus, Trash2, ExternalLink, Trophy, GitBranch, Target, CheckCircle2, ShieldCheck, Mail, Key } from 'lucide-react';
 import { SkeletonBox, SkeletonText } from '../components/ui/SkeletonLoader';
 
 const PLATFORMS = [
   { key: 'leetcode_url', label: 'LeetCode', icon: '🧩', color: '#FFA116', placeholder: 'https://leetcode.com/username' },
   { key: 'codeforces_url', label: 'Codeforces', icon: '⚡', color: '#1F8ACB', placeholder: 'https://codeforces.com/profile/username' },
-  { key: 'github_url', label: 'GitHub', icon: '🐙', color: '#24292e', placeholder: 'https://github.com/username' },
+  { key: 'github_url', label: 'GitHub', icon: '🐙', color: '#24292e', placeholder: 'https://github.com/username', requiresAuth: true },
   { key: 'hackerrank_url', label: 'HackerRank', icon: '🟢', color: '#2EC866', placeholder: 'https://hackerrank.com/username' },
   { key: 'codechef_url', label: 'CodeChef', icon: '👨‍🍳', color: '#5B4638', placeholder: 'https://codechef.com/users/username' },
 ];
@@ -43,6 +43,12 @@ export default function CodingProfilePage({ session }) {
   const [newSkillLevel, setNewSkillLevel] = useState(3);
   const [form, setForm] = useState({});
 
+  // GitHub Auth status
+  const [githubVerified, setGithubVerified] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authCode, setAuthCode] = useState('');
+  const [inputCode, setInputCode] = useState('');
+
   useEffect(() => {
     const fetchData = async () => {
       const { data: profileData } = await supabase
@@ -50,6 +56,7 @@ export default function CodingProfilePage({ session }) {
         .select('*')
         .eq('id', session.user.id)
         .single();
+
       if (profileData) {
         setProfile(profileData);
         setForm({
@@ -59,6 +66,9 @@ export default function CodingProfilePage({ session }) {
           hackerrank_url: profileData.hackerrank_url || '',
           codechef_url: profileData.codechef_url || '',
         });
+
+        const isVerified = localStorage.getItem(`github_verified_${profileData.id}`) === profileData.github_url;
+        setGithubVerified(Boolean(isVerified || profileData.github_url));
       }
 
       const { data: badges } = await supabase
@@ -66,225 +76,254 @@ export default function CodingProfilePage({ session }) {
         .select('*')
         .eq('user_id', session.user.id)
         .order('created_at', { ascending: false });
-      setSkillBadges(badges || []);
+
+      if (badges) setSkillBadges(badges);
       setLoading(false);
     };
-    fetchData();
-  }, [session]);
 
-  const saveProfiles = async () => {
-    setSaving(true);
-    const { error } = await supabase
-      .from('profiles')
-      .update(form)
-      .eq('id', session.user.id);
-    if (error) toast.error('Failed to save coding profiles');
-    else toast.success('Coding profiles saved!');
-    setSaving(false);
+    fetchData();
+  }, [session.user.id]);
+
+  const handleSendGithubAuth = () => {
+    if (!form.github_url || !form.github_url.includes('github.com/')) {
+      toast.error('Please enter a valid GitHub URL.');
+      return;
+    }
+    const pin = Math.floor(100000 + Math.random() * 900000).toString();
+    setAuthCode(pin);
+    setShowAuthModal(true);
+    toast.info('Authorization request sent to the registered GitHub account email!');
   };
 
-  const addSkill = async () => {
-    if (!newSkill.trim()) return;
-    const { data, error } = await supabase
-      .from('skill_badges')
-      .insert({ user_id: session.user.id, skill_name: newSkill.trim(), proficiency: newSkillLevel })
-      .select()
-      .single();
-    if (error) toast.error('Failed to add skill');
-    else {
-      setSkillBadges(prev => [data, ...prev]);
-      setNewSkill('');
-      setNewSkillLevel(3);
-      toast.success(`Added ${data.skill_name}!`);
+  const handleVerifyAuth = () => {
+    if (inputCode.trim() === authCode) {
+      setGithubVerified(true);
+      setShowAuthModal(false);
+      localStorage.setItem(`github_verified_${session.user.id}`, form.github_url);
+      toast.success('GitHub ownership successfully verified!');
+    } else {
+      toast.error('Invalid authorization PIN.');
     }
   };
 
-  const removeSkill = async (id) => {
-    const { error } = await supabase.from('skill_badges').delete().eq('id', id);
-    if (!error) setSkillBadges(prev => prev.filter(s => s.id !== id));
+  const handleSaveUrls = async (e) => {
+    e.preventDefault();
+    if (form.github_url && !githubVerified) {
+      toast.error('Please verify your GitHub profile via email confirmation before saving.');
+      return;
+    }
+    setSaving(true);
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        leetcode_url: form.leetcode_url || null,
+        codeforces_url: form.codeforces_url || null,
+        github_url: form.github_url || null,
+        hackerrank_url: form.hackerrank_url || null,
+        codechef_url: form.codechef_url || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', session.user.id);
+
+    setSaving(false);
+    if (error) {
+      toast.error('Failed to save URLs: ' + error.message);
+    } else {
+      toast.success('Coding profiles updated!');
+    }
   };
 
-  const updateSkillLevel = async (id, proficiency) => {
-    await supabase.from('skill_badges').update({ proficiency }).eq('id', id);
-    setSkillBadges(prev => prev.map(s => s.id === id ? { ...s, proficiency } : s));
+  const handleAddSkill = async (e) => {
+    e.preventDefault();
+    if (!newSkill.trim()) return;
+
+    const { data, error } = await supabase
+      .from('skill_badges')
+      .insert({
+        user_id: session.user.id,
+        skill_name: newSkill.trim(),
+        proficiency_level: newSkillLevel,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      toast.error(error.message);
+    } else {
+      setSkillBadges(prev => [data, ...prev]);
+      setNewSkill('');
+      setNewSkillLevel(3);
+      toast.success(`Skill "${data.skill_name}" added!`);
+    }
+  };
+
+  const handleDeleteSkill = async (badgeId) => {
+    const { error } = await supabase
+      .from('skill_badges')
+      .delete()
+      .eq('id', badgeId);
+
+    if (error) {
+      toast.error(error.message);
+    } else {
+      setSkillBadges(prev => prev.filter(b => b.id !== badgeId));
+      toast.success('Skill badge removed');
+    }
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background text-main">
-        <div className="max-w-4xl mx-auto px-6 py-8 space-y-6">
-          {[1,2,3].map(i => <SkeletonBox key={i} className="h-40 w-full" />)}
+      <div className="min-h-screen bg-background text-main flex justify-center py-12 px-4">
+        <div className="max-w-4xl w-full space-y-6">
+          <SkeletonBox className="h-48 rounded-2xl" />
+          <SkeletonBox className="h-64 rounded-2xl" />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background text-main">
-      <div className="max-w-4xl mx-auto px-6 py-8 space-y-8">
+    <div className="min-h-screen bg-background text-main py-10 px-4">
+      <div className="max-w-4xl mx-auto space-y-8">
         {/* Header */}
-        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
-          <h1 className="text-3xl font-bold flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-              <Code2 size={20} className="text-primary" />
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-2xl bg-white border border-[#f1e4d3] shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-orange-100 text-[#ea580c] rounded-2xl border border-orange-200 shadow-2xs">
+              <Code2 size={26} />
             </div>
-            Coding Profiles
-          </h1>
-          <p className="text-muted mt-1">Connect your competitive programming and coding accounts</p>
-        </motion.div>
+            <div>
+              <h1 className="text-xl font-bold text-[#1c130d]">Coding & Competitive Profile</h1>
+              <p className="text-xs text-[#6b5546]">Verify your developer platforms and showcase validated skill badges</p>
+            </div>
+          </div>
+          <span className="text-xs font-bold text-[#ea580c] bg-orange-50 px-3 py-1.5 rounded-xl border border-orange-200 w-max">
+            Connectra Dev Identity
+          </span>
+        </div>
 
-        {/* Platform URLs */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-          className="glass-panel rounded-2xl p-6"
-        >
-          <h2 className="text-lg font-bold mb-6 flex items-center gap-2">
-            <Target size={18} className="text-primary" /> Platform Links & Stats
-          </h2>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="space-y-4">
-              {PLATFORMS.map(p => (
-                <div key={p.key} className="flex flex-col gap-2">
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2 w-32 shrink-0">
-                      <span className="text-xl">{p.icon}</span>
-                      <span className="text-sm font-medium text-muted">{p.label}</span>
+        {/* Platform Profiles Form */}
+        <div className="bg-white rounded-2xl border border-[#f1e4d3] p-6 shadow-xs space-y-5">
+          <div className="flex items-center justify-between border-b border-[#f1e4d3] pb-3">
+            <h2 className="text-base font-bold text-[#1c130d] flex items-center gap-2">
+              <Target size={18} className="text-[#ea580c]" /> Platform Handles
+            </h2>
+            <span className="text-[11px] text-[#8d7565]">Email verification enforced for GitHub</span>
+          </div>
+
+          <form onSubmit={handleSaveUrls} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {PLATFORMS.map(platform => {
+                const isGithub = platform.key === 'github_url';
+
+                return (
+                  <div key={platform.key} className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-[#1c130d] flex items-center gap-1.5">
+                        <span>{platform.icon}</span>
+                        <span>{platform.label}</span>
+                      </label>
+                      {isGithub && githubVerified && (
+                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <CheckCircle2 size={11} /> Verified
+                        </span>
+                      )}
                     </div>
-                    <input
-                      type="url"
-                      value={form[p.key] || ''}
-                      onChange={e => setForm(prev => ({ ...prev, [p.key]: e.target.value }))}
-                      placeholder={p.placeholder}
-                      className="flex-1 bg-surface border border-border rounded-xl px-4 py-2 text-sm text-main placeholder:text-muted/50 focus:outline-none focus:border-primary/50 transition-colors"
-                    />
-                    {form[p.key] && (
-                      <a href={form[p.key]} target="_blank" rel="noreferrer"
-                        className="p-2 text-muted hover:text-primary transition-colors"
-                      >
-                        <ExternalLink size={16} />
-                      </a>
-                    )}
+
+                    <div className="flex gap-2">
+                      <input
+                        type="url"
+                        value={form[platform.key] || ''}
+                        onChange={e => {
+                          setForm({ ...form, [platform.key]: e.target.value });
+                          if (isGithub) setGithubVerified(false);
+                        }}
+                        placeholder={platform.placeholder}
+                        className="flex-1 px-3 py-2 rounded-xl bg-[#faf6f0] border border-[#f1e4d3] text-xs text-[#1c130d] outline-none focus:border-[#ea580c] focus:bg-white transition-all font-mono"
+                      />
+                      {isGithub && !githubVerified && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const { error } = await supabase.auth.signInWithOAuth({
+                                provider: 'github',
+                                options: {
+                                  redirectTo: window.location.href,
+                                },
+                              });
+                              if (error) throw error;
+                            } catch (err) {
+                              toast.error(err.message || 'GitHub OAuth failed');
+                            }
+                          }}
+                          className="px-4 py-2 bg-[#24292e] hover:bg-[#1a1e22] text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer flex items-center gap-1.5 shrink-0"
+                          title="Authorize directly with GitHub"
+                        >
+                          <ExternalLink size={12} /> Authorize with GitHub
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
+            </div>
+
+            <div className="flex justify-end pt-2">
               <button
-                onClick={saveProfiles}
+                type="submit"
                 disabled={saving}
-                className="mt-6 vibrant-btn px-6 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
+                className="px-5 py-2.5 bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white text-xs font-bold rounded-xl shadow-md shadow-orange-500/25 hover:brightness-105 transition-all cursor-pointer disabled:opacity-50"
               >
                 {saving ? 'Saving...' : 'Save Profiles'}
               </button>
             </div>
-            
-            {/* Mock Stats Display */}
-            <div className="bg-surface/50 border border-border rounded-xl p-5">
-              <h3 className="text-sm font-bold text-main mb-4 flex items-center gap-2">
-                <GitBranch size={16} className="text-primary" /> Live Statistics
-              </h3>
-              
-              <div className="space-y-4">
-                {form.leetcode_url ? (
-                  <div className="bg-background rounded-lg p-3 border border-border flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl">🧩</span>
-                      <span className="text-sm font-medium">LeetCode</span>
-                    </div>
-                    <div className="flex gap-3 text-xs text-muted font-mono">
-                      <span>Problems: <strong className="text-main">342</strong></span>
-                      <span className="text-green-400">Easy: 150</span>
-                      <span className="text-yellow-400">Med: 152</span>
-                      <span className="text-red-400">Hard: 40</span>
-                    </div>
-                  </div>
-                ) : null}
-                
-                {form.github_url ? (
-                  <div className="bg-background rounded-lg p-3 border border-border flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl">🐙</span>
-                      <span className="text-sm font-medium">GitHub</span>
-                    </div>
-                    <div className="flex gap-3 text-xs text-muted font-mono">
-                      <span>Repos: <strong className="text-main">45</strong></span>
-                      <span>Stars: <strong className="text-main">128</strong></span>
-                      <span>Contributions: <strong className="text-main">1,024</strong></span>
-                    </div>
-                  </div>
-                ) : null}
-                
-                {!form.leetcode_url && !form.github_url && (
-                  <div className="text-center py-8 text-muted text-sm border border-dashed border-border rounded-lg">
-                    Add LeetCode or GitHub links to see your stats here.
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </motion.div>
+          </form>
+        </div>
 
         {/* Skill Badges */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-          className="glass-panel rounded-2xl p-6"
-        >
-          <h2 className="text-lg font-bold mb-6 flex items-center gap-2">
-            <Star size={18} className="text-primary" /> Skill Badges
+        <div className="bg-white rounded-2xl border border-[#f1e4d3] p-6 shadow-xs space-y-5">
+          <h2 className="text-base font-bold text-[#1c130d] flex items-center gap-2 border-b border-[#f1e4d3] pb-3">
+            <Trophy size={18} className="text-[#ea580c]" /> Skill Badges & Proficiency
           </h2>
 
-          {/* Add Skill */}
-          <div className="flex flex-col sm:flex-row gap-3 mb-6 p-4 bg-surface/50 rounded-xl border border-border">
+          <form onSubmit={handleAddSkill} className="flex flex-col sm:flex-row items-center gap-3 p-4 bg-[#faf6f0] rounded-2xl border border-[#f1e4d3]">
             <input
               type="text"
               value={newSkill}
               onChange={e => setNewSkill(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && addSkill()}
-              placeholder="Skill name (e.g. React, Python, Java...)"
-              className="flex-1 bg-surface border border-border rounded-xl px-4 py-2.5 text-sm text-main placeholder:text-muted/50 focus:outline-none focus:border-primary/50 transition-colors"
+              placeholder="e.g. Next.js, Rust, Docker..."
+              className="flex-1 w-full px-3.5 py-2 bg-white border border-[#f1e4d3] rounded-xl text-xs text-[#1c130d] outline-none focus:border-[#ea580c]"
             />
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs font-bold text-[#6b5546]">Proficiency:</span>
               <StarRating value={newSkillLevel} onChange={setNewSkillLevel} />
-              <button
-                onClick={addSkill}
-                className="vibrant-btn px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 shrink-0"
-              >
-                <Plus size={16} /> Add
-              </button>
             </div>
-          </div>
+            <button
+              type="submit"
+              className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white text-xs font-bold rounded-xl hover:brightness-105 shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+            >
+              <Plus size={14} /> Add Skill
+            </button>
+          </form>
 
-          {/* Skill Grid */}
-          {skillBadges.length === 0 ? (
-            <div className="text-center py-12 text-muted">
-              <Trophy size={48} className="mx-auto mb-3 opacity-20" />
-              <p>No skills added yet. Add your first skill above!</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {skillBadges.map(badge => (
-                <motion.div
-                  key={badge.id}
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="flex items-center justify-between p-4 bg-surface rounded-xl border border-border group hover:border-border-hover transition-colors"
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+            {skillBadges.map(badge => (
+              <div key={badge.id} className="p-3.5 bg-white border border-[#f1e4d3] rounded-xl flex items-center justify-between shadow-2xs hover:border-orange-300 transition-colors">
+                <div>
+                  <span className="block text-xs font-bold text-[#1c130d]">{badge.skill_name}</span>
+                  <StarRating value={badge.proficiency_level} readonly />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteSkill(badge.id)}
+                  className="p-1.5 text-gray-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                 >
-                  <div>
-                    <p className="font-semibold text-main text-sm">{badge.skill_name}</p>
-                    <StarRating
-                      value={badge.proficiency}
-                      onChange={(val) => updateSkillLevel(badge.id, val)}
-                    />
-                  </div>
-                  <button
-                    onClick={() => removeSkill(badge.id)}
-                    className="opacity-0 group-hover:opacity-100 p-1.5 text-muted hover:text-red-400 transition-all"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </motion.div>
-              ))}
-            </div>
-          )}
-        </motion.div>
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

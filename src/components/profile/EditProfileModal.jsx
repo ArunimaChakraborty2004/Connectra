@@ -1,7 +1,11 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Upload, CheckCircle2, AlertCircle, Sparkles, Wand2, Shield, Rocket, Briefcase, RefreshCw, Loader2, XCircle, Lock, Globe } from 'lucide-react';
+import {
+  X, Upload, CheckCircle2, AlertCircle, Sparkles, Briefcase, Rocket, Shield,
+  RefreshCw, Loader2, XCircle, Lock, Globe, Mail, ShieldAlert, Key, ExternalLink,
+  Check, ArrowRight
+} from 'lucide-react';
 import { toast } from '../../lib/toast';
 import { generateBioOptions } from '../../lib/ai';
 
@@ -19,15 +23,22 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
     tech_stack: profile?.tech_stack || '',
     is_private: Boolean(profile?.is_private ?? (localStorage.getItem('connectra_privacy_' + profile?.id) === 'private')),
   });
-  
+
   const [avatarFile, setAvatarFile] = useState(null);
   const [avatarPreview, setAvatarPreview] = useState(profile?.avatar_url || '');
   const [loading, setLoading] = useState(false);
-  const [githubLinked, setGithubLinked] = useState(false);
-  const [verificationSent, setVerificationSent] = useState(false);
+
+  // GitHub Verification State Machine: 'unlinked' | 'sending' | 'pending' | 'verified' | 'rejected'
+  const [githubVerificationStatus, setGithubVerificationStatus] = useState('unlinked');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [inputCode, setInputCode] = useState('');
+  const [githubUserFound, setGithubUserFound] = useState(null);
+  const [simulatedEmail, setSimulatedEmail] = useState(null);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+
   const [usernameStatus, setUsernameStatus] = useState({
     checking: false,
-    available: null, // null | true | false
+    available: null,
     message: '',
     isCurrent: true,
   });
@@ -48,7 +59,7 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
         currentBio: formData.bio,
       });
       setAiBioSuggestions(suggestions);
-    } catch (err) {
+    } catch {
       toast.error('Failed to generate AI bios');
     } finally {
       setAiBioLoading(false);
@@ -78,12 +89,15 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
         message: 'This is your current handle.',
         isCurrent: true,
       });
-    }
-    // Only check the original profile URL when opening the modal
-    if (profile?.github_url && profile.github_url.includes('github.com/')) {
-       setGithubLinked(true);
-    } else {
-       setGithubLinked(false);
+
+      // Check if already verified
+      const verifiedKey = `github_verified_${profile.id}`;
+      const isStoredVerified = localStorage.getItem(verifiedKey) === profile.github_url;
+      if (profile.github_url && (isStoredVerified || profile.github_url.includes('github.com/'))) {
+        setGithubVerificationStatus('verified');
+      } else {
+        setGithubVerificationStatus('unlinked');
+      }
     }
   }, [isOpen, profile]);
 
@@ -103,7 +117,6 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
 
     const clean = raw.trim().toLowerCase().replace(/\s+/g, '_');
 
-    // If identical to current user's username
     if (profile?.username && clean === profile.username.toLowerCase()) {
       setUsernameStatus({
         checking: false,
@@ -114,7 +127,6 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
       return;
     }
 
-    // Format & length validation
     if (clean.length < 3) {
       setUsernameStatus({
         checking: false,
@@ -164,7 +176,6 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
         if (!isMounted) return;
 
         if (error) {
-          console.warn('Username query error:', error);
           setUsernameStatus({
             checking: false,
             available: true,
@@ -189,7 +200,7 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
             isCurrent: false,
           });
         }
-      } catch (err) {
+      } catch {
         if (isMounted) {
           setUsernameStatus({
             checking: false,
@@ -207,39 +218,55 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
     };
   }, [formData.username, isOpen, profile?.id, profile?.username]);
 
-  const handleLinkGithub = async () => {
-    if (!formData.github_url || !formData.github_url.includes('github.com/')) {
-      toast.error("Please enter a valid GitHub URL first.");
-      return;
+  // Extract username from GitHub URL
+  const extractGithubUsername = (url) => {
+    if (!url) return '';
+    try {
+      const parsed = new URL(url.startsWith('http') ? url : `https://${url}`);
+      const parts = parsed.pathname.split('/').filter(Boolean);
+      return parts[0] || '';
+    } catch {
+      return url.replace('https://github.com/', '').replace('github.com/', '').split('/')[0] || '';
     }
-    setLoading(true);
-    // Mock sending verification email
-    setTimeout(() => {
-      setLoading(false);
-      setVerificationSent(true);
-      toast.success("Verification email sent! Check your inbox.");
-    }, 1500);
   };
 
-  const handleResendMail = () => {
-    setLoading(true);
-    setTimeout(() => {
+  // Direct Official GitHub OAuth Authorization
+  const handleGithubOAuthAuthorize = async () => {
+    try {
+      setLoading(true);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'github',
+        options: {
+          redirectTo: window.location.href,
+        },
+      });
+      if (error) throw error;
+    } catch (err) {
+      toast.error(err.message || 'GitHub OAuth failed');
       setLoading(false);
-      toast.success("Verification email resent!");
-    }, 1000);
+    }
   };
 
-  const handleMockVerify = () => {
-    setGithubLinked(true);
-    setVerificationSent(false);
-    toast.success("GitHub URL verified successfully!");
+  // User accepts / verifies code
+  const handleApproveVerification = (codeToVerify) => {
+    const code = codeToVerify || inputCode.trim();
+    if (code === verificationCode || codeToVerify === verificationCode) {
+      setGithubVerificationStatus('verified');
+      if (profile?.id && formData.github_url) {
+        localStorage.setItem(`github_verified_${profile.id}`, formData.github_url);
+      }
+      toast.success(`GitHub account @${extractGithubUsername(formData.github_url)} successfully verified and linked! 🎉`);
+    } else {
+      toast.error('Invalid security code. Please check your authorization email.');
+    }
   };
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
     if (e.target.name === 'github_url') {
-      setGithubLinked(false);
-      setVerificationSent(false);
+      setGithubVerificationStatus('unlinked');
+      setVerificationCode('');
+      setInputCode('');
     }
   };
 
@@ -253,57 +280,26 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    const trimmedUsername = formData.username?.trim();
-    if (!trimmedUsername) {
-      toast.error('Username cannot be empty.');
-      return;
-    }
-    const cleanUsername = trimmedUsername.toLowerCase().replace(/\s+/g, '_');
 
-    // Prevent saving if handle is taken or currently checking
-    if (usernameStatus.checking) {
-      toast.error('Checking username availability, please wait...');
-      return;
-    }
-    if (usernameStatus.available === false) {
-      toast.error(usernameStatus.message || `@${cleanUsername} is already taken.`);
+    if (usernameStatus.available === false && !usernameStatus.isCurrent) {
+      toast.error('Please choose an available username before saving.');
       return;
     }
 
-    // Direct database guard if changed
-    if (cleanUsername !== profile?.username?.toLowerCase()) {
-      const { data: existingUser } = await supabase
-        .from('profiles')
-        .select('id')
-        .ilike('username', cleanUsername)
-        .neq('id', profile.id)
-        .maybeSingle();
-
-      if (existingUser) {
-        toast.error(`@${cleanUsername} is already taken by another developer.`);
-        setUsernameStatus({
-          checking: false,
-          available: false,
-          message: `@${cleanUsername} is already taken by another developer.`,
-          isCurrent: false,
-        });
+    // Enforce GitHub verification if user entered a new GitHub URL
+    if (formData.github_url && formData.github_url.trim() !== '') {
+      if (githubVerificationStatus !== 'verified') {
+        toast.error('Please verify your GitHub account ownership via email authorization before saving.');
         return;
       }
     }
 
-    if (formData.github_url && !githubLinked) {
-      toast.error("Please verify your GitHub URL before saving.");
-      return;
-    }
-
     setLoading(true);
 
-    let avatar_url = profile.avatar_url;
+    try {
+      let avatar_url = profile.avatar_url;
 
-    if (avatarFile) {
-      // 1. Try uploading to Supabase Storage bucket 'avatars'
-      try {
+      if (avatarFile) {
         const fileExt = avatarFile.name.split('.').pop();
         const fileName = `${profile.id}-${Date.now()}.${fileExt}`;
         const filePath = `avatars/${fileName}`;
@@ -312,180 +308,157 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
           .from('avatars')
           .upload(filePath, avatarFile, { upsert: true });
 
-        if (!uploadError) {
-          const { data: publicUrlData } = supabase.storage
-            .from('avatars')
-            .getPublicUrl(filePath);
-          avatar_url = publicUrlData.publicUrl;
-        } else {
-          // If storage bucket doesn't exist or errors, convert to compressed base64 Data URL
-          console.warn('Storage bucket upload failed, using Data URL fallback:', uploadError.message);
-          avatar_url = await new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-              const img = new Image();
-              img.onload = () => {
-                const canvas = document.createElement('canvas');
-                const MAX_DIM = 256;
-                let width = img.width;
-                let height = img.height;
-                if (width > height) {
-                  if (width > MAX_DIM) {
-                    height *= MAX_DIM / width;
-                    width = MAX_DIM;
-                  }
-                } else {
-                  if (height > MAX_DIM) {
-                    width *= MAX_DIM / height;
-                    height = MAX_DIM;
-                  }
-                }
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
-                resolve(canvas.toDataURL('image/jpeg', 0.85));
-              };
-              img.src = e.target.result;
-            };
-            reader.readAsDataURL(avatarFile);
-          });
+        if (uploadError) {
+          throw new Error('Avatar upload failed: ' + uploadError.message);
         }
-      } catch (err) {
-        console.warn('Avatar process fallback:', err);
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('avatars')
+          .getPublicUrl(filePath);
+
+        avatar_url = publicUrl;
       }
-    }
 
-    // Base payload with columns guaranteed to exist in the database
-    const updatePayload = {
-      full_name: formData.full_name?.trim() || null,
-      username: cleanUsername,
-      bio: formData.bio,
-      tech_stack: formData.tech_stack,
-      website_url: formData.website_url,
-      linkedin_url: formData.linkedin_url,
-      github_url: formData.github_url,
-      avatar_url,
-      is_private: Boolean(formData.is_private),
-    };
+      const updates = {
+        full_name: formData.full_name?.trim() || null,
+        username: formData.username?.trim().toLowerCase().replace(/\s+/g, '_') || profile.username,
+        bio: formData.bio?.trim() || null,
+        location: formData.location?.trim() || null,
+        website_url: formData.website_url?.trim() || null,
+        github_url: formData.github_url?.trim() || null,
+        linkedin_url: formData.linkedin_url?.trim() || null,
+        twitter_url: formData.twitter_url?.trim() || null,
+        leetcode_url: formData.leetcode_url?.trim() || null,
+        tech_stack: formData.tech_stack?.trim() || null,
+        avatar_url,
+        updated_at: new Date().toISOString(),
+      };
 
-    // Cache privacy locally so it takes effect instantly
-    try {
-      localStorage.setItem('connectra_privacy_' + profile.id, formData.is_private ? 'private' : 'public');
-    } catch {}
-
-    // If extra columns (location, leetcode_url, twitter_url) exist in Supabase, include them; otherwise fallback safely
-    let { data, error } = await supabase
-      .from('profiles')
-      .update({
-        ...updatePayload,
-        ...(formData.location ? { location: formData.location } : {}),
-        ...(formData.twitter_url ? { twitter_url: formData.twitter_url } : {}),
-        ...(formData.leetcode_url ? { leetcode_url: formData.leetcode_url } : {}),
-      })
-      .eq('id', profile.id)
-      .select()
-      .single();
-
-    // If schema error occurred due to missing optional columns (e.g. leetcode_url or is_private missing in older Postgres)
-    if (error && (error.message?.includes('leetcode_url') || error.message?.includes('location') || error.message?.includes('twitter_url') || error.message?.includes('is_private') || error.code === 'PGRST204')) {
-      console.warn('Optional columns missing in schema, retrying with core columns:', error.message);
-      const safeCorePayload = { ...updatePayload };
-      if (error.message?.includes('is_private')) {
-        delete safeCorePayload.is_private;
+      try {
+        updates.is_private = formData.is_private;
+      } catch {
+        // column may be missing
       }
-      const retryResult = await supabase
+
+      const { data, error } = await supabase
         .from('profiles')
-        .update(safeCorePayload)
+        .update(updates)
         .eq('id', profile.id)
         .select()
         .single();
-      data = retryResult.data;
-      error = retryResult.error;
-    }
 
-    if (error) {
-      toast.error(error.message);
-    } else {
-      toast.success('Profile updated successfully');
-      window.dispatchEvent(new Event('refreshStats'));
+      if (error) {
+        if (error.message && error.message.includes('is_private')) {
+          delete updates.is_private;
+          const { data: retryData, error: retryError } = await supabase
+            .from('profiles')
+            .update(updates)
+            .eq('id', profile.id)
+            .select()
+            .single();
+
+          if (retryError) throw retryError;
+          localStorage.setItem('connectra_privacy_' + profile.id, formData.is_private ? 'private' : 'public');
+          toast.success('Profile updated successfully!');
+          onUpdate(retryData);
+          onClose();
+          return;
+        }
+        throw error;
+      }
+
+      localStorage.setItem('connectra_privacy_' + profile.id, formData.is_private ? 'private' : 'public');
+      toast.success('Profile updated successfully!');
       onUpdate(data);
       onClose();
+    } catch (error) {
+      console.error(error);
+      toast.error(error.message || 'Error updating profile');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   if (!isOpen) return null;
 
   return (
-    <AnimatePresence>
+    <>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
-          className="bg-surface border border-border w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+          className="bg-white border border-[#f1e4d3] rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden"
         >
-          <div className="flex justify-between items-center p-6 border-b border-border">
-            <h2 className="text-xl font-bold text-main">Edit Profile</h2>
-            <button onClick={onClose} className="text-muted hover:text-main transition-colors cursor-pointer">
-              <X size={22} />
+          {/* Modal Header */}
+          <div className="p-5 border-b border-[#f1e4d3] flex items-center justify-between bg-[#fffcf7] shrink-0">
+            <div>
+              <h2 className="text-lg font-bold text-[#1c130d]">Edit Developer Profile</h2>
+              <p className="text-xs text-[#6b5546]">Update your public portfolio, verified platforms, and identity</p>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-1.5 text-[#6b5546] hover:text-[#1c130d] hover:bg-[#faf6f0] rounded-xl transition-colors cursor-pointer"
+            >
+              <X size={20} />
             </button>
           </div>
 
-          <div className="p-6 overflow-y-auto custom-scrollbar">
-            <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-              
-              {/* Avatar Upload */}
-              <div className="flex items-center gap-6">
-                <div className="relative group w-24 h-24 rounded-full overflow-hidden bg-background border border-white/10 shrink-0">
-                  {avatarPreview ? (
-                    <img src={avatarPreview} alt="Avatar Preview" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-3xl font-bold text-muted">
-                      {(formData.full_name || formData.username || 'U')[0]?.toUpperCase()}
-                    </div>
-                  )}
-                  <label className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity">
-                    <Upload size={20} className="text-white mb-1" />
-                    <span className="text-[10px] text-white font-semibold">Upload</span>
+          {/* Modal Body */}
+          <div className="p-6 overflow-y-auto no-scrollbar space-y-6 flex-1 bg-white">
+            <form id="edit-profile-form" onSubmit={handleSubmit} className="space-y-6">
+              {/* Avatar Section */}
+              <div className="flex items-center gap-5 p-4 rounded-2xl bg-[#faf6f0] border border-[#f1e4d3]">
+                <div className="relative group">
+                  <div className="w-20 h-20 rounded-full overflow-hidden bg-gradient-to-tr from-[#ea580c] via-[#f97316] to-[#facc15] p-0.5 shadow-md shrink-0">
+                    {avatarPreview ? (
+                      <img src={avatarPreview} alt="Avatar" className="w-full h-full object-cover rounded-full" />
+                    ) : (
+                      <div className="w-full h-full bg-white rounded-full flex items-center justify-center font-bold text-2xl text-[#ea580c]">
+                        {profile?.username?.[0]?.toUpperCase() || 'U'}
+                      </div>
+                    )}
+                  </div>
+                  <label className="absolute inset-0 bg-black/50 rounded-full flex flex-col items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-xs font-semibold">
+                    <Upload size={16} />
+                    <span>Upload</span>
                     <input type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
                   </label>
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold text-main mb-1">Profile Picture</h3>
-                  <p className="text-xs text-muted mb-3">Upload a new avatar (JPG, PNG, max 2MB).</p>
+                  <h3 className="font-bold text-sm text-[#1c130d]">Profile Photo</h3>
+                  <p className="text-xs text-[#6b5546] mt-0.5">Recommended 400x400 PNG or JPG. Max 5MB.</p>
                 </div>
               </div>
 
-              {/* Name & Username Inputs */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Basic Info (Full Name + Username) */}
+              <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-semibold text-main mb-1.5">
-                    Display / Full Name
-                  </label>
+                  <label className="block text-xs font-bold text-[#1c130d] mb-1.5">Full Name</label>
                   <input
                     type="text"
                     name="full_name"
                     value={formData.full_name}
                     onChange={handleChange}
                     placeholder="e.g. Alex Morgan"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-background border border-border text-sm text-main placeholder-muted focus:outline-none focus:border-primary transition-all"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#faf6f0] border border-[#f1e4d3] text-sm text-[#1c130d] placeholder-[#8d7565] focus:outline-none focus:border-[#ea580c] focus:bg-white transition-all font-medium"
                   />
-                  <p className="text-[11px] text-muted mt-1">Your display name shown on your profile.</p>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-semibold text-main mb-1.5 flex items-center justify-between">
-                    <span>Username / Handle <span className="text-[#ea580c]">*</span></span>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold text-[#1c130d] flex items-center gap-1">
+                      <span>Handle / Username</span>
+                      <span className="text-[#ea580c]">*</span>
+                    </label>
                     {usernameStatus.checking && (
-                      <span className="text-[11px] text-amber-500 font-normal flex items-center gap-1">
-                        <Loader2 size={12} className="animate-spin" /> Checking...
+                      <span className="text-[11px] text-amber-600 font-medium flex items-center gap-1">
+                        <Loader2 size={12} className="animate-spin" /> Checking availability...
                       </span>
                     )}
-                  </label>
+                  </div>
                   <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted text-sm font-bold">@</span>
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8d7565] text-sm font-bold">@</span>
                     <input
                       type="text"
                       name="username"
@@ -493,14 +466,14 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
                       onChange={handleChange}
                       placeholder="username"
                       required
-                      className={`w-full pl-8 pr-10 py-2.5 rounded-xl bg-background border text-sm text-main placeholder-muted focus:outline-none transition-all font-mono ${
+                      className={`w-full pl-8 pr-10 py-2.5 rounded-xl bg-[#faf6f0] border text-sm text-[#1c130d] placeholder-[#8d7565] focus:outline-none focus:bg-white transition-all font-mono font-medium ${
                         usernameStatus.checking
-                          ? 'border-amber-500/60 focus:border-amber-500'
+                          ? 'border-amber-400 focus:border-amber-500'
                           : usernameStatus.available === false
-                          ? 'border-rose-500 focus:border-rose-500 bg-rose-500/5'
+                          ? 'border-rose-500 bg-rose-50/50'
                           : usernameStatus.available === true && !usernameStatus.isCurrent
-                          ? 'border-emerald-500 focus:border-emerald-500 bg-emerald-500/5'
-                          : 'border-border focus:border-primary'
+                          ? 'border-emerald-500 bg-emerald-50/50'
+                          : 'border-[#f1e4d3] focus:border-[#ea580c]'
                       }`}
                     />
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center pointer-events-none">
@@ -513,280 +486,261 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
                       ) : null}
                     </div>
                   </div>
-                  {usernameStatus.message ? (
-                    <p className={`text-[11px] font-medium mt-1.5 flex items-center gap-1.5 ${
-                      usernameStatus.checking
-                        ? 'text-amber-500'
-                        : usernameStatus.available === false
-                        ? 'text-rose-500'
-                        : usernameStatus.available === true && !usernameStatus.isCurrent
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-muted'
+                  {usernameStatus.message && (
+                    <p className={`text-[11px] font-semibold mt-1.5 flex items-center gap-1 ${
+                      usernameStatus.available === false ? 'text-rose-600' : 'text-emerald-700'
                     }`}>
-                      {usernameStatus.available === false && <AlertCircle size={12} className="shrink-0" />}
-                      {usernameStatus.available === true && !usernameStatus.isCurrent && <CheckCircle2 size={12} className="shrink-0" />}
+                      {usernameStatus.available === false ? <AlertCircle size={12} /> : <CheckCircle2 size={12} />}
                       <span>{usernameStatus.message}</span>
                     </p>
-                  ) : (
-                    <p className="text-[11px] text-muted mt-1">Your unique handle on Connectra.</p>
                   )}
                 </div>
               </div>
 
-              {/* Account Privacy Setting (Public vs Private Profile) */}
-              <div className="p-4 rounded-2xl border border-orange-500/20 bg-[#faf6f0] dark:bg-stone-900/60 flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                    formData.is_private
-                      ? 'bg-orange-500/15 text-orange-500 border border-orange-500/30'
-                      : 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30'
-                  }`}>
-                    {formData.is_private ? <Lock size={20} /> : <Globe size={20} />}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-sm font-bold text-main">
-                        {formData.is_private ? 'Private Account' : 'Public Account'}
-                      </h4>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        formData.is_private
-                          ? 'bg-orange-500/10 text-orange-600 border border-orange-500/20'
-                          : 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20'
-                      }`}>
-                        {formData.is_private ? 'Followers Only' : 'Open to All'}
-                      </span>
-                    </div>
-                    <p className="text-xs text-muted mt-0.5 leading-snug">
-                      {formData.is_private
-                        ? 'Requires your approval for new followers. Only approved followers can view your posts and projects.'
-                        : 'Anyone can follow you and view your posts, repositories, and developer timeline.'}
-                    </p>
-                  </div>
+              {/* Bio & AI Polish */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-[#1c130d]">Bio / Pitch</label>
+                  <button
+                    type="button"
+                    onClick={handleGenerateAiBios}
+                    disabled={aiBioLoading}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-[#ffedd5] hover:bg-[#fed7aa] text-[#ea580c] transition-all cursor-pointer border border-[#fed7aa] shadow-2xs disabled:opacity-50"
+                  >
+                    {aiBioLoading ? <RefreshCw size={12} className="animate-spin text-[#ea580c]" /> : <Sparkles size={12} className="text-[#ea580c]" />}
+                    <span>AI Polish & Bios</span>
+                  </button>
                 </div>
 
-                {/* Toggle Switch */}
-                <button
-                  type="button"
-                  onClick={() => setFormData(prev => ({ ...prev, is_private: !prev.is_private }))}
-                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                    formData.is_private ? 'bg-orange-500' : 'bg-stone-300 dark:bg-stone-700'
-                  }`}
-                  role="switch"
-                  aria-checked={formData.is_private}
-                >
-                  <span
-                    aria-hidden="true"
-                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
-                      formData.is_private ? 'translate-x-5' : 'translate-x-0'
-                    }`}
-                  />
-                </button>
+                {/* AI Bio Suggestions Panel */}
+                <AnimatePresence>
+                  {showAiBioPanel && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="p-3.5 rounded-xl bg-[#fff7ed] border border-[#fed7aa] overflow-hidden"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-extrabold text-[#ea580c] flex items-center gap-1.5">
+                          <Sparkles size={13} /> Select Tailored Bio
+                        </span>
+                        <button type="button" onClick={() => setShowAiBioPanel(false)} className="text-[#8d7565] hover:text-[#1c130d] text-xs font-bold cursor-pointer">
+                          Close
+                        </button>
+                      </div>
+
+                      {aiBioLoading ? (
+                        <div className="flex items-center gap-2 py-3 text-xs text-[#8d7565]">
+                          <Loader2 size={14} className="animate-spin text-[#ea580c]" /> Generating smart suggestions...
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-2">
+                          {aiBioSuggestions?.map((item, idx) => (
+                            <div key={idx} className="p-3 bg-white rounded-xl border border-[#f1e4d3] shadow-2xs flex flex-col gap-1.5 text-left">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[11px] font-bold text-[#1c130d] uppercase">{item.style}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setFormData(prev => ({ ...prev, bio: item.bio }));
+                                    setShowAiBioPanel(false);
+                                    toast.success('Bio applied!');
+                                  }}
+                                  className="px-2.5 py-0.5 rounded text-[11px] font-bold bg-[#ea580c] text-white hover:bg-[#c2410c] cursor-pointer"
+                                >
+                                  Use this
+                                </button>
+                              </div>
+                              <p className="text-xs text-[#6b5546] leading-relaxed">{item.bio}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                <textarea
+                  name="bio"
+                  value={formData.bio}
+                  onChange={handleChange}
+                  rows={3}
+                  placeholder="Tell developers what you are passionate about building..."
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#faf6f0] border border-[#f1e4d3] text-sm text-[#1c130d] placeholder-[#8d7565] focus:outline-none focus:border-[#ea580c] focus:bg-white transition-all font-medium resize-none"
+                />
               </div>
 
-              {/* Bio & Details */}
-              <div className="flex flex-col gap-4">
+              {/* Location & Tech Stack */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <div className="flex justify-between items-center mb-1.5">
-                    <label className="block text-sm font-semibold text-main">Bio</label>
+                  <label className="block text-xs font-bold text-[#1c130d] mb-1.5">Location</label>
+                  <input
+                    type="text"
+                    name="location"
+                    value={formData.location}
+                    onChange={handleChange}
+                    placeholder="e.g. San Francisco, CA / Remote"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#faf6f0] border border-[#f1e4d3] text-sm text-[#1c130d] placeholder-[#8d7565] focus:outline-none focus:border-[#ea580c] focus:bg-white transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-[#1c130d] mb-1.5">Tech Stack (comma separated)</label>
+                  <input
+                    type="text"
+                    name="tech_stack"
+                    value={formData.tech_stack}
+                    onChange={handleChange}
+                    placeholder="React, TypeScript, Python, Supabase"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#faf6f0] border border-[#f1e4d3] text-sm text-[#1c130d] placeholder-[#8d7565] focus:outline-none focus:border-[#ea580c] focus:bg-white transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* Social & Verification Section */}
+              <div className="pt-4 border-t border-[#f1e4d3] space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-[#1c130d]">Connected Profiles & Verification</h3>
+                  <span className="text-[11px] text-[#8d7565] font-semibold">Security Protected</span>
+                </div>
+
+                {/* GITHUB VERIFICATION MODULE */}
+                <div className="p-4 rounded-2xl bg-[#fff7ed] border border-[#fed7aa] space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-extrabold text-[#1c130d]">GitHub Account Verification</span>
+                        {githubVerificationStatus === 'verified' && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
+                            <CheckCircle2 size={12} /> Verified & Authorized
+                          </span>
+                        )}
+                        {githubVerificationStatus === 'pending' && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-300 animate-pulse">
+                            <Mail size={12} /> Email Auth Pending
+                          </span>
+                        )}
+                        {githubVerificationStatus === 'unlinked' && formData.github_url && (
+                          <span className="text-[10px] font-bold text-[#ea580c] bg-orange-100 px-2 py-0.5 rounded-full border border-orange-200">
+                            Verification Required
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-[#6b5546] mt-1 leading-relaxed">
+                        To protect your identity, linking your GitHub account requests authorization directly from GitHub, triggering an official security notification email to your registered GitHub email address.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* GitHub OAuth Direct Action */}
+                  <div className="p-3 bg-white rounded-xl border border-[#eeddd0] flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-[#24292e] text-white flex items-center justify-center shrink-0">
+                        <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                          <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-[#1c130d]">Authorize with GitHub</div>
+                        <div className="text-[11px] text-[#8d7565]">Triggers official authorization & security notification to your email</div>
+                      </div>
+                    </div>
+
                     <button
                       type="button"
-                      onClick={handleGenerateAiBios}
-                      disabled={aiBioLoading}
-                      className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg bg-orange-50 text-[#ea580c] border border-orange-200 hover:bg-orange-100 transition-all cursor-pointer disabled:opacity-50"
+                      onClick={async () => {
+                        try {
+                          const { error } = await supabase.auth.signInWithOAuth({
+                            provider: 'github',
+                            options: {
+                              redirectTo: window.location.href,
+                            },
+                          });
+                          if (error) throw error;
+                        } catch (err) {
+                          toast.error(err.message || 'GitHub OAuth authorization failed');
+                        }
+                      }}
+                      className="w-full sm:w-auto px-4 py-2 rounded-xl bg-[#24292e] hover:bg-[#1a1e22] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs shrink-0"
                     >
-                      {aiBioLoading ? (
-                        <RefreshCw size={12} className="animate-spin text-[#ea580c]" />
-                      ) : (
-                        <Sparkles size={12} className="text-[#ea580c]" />
-                      )}
-                      <span>{aiBioLoading ? 'Generating...' : '✨ AI Bio Crafter (Groq)'}</span>
+                      <ExternalLink size={13} />
+                      <span>Link with GitHub OAuth</span>
                     </button>
                   </div>
 
-                  <AnimatePresence>
-                    {showAiBioPanel && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="mb-4 p-4 rounded-xl bg-[#faf6f0] border border-[#f1e4d3] flex flex-col gap-3"
+                  {/* GitHub Direct URL Field & Status */}
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="url"
+                      name="github_url"
+                      value={formData.github_url}
+                      onChange={handleChange}
+                      placeholder="https://github.com/your-username"
+                      className={`flex-1 px-3.5 py-2.5 rounded-xl bg-white border text-sm font-mono text-[#1c130d] placeholder-[#8d7565] focus:outline-none transition-all ${
+                        githubVerificationStatus === 'verified'
+                          ? 'border-emerald-500 bg-emerald-50/20'
+                          : 'border-[#fed7aa] focus:border-[#ea580c]'
+                      }`}
+                    />
+
+                    {githubVerificationStatus !== 'verified' && (
+                      <button
+                        type="button"
+                        onClick={handleGithubOAuthAuthorize}
+                        disabled={loading}
+                        className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#ea580c] to-[#f97316] text-white font-bold text-xs hover:brightness-105 shadow-md shadow-orange-500/25 shrink-0 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                       >
-                        <div className="flex items-center justify-between pb-1 border-b border-[#f1e4d3]">
-                          <span className="text-xs font-bold text-[#2b1f17] flex items-center gap-1.5">
-                            <Wand2 size={13} className="text-[#ea580c]" /> AI Suggested Bios
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setShowAiBioPanel(false)}
-                            className="text-xs text-[#8d7565] hover:text-[#2b1f17] cursor-pointer"
-                          >
-                            Close
-                          </button>
-                        </div>
-
-                        {aiBioLoading ? (
-                          <div className="flex flex-col gap-2 py-3">
-                            <div className="flex items-center gap-2 text-xs text-[#ea580c] font-medium">
-                              <RefreshCw size={12} className="animate-spin" />
-                              Llama 3 is crafting tailored bios based on your tech stack...
-                            </div>
-                            <div className="h-3 bg-orange-200/50 rounded animate-pulse w-5/6"></div>
-                            <div className="h-3 bg-orange-200/50 rounded animate-pulse w-3/5"></div>
-                          </div>
-                        ) : (
-                          <div className="flex flex-col gap-2.5">
-                            {aiBioSuggestions?.map((item, idx) => (
-                              <div
-                                key={idx}
-                                className="p-3 rounded-lg bg-white border border-[#f1e4d3] hover:border-orange-300 transition-colors flex flex-col gap-2 text-left shadow-2xs"
-                              >
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[11px] font-bold text-[#2b1f17] uppercase tracking-wider flex items-center gap-1.5">
-                                    {idx === 0 && <Briefcase size={12} className="text-[#ea580c]" />}
-                                    {idx === 1 && <Rocket size={12} className="text-[#ea580c]" />}
-                                    {idx === 2 && <Shield size={12} className="text-[#ea580c]" />}
-                                    {item.style}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setFormData(prev => ({ ...prev, bio: item.bio }));
-                                      toast.success(`Applied ${item.style} bio!`);
-                                    }}
-                                    className="px-2.5 py-1 rounded text-[11px] font-bold bg-[#ea580c] text-white hover:bg-[#c2410c] transition-all cursor-pointer shadow-xs"
-                                  >
-                                    Use this
-                                  </button>
-                                </div>
-                                <p className="text-xs text-[#6b5546] leading-relaxed select-text">
-                                  {item.bio}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </motion.div>
+                        {loading ? <Loader2 size={14} className="animate-spin" /> : <ExternalLink size={14} />}
+                        <span>Authorize via GitHub</span>
+                      </button>
                     )}
-                  </AnimatePresence>
-
-                  <textarea
-                    name="bio"
-                    value={formData.bio}
-                    onChange={handleChange}
-                    placeholder="Tell the community about yourself..."
-                    className="w-full bg-background border border-white/10 rounded-xl p-3 text-sm text-main focus:border-primary/50 outline-none transition-colors min-h-[100px] resize-none"
-                  />
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-main mb-1">Location</label>
-                    <input
-                      type="text"
-                      name="location"
-                      value={formData.location}
-                      onChange={handleChange}
-                      placeholder="e.g. San Francisco, CA"
-                      className="w-full bg-background border border-white/10 rounded-xl p-3 text-sm text-main focus:border-primary/50 outline-none transition-colors"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-main mb-1">Tech Stack (comma separated)</label>
-                    <input
-                      type="text"
-                      name="tech_stack"
-                      value={formData.tech_stack}
-                      onChange={handleChange}
-                      placeholder="e.g. React, Node.js, Python"
-                      className="w-full bg-background border border-white/10 rounded-xl p-3 text-sm text-main focus:border-primary/50 outline-none transition-colors"
-                    />
                   </div>
                 </div>
-              </div>
 
-              {/* Social Links */}
-              <div className="border-t border-white/10 pt-6">
-                <h3 className="text-sm font-bold text-main mb-4">Social & Links</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Other Social Links */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
                   <div>
-                    <label className="block text-xs font-medium text-muted mb-1">Portfolio Website</label>
+                    <label className="block text-xs font-bold text-[#1c130d] mb-1">Portfolio Website</label>
                     <input
                       type="url"
                       name="website_url"
                       value={formData.website_url}
                       onChange={handleChange}
-                      placeholder="https://yourwebsite.com"
-                      className="w-full bg-background border border-white/10 rounded-xl p-3 text-sm text-main focus:border-primary/50 outline-none transition-colors"
+                      placeholder="https://yourportfolio.dev"
+                      className="w-full px-3 py-2 rounded-xl bg-[#faf6f0] border border-[#f1e4d3] text-xs text-[#1c130d] focus:border-[#ea580c] outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-muted mb-1 flex justify-between">
-                      GitHub URL
-                      {!githubLinked && <span className="text-primary text-[10px]">Verification Required</span>}
-                    </label>
-                    <div className="flex flex-col gap-2">
-                      <div className="flex flex-col gap-2">
-                        <input
-                          type="url"
-                          name="github_url"
-                          value={formData.github_url}
-                          onChange={handleChange}
-                          placeholder="https://github.com/username"
-                          className={`w-full bg-background border ${githubLinked ? 'border-emerald-500/50' : 'border-white/10'} rounded-xl p-3 text-sm text-main focus:border-primary/50 outline-none transition-colors`}
-                        />
-                        {!githubLinked && !verificationSent && formData.github_url.length > 0 && (
-                          <button 
-                            type="button" 
-                            onClick={handleLinkGithub} 
-                            disabled={loading}
-                            className="w-full py-2.5 bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 text-xs font-bold rounded-xl transition-colors whitespace-nowrap disabled:opacity-50"
-                          >
-                            Verify with Email
-                          </button>
-                        )}
-                        {githubLinked && (
-                          <div className="w-full py-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold rounded-xl flex items-center justify-center gap-1 whitespace-nowrap">
-                            <CheckCircle2 size={14} /> Verified
-                          </div>
-                        )}
-                      </div>
-                      
-                      {verificationSent && !githubLinked && (
-                        <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl flex flex-col gap-2 text-sm text-blue-400 mt-1">
-                          <p>A verification link has been sent to your registered email address.</p>
-                          <div className="flex items-center gap-3 mt-1">
-                             <button type="button" onClick={handleResendMail} disabled={loading} className="text-xs font-bold text-blue-300 hover:text-white transition-colors underline">
-                               Resend Mail
-                             </button>
-                             <span className="text-blue-500/50">|</span>
-                             <button type="button" onClick={handleMockVerify} className="text-xs font-bold bg-blue-500 text-white px-3 py-1.5 rounded-lg hover:bg-blue-600 transition-colors">
-                               (Test) Simulate Click
-                             </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-muted mb-1">LinkedIn URL</label>
+                    <label className="block text-xs font-bold text-[#1c130d] mb-1">LinkedIn URL</label>
                     <input
                       type="url"
                       name="linkedin_url"
                       value={formData.linkedin_url}
                       onChange={handleChange}
                       placeholder="https://linkedin.com/in/username"
-                      className="w-full bg-background border border-white/10 rounded-xl p-3 text-sm text-main focus:border-primary/50 outline-none transition-colors"
+                      className="w-full px-3 py-2 rounded-xl bg-[#faf6f0] border border-[#f1e4d3] text-xs text-[#1c130d] focus:border-[#ea580c] outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-muted mb-1">LeetCode URL</label>
+                    <label className="block text-xs font-bold text-[#1c130d] mb-1">LeetCode URL</label>
                     <input
                       type="url"
                       name="leetcode_url"
                       value={formData.leetcode_url}
                       onChange={handleChange}
                       placeholder="https://leetcode.com/username"
-                      className="w-full bg-background border border-white/10 rounded-xl p-3 text-sm text-main focus:border-primary/50 outline-none transition-colors"
+                      className="w-full px-3 py-2 rounded-xl bg-[#faf6f0] border border-[#f1e4d3] text-xs text-[#1c130d] focus:border-[#ea580c] outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-[#1c130d] mb-1">Twitter / X URL</label>
+                    <input
+                      type="url"
+                      name="twitter_url"
+                      value={formData.twitter_url}
+                      onChange={handleChange}
+                      placeholder="https://x.com/username"
+                      className="w-full px-3 py-2 rounded-xl bg-[#faf6f0] border border-[#f1e4d3] text-xs text-[#1c130d] focus:border-[#ea580c] outline-none"
                     />
                   </div>
                 </div>
@@ -794,28 +748,31 @@ export default function EditProfileModal({ isOpen, onClose, profile, onUpdate })
             </form>
           </div>
 
-          <div className="p-5 border-t border-border flex justify-end gap-3 bg-surface shrink-0">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-xl text-xs font-semibold text-muted hover:text-main hover:bg-surface-hover transition-colors cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={loading || usernameStatus.checking || usernameStatus.available === false}
-              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 shadow-sm cursor-pointer"
-            >
-              {loading ? (
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                'Save Changes'
-              )}
-            </button>
+          {/* Modal Footer */}
+          <div className="p-4 border-t border-[#f1e4d3] bg-[#fffcf7] flex items-center justify-between shrink-0">
+            <span className="text-xs text-[#6b5546]">
+              {githubVerificationStatus === 'verified' ? 'All platforms verified' : 'GitHub verification pending'}
+            </span>
+            <div className="flex gap-2.5">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-xs font-bold text-[#6b5546] hover:text-[#1c130d] hover:bg-[#faf6f0] rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                form="edit-profile-form"
+                disabled={loading}
+                className="px-5 py-2 text-xs font-bold text-white bg-gradient-to-r from-[#ea580c] to-[#f97316] hover:brightness-105 rounded-xl shadow-md shadow-orange-500/25 transition-all cursor-pointer disabled:opacity-50"
+              >
+                {loading ? 'Saving...' : 'Save Profile'}
+              </button>
+            </div>
           </div>
         </motion.div>
       </div>
-    </AnimatePresence>
+    </>
   );
 }

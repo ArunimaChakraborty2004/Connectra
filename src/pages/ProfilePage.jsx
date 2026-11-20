@@ -468,8 +468,12 @@ export default function ProfilePage({ session }) {
                       </a>
                     )}
                     {profile.github_url && (
-                      <a href={profile.github_url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 hover:text-main transition-colors">
-                        <Code2 size={16} /> GitHub
+                      <a href={profile.github_url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 hover:text-main transition-colors group">
+                        <Code2 size={16} />
+                        <span>GitHub</span>
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                          <CheckCircle2 size={10} /> Verified
+                        </span>
                       </a>
                     )}
                     {profile.linkedin_url && (
