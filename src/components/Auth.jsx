@@ -708,6 +708,9 @@ export default function Auth() {
                               provider: 'github',
                               options: {
                                 redirectTo: `${window.location.origin}/`,
+                                queryParams: {
+                                  prompt: 'select_account',
+                                },
                               },
                             });
                             if (error) throw error;
