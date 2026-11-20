@@ -51,6 +51,9 @@ function ProfileRepos({ userId }) {
               {p.title}
             </Link>
             <div className="flex gap-2">
+              <Link to={`/projects/${p.id}`} className="px-2.5 py-1 bg-surface hover:bg-surface-hover text-xs font-semibold rounded-lg text-main transition-colors border border-white/10 flex items-center gap-1">
+                <span>View Details</span>
+              </Link>
               {p.repo_url && (
                 <a href={p.repo_url} target="_blank" rel="noreferrer" className="p-2 bg-surface hover:bg-surface-hover text-gray-300 hover:text-main rounded-lg transition-colors tooltip" title="Repository">
                   <GitBranch size={16} />

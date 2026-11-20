@@ -1,17 +1,20 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, FolderGit2, ExternalLink, GitBranch, Plus, Code2 as GithubIcon, DownloadCloud, Loader2, Sparkles, RefreshCw, CheckCircle2, ShieldAlert, Lock, UserCheck } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { X, FolderGit2, ExternalLink, GitBranch, Plus, Code2 as GithubIcon, DownloadCloud, Loader2, Sparkles, RefreshCw, CheckCircle2, ShieldAlert, Lock, UserCheck, Share2 } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 import { callGroq } from '../lib/ai';
+import { toast } from '../lib/toast';
 
 export default function ProjectsModal({ session, onClose }) {
+  const navigate = useNavigate();
   const [projects, setProjects] = useState([]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [repoUrl, setRepoUrl] = useState('');
   const [demoUrl, setDemoUrl] = useState('');
   const [addMode, setAddMode] = useState('none'); // 'none', 'manual', 'github'
+  const [postingId, setPostingId] = useState(null);
   
   // GitHub Import State
   const [githubUsername, setGithubUsername] = useState('');
@@ -143,6 +146,28 @@ export default function ProjectsModal({ session, onClose }) {
     }
   };
 
+  const handlePostToFeed = async (project) => {
+    setPostingId(project.id);
+    try {
+      const postText = `🚀 Just added a new project to my workspace: **${project.title}**!\n\n${project.description || ''}\n\n🔗 Repository: ${project.repo_url || ''}${project.demo_url ? `\n🌐 Live Demo: ${project.demo_url}` : ''}\n\n#opensource #project #buildinpublic`;
+
+      const { data, error } = await supabase.from('posts').insert({
+        user_id: session.user.id,
+        content: postText,
+      }).select().single();
+
+      if (error) throw error;
+
+      toast.success(`"${project.title}" was published to your Feed! Followers can now view and comment on it. 🎉`);
+      onClose?.();
+      navigate('/');
+    } catch (err) {
+      toast.error('Failed to post project to feed: ' + (err.message || ''));
+    } finally {
+      setPostingId(null);
+    }
+  };
+
   const handleImportGithubRepo = async (repo) => {
     setImportingId(repo.id);
     try {
@@ -205,7 +230,17 @@ export default function ProjectsModal({ session, onClose }) {
                     <Link to={`/projects/${p.id}`} onClick={onClose} className="text-lg font-bold text-[#1c130d] hover:text-[#ea580c] transition-colors cursor-pointer hover:underline block truncate max-w-[70%]">
                       {p.title}
                     </Link>
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handlePostToFeed(p)}
+                        disabled={postingId === p.id}
+                        className="px-2.5 py-1.5 bg-[#ffedd5] hover:bg-[#fed7aa] text-[#ea580c] font-bold text-xs rounded-xl transition-all border border-[#fed7aa] flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                        title="Publish this repository to your Feed for followers to see and comment"
+                      >
+                        {postingId === p.id ? <Loader2 size={13} className="animate-spin text-[#ea580c]" /> : <Share2 size={13} />}
+                        <span>Share to Feed</span>
+                      </button>
                       {p.repo_url && (
                         <a href={p.repo_url} target="_blank" rel="noreferrer" className="p-2 bg-[#faf6f0] hover:bg-[#ffedd5] text-[#6b5546] hover:text-[#ea580c] rounded-xl transition-colors border border-[#f1e4d3]" title="Repository">
                           <GitBranch size={16} />
