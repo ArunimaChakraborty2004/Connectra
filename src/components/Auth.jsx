@@ -112,9 +112,9 @@ export default function Auth() {
     if (isResetPassword) {
       if (!email) { setStatus({ type: 'error', msg: 'Please enter your email.' }); setLoading(false); return; }
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+        redirectTo: `${window.location.origin}/#type=recovery`,
       });
-      setStatus(error ? { type: 'error', msg: error.message } : { type: 'success', msg: 'Reset link sent! Check your inbox.' });
+      setStatus(error ? { type: 'error', msg: error.message } : { type: 'success', msg: 'Reset link sent! Please check your email inbox and spam folder.' });
       setLoading(false);
       return;
     }
