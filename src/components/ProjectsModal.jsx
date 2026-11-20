@@ -76,10 +76,31 @@ export default function ProjectsModal({ session, onClose }) {
       .single();
     if (data) {
       setCurrentUserProfile(data);
-      if (data.github_url) {
-        const username = extractGithubUsername(data.github_url);
-        if (username) setGithubUsername(username);
+      const url = data.github_url || session?.user?.user_metadata?.user_name ? `https://github.com/${session.user.user_metadata.user_name}` : null;
+      if (url) {
+        const username = extractGithubUsername(url);
+        if (username) {
+          setGithubUsername(username);
+          fetchUserGithubRepos(username);
+        }
       }
+    }
+  };
+
+  const fetchUserGithubRepos = async (uname) => {
+    const target = uname || extractGithubUsername(currentUserProfile?.github_url) || githubUsername;
+    if (!target) return;
+    setIsFetchingGithub(true);
+    try {
+      const res = await fetch(`https://api.github.com/users/${target}/repos?sort=updated&per_page=15`);
+      if (res.ok) {
+        const data = await res.json();
+        setGithubRepos(data);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setIsFetchingGithub(false);
     }
   };
 
