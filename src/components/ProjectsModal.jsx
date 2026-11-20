@@ -458,9 +458,13 @@ export default function ProjectsModal({ session, onClose }) {
           project={sharingProject}
           session={session}
           onClose={() => setSharingProject(null)}
-          onPostCreated={() => {
+          onPostCreated={(createdPost) => {
             onClose();
-            navigate('/');
+            if (createdPost?.id) {
+              navigate(`/post/${createdPost.id}`);
+            } else {
+              navigate('/');
+            }
           }}
         />
       )}
