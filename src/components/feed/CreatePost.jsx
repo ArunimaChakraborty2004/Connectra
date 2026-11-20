@@ -24,7 +24,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from '../../lib/toast';
 import { reviewCodeAndSecurity, polishPostContent, screenContentSafety, polishCodeSnippet, generatePeerCodeReviewBotCritique, generateMermaidArchitectureDiagram } from '../../lib/ai';
 import { scanForSecrets, redactSecrets } from '../../lib/secretScanner';
-import { detectCodeLanguage, getLanguageDisplayName, SUPPORTED_LANGUAGES } from '../../lib/codeDetector';
+import { detectCodeLanguage, getLanguageDisplayName, SUPPORTED_LANGUAGES, getLanguageFromFileName } from '../../lib/codeDetector';
 import { generateSemanticVector384 } from '../../lib/rag';
 import AIAnalysisCard from './AIAnalysisCard';
 import MermaidDiagramCard from '../ai/MermaidDiagramCard';
@@ -1121,12 +1121,25 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
         session={session}
         onClose={() => setShowImportRepoModal(false)}
         onImportFile={({ fileName, content: fileContent, repo }) => {
-          // Open code snippet tab with file content
-          setShowExtras(true);
-          setActiveMediaType('code');
-          handleCodeSnippetChange(fileContent);
-          const intro = content.trim() ? `${content}\n\n` : '';
-          setContent(`${intro}📄 Snippet from \`${fileName}\` in [${repo.name}](${repo.html_url})`);
+          const detectedFromExt = getLanguageFromFileName(fileName);
+          const isDocFile = detectedFromExt === 'markdown' || detectedFromExt === 'plaintext';
+
+          if (isDocFile) {
+            // Import directly as post body text with link
+            const intro = content.trim() ? `${content}\n\n` : '';
+            setContent(`${intro}### ${fileName}\n\n${fileContent}\n\n🔗 Source: [${repo.name}](${repo.html_url})`);
+            toast.success(`Imported ${fileName} as document content! 📝`);
+          } else {
+            // Import as a code snippet with accurate detected language
+            setShowExtras(true);
+            setActiveMediaType('code');
+            setCodeSnippet(fileContent);
+            setCodeLang(detectedFromExt || detectCodeLanguage(fileContent) || 'javascript');
+            setIsAutoDetected(true);
+            const intro = content.trim() ? `${content}\n\n` : '';
+            setContent(`${intro}📄 Code snippet from \`${fileName}\` in [${repo.name}](${repo.html_url})`);
+            toast.success(`Imported ${fileName} (${(detectedFromExt || 'code').toUpperCase()}) into editor! 🚀`);
+          }
         }}
         onImportRepoDetails={({ title, description, repo_url }) => {
           setContent(`🚀 Check out my project: **${title}**!\n\n${description}\n\n🔗 Repo: ${repo_url}\n\n#opensource #project #buildinpublic`);
