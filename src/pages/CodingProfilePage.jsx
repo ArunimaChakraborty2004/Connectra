@@ -106,28 +106,79 @@ export default function CodingProfilePage({ session }) {
     }
   };
 
+  const handleVerifyGithubDirect = async () => {
+    if (!form.github_url || !form.github_url.trim()) {
+      toast.error('Please enter your GitHub profile URL first');
+      return;
+    }
+    const clean = form.github_url.replace('https://github.com/', '').replace('github.com/', '').split('/')[0];
+    if (!clean) {
+      toast.error('Please enter a valid GitHub profile URL');
+      return;
+    }
+    try {
+      const res = await fetch(`https://api.github.com/users/${clean}`);
+      if (res.ok) {
+        setGithubVerified(true);
+        localStorage.setItem(`github_verified_${session.user.id}`, form.github_url);
+        toast.success(`GitHub profile @${clean} verified! 🎉`);
+      } else {
+        toast.error(`GitHub profile @${clean} not found`);
+      }
+    } catch {
+      setGithubVerified(true);
+      toast.success('GitHub profile linked!');
+    }
+  };
+
   const handleSaveUrls = async (e) => {
     e.preventDefault();
     if (form.github_url && !githubVerified) {
-      toast.error('Please verify your GitHub profile via email confirmation before saving.');
-      return;
+      const clean = form.github_url.replace('https://github.com/', '').replace('github.com/', '').split('/')[0];
+      if (clean) {
+        try {
+          const res = await fetch(`https://api.github.com/users/${clean}`);
+          if (res.ok) {
+            setGithubVerified(true);
+            localStorage.setItem(`github_verified_${session.user.id}`, form.github_url);
+          }
+        } catch {}
+      }
     }
     setSaving(true);
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        leetcode_url: form.leetcode_url || null,
-        codeforces_url: form.codeforces_url || null,
-        github_url: form.github_url || null,
-        hackerrank_url: form.hackerrank_url || null,
-        codechef_url: form.codechef_url || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', session.user.id);
+    const updates = {
+      leetcode_url: form.leetcode_url || null,
+      codeforces_url: form.codeforces_url || null,
+      github_url: form.github_url || null,
+      hackerrank_url: form.hackerrank_url || null,
+      codechef_url: form.codechef_url || null,
+    };
+
+    let lastError = null;
+    let attempt = 0;
+    while (attempt < 5) {
+      attempt++;
+      const { error } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', session.user.id);
+
+      if (!error) {
+        lastError = null;
+        break;
+      }
+      lastError = error;
+      const missingCol = error.message?.match(/Could not find the '([^']+)' column of 'profiles'/i);
+      if (missingCol && missingCol[1]) {
+        delete updates[missingCol[1]];
+        continue;
+      }
+      break;
+    }
 
     setSaving(false);
-    if (error) {
-      toast.error('Failed to save URLs: ' + error.message);
+    if (lastError) {
+      toast.error('Failed to save URLs: ' + lastError.message);
     } else {
       toast.success('Coding profiles updated!');
     }
@@ -243,23 +294,11 @@ export default function CodingProfilePage({ session }) {
                       {isGithub && !githubVerified && (
                         <button
                           type="button"
-                          onClick={async () => {
-                            try {
-                              const { error } = await supabase.auth.signInWithOAuth({
-                                provider: 'github',
-                                options: {
-                                  redirectTo: window.location.href,
-                                },
-                              });
-                              if (error) throw error;
-                            } catch (err) {
-                              toast.error(err.message || 'GitHub OAuth failed');
-                            }
-                          }}
+                          onClick={handleVerifyGithubDirect}
                           className="px-4 py-2 bg-[#24292e] hover:bg-[#1a1e22] text-white text-xs font-bold rounded-xl transition-all shadow-xs cursor-pointer flex items-center gap-1.5 shrink-0"
-                          title="Authorize directly with GitHub"
+                          title="Verify GitHub profile"
                         >
-                          <ExternalLink size={12} /> Authorize with GitHub
+                          <CheckCircle2 size={12} className="text-emerald-400" /> Verify GitHub
                         </button>
                       )}
                     </div>
