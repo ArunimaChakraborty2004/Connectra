@@ -25,6 +25,7 @@ import SettingsPage from './pages/SettingsPage';
 import AICopilotWidget from './components/ai/AICopilotWidget';
 import MobileBottomNav from './components/MobileBottomNav';
 import Sidebar from './components/Sidebar';
+import OnboardingModal from './components/OnboardingModal';
 import { motion, AnimatePresence } from 'framer-motion';
 
 function AppInner({ session }) {
@@ -32,6 +33,7 @@ function AppInner({ session }) {
   const [showProjects, setShowProjects] = useState(false);
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   const [profile, setProfile] = useState(null);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [stats, setStats] = useState({ followers: 0, following: 0 });
   const navigate = useNavigate();
 
@@ -46,12 +48,16 @@ function AppInner({ session }) {
           .select('id, username, full_name, bio, tech_stack, github_url, xp, level, avatar_url')
           .eq('id', session.user.id)
           .single();
+
+        const isOnboarded = localStorage.getItem(`connectra_onboarded_${session.user.id}`);
+
         if (data) {
           if (!data.username) {
-            const fallbackName = session.user.user_metadata?.username || ghUser || session.user.email?.split('@')[0] || 'developer';
-            supabase.from('profiles').update({ username: fallbackName }).eq('id', session.user.id).then(() => {});
-            data.username = fallbackName;
+            setNeedsOnboarding(true);
+          } else {
+            setNeedsOnboarding(false);
           }
+
           if (ghUrl && (!data.github_url || data.github_url !== ghUrl)) {
             supabase.from('profiles').update({ github_url: ghUrl }).eq('id', session.user.id).then(() => {});
             data.github_url = ghUrl;
@@ -59,9 +65,9 @@ function AppInner({ session }) {
           }
           setProfile(data);
         } else {
+          // New account from GitHub or auth without profile row yet -> Show Onboarding
+          setNeedsOnboarding(true);
           const fallbackName = session.user.user_metadata?.username || ghUser || session.user.email?.split('@')[0] || 'User';
-          supabase.from('profiles').upsert({ id: session.user.id, username: fallbackName, github_url: ghUrl }).then(() => {});
-          if (ghUrl) localStorage.setItem(`github_verified_${session.user.id}`, ghUrl);
           setProfile({ id: session.user.id, username: fallbackName, github_url: ghUrl, xp: 0, level: 1 });
         }
 
@@ -175,6 +181,17 @@ function AppInner({ session }) {
       />
 
       <AICopilotWidget session={session} />
+
+      {/* First-time / GitHub Identity Onboarding Modal */}
+      {needsOnboarding && (
+        <OnboardingModal
+          session={session}
+          onComplete={(newProfile) => {
+            setProfile(prev => ({ ...prev, ...newProfile }));
+            setNeedsOnboarding(false);
+          }}
+        />
+      )}
     </>
   );
 }
