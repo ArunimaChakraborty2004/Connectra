@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Heart, MessageSquare, Share2, Trash2, Edit2, Bookmark, MoreHorizontal, Sparkles, Shield, Loader2, Eye, EyeOff, MessageCircleOff, Film, Copy, Check, BarChart3, CheckCircle2, Bot, Layers } from 'lucide-react';
+import { Heart, MessageSquare, Share2, Trash2, Edit2, Bookmark, MoreHorizontal, Sparkles, Shield, Loader2, Eye, EyeOff, MessageCircleOff, Film, Copy, Check, BarChart3, CheckCircle2, Bot, Layers, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from '../../lib/toast';
 import { Link } from 'react-router-dom';
@@ -582,15 +582,49 @@ export default function PostCard({ post, session, onUpdate, isHighlighted = fals
 
   const renderContent = (text) => {
     if (!text) return null;
-    const parts = text.split(/(#\w+)/g);
+
+    // Pattern matching URLs (http/https) and Hashtags (#tag)
+    const tokenRegex = /(https?:\/\/[^\s]+|#\w+)/g;
+    const parts = text.split(tokenRegex);
+
     return parts.map((part, i) => {
+      if (!part) return null;
+
+      // Handle URLs (like GitHub repositories or demos)
+      if (part.startsWith('http://') || part.startsWith('https://')) {
+        const isGitHub = part.includes('github.com');
+        return (
+          <a
+            key={i}
+            href={part}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className={`inline-flex items-center gap-1 font-bold underline underline-offset-2 transition-all cursor-pointer ${
+              isGitHub
+                ? 'text-[#ea580c] hover:text-[#c2410c] hover:bg-orange-50/70 px-1.5 py-0.5 rounded-lg border border-orange-200/50'
+                : 'text-blue-600 hover:text-blue-700 hover:bg-blue-50/70 px-1 py-0.5 rounded-lg'
+            }`}
+          >
+            <span>{part}</span>
+            <ExternalLink size={12} className="shrink-0 inline opacity-70" />
+          </a>
+        );
+      }
+
+      // Handle Hashtags
       if (part.startsWith('#')) {
         return (
-          <Link key={i} to={`/search?q=${part.slice(1)}`} className="text-[#ea580c] hover:underline font-bold">
+          <Link
+            key={i}
+            to={`/search?q=${part.slice(1)}`}
+            className="text-[#ea580c] hover:underline font-bold"
+          >
             {part}
           </Link>
         );
       }
+
       return <span key={i}>{part}</span>;
     });
   };
