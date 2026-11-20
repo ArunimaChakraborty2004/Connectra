@@ -112,9 +112,9 @@ export default function Auth() {
     if (isResetPassword) {
       if (!email) { setStatus({ type: 'error', msg: 'Please enter your email.' }); setLoading(false); return; }
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+        redirectTo: `${window.location.origin}/#type=recovery`,
       });
-      setStatus(error ? { type: 'error', msg: error.message } : { type: 'success', msg: 'Reset link sent! Check your inbox.' });
+      setStatus(error ? { type: 'error', msg: error.message } : { type: 'success', msg: 'Reset link sent! Please check your email inbox and spam folder.' });
       setLoading(false);
       return;
     }
@@ -417,366 +417,302 @@ export default function Auth() {
           </div>
 
           {/* ═══════════════════════════════════════════
-              PARCHMENT SCROLL CONTAINER
+              MODERN DEVELOPER AUTH CARD
           ═══════════════════════════════════════════ */}
-          <div className="relative flex flex-col items-center">
+          <div className="relative">
+            {/* Ambient decorative back-glow */}
+            <div className="absolute -inset-1.5 bg-gradient-to-r from-orange-500/20 via-amber-500/15 to-orange-600/20 rounded-[32px] blur-xl opacity-70 pointer-events-none" />
 
-            {/* TOP WOODEN ROLLER / SPINDLE */}
-            <div className="w-[104%] -mb-2 z-20 relative flex items-center justify-center filter drop-shadow-md">
-              {/* Left turned knob */}
-              <div className="w-4 h-7 rounded-l-md" style={{
-                background: 'linear-gradient(180deg, #5c2d13 0%, #8c471c 45%, #421e0a 100%)',
-                boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.2)'
-              }} />
-              {/* Left brass collar */}
-              <div className="w-2 h-6" style={{
-                background: 'linear-gradient(180deg, #d4af37 0%, #fff0a0 50%, #8c7322 100%)'
-              }} />
-              {/* Main roller cylindrical body */}
-              <div className="flex-1 h-5 relative rounded-sm overflow-hidden" style={{
-                background: 'linear-gradient(180deg, #4a210b 0%, #8c471c 30%, #b86b32 50%, #6e3514 75%, #341505 100%)',
-                boxShadow: '0 3px 6px rgba(0,0,0,0.35)'
-              }}>
-                {/* Wood grain shimmer line */}
-                <div className="absolute inset-0 opacity-25" style={{
-                  backgroundImage: 'repeating-linear-gradient(90deg, transparent, transparent 18px, rgba(255,255,255,0.4) 19px, transparent 20px)'
-                }} />
+            <div
+              className="w-full relative bg-white/95 backdrop-blur-xl border border-[#eeddd0] rounded-3xl p-7 sm:p-9 shadow-[0_20px_50px_-12px_rgba(234,88,12,0.14),0_0_0_1px_rgba(238,221,208,0.5)] overflow-hidden"
+            >
+              {/* Subtle top accent gradient line */}
+              <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-[#ea580c] via-[#f97316] to-[#fb923c]" />
+
+              {/* Heading */}
+              <div className="mb-6 text-center">
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={isResetPassword ? 'r' : isLogin ? 'l' : 's'}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <h2 className="text-2xl font-black text-[#1c130d] tracking-tight">
+                      {isResetPassword ? 'Reset Password' : isLogin ? 'Sign In to Connectra' : 'Create an Account'}
+                    </h2>
+                    <p className="text-xs text-[#8c705f] mt-1.5 font-medium">
+                      {isResetPassword
+                        ? "Enter your email address and we'll send a secure reset link"
+                        : isLogin ? 'Welcome back! Log in to continue' : 'Join thousands of developers worldwide'}
+                    </p>
+                  </motion.div>
+                </AnimatePresence>
               </div>
-              {/* Right brass collar */}
-              <div className="w-2 h-6" style={{
-                background: 'linear-gradient(180deg, #d4af37 0%, #fff0a0 50%, #8c7322 100%)'
-              }} />
-              {/* Right turned knob */}
-              <div className="w-4 h-7 rounded-r-md" style={{
-                background: 'linear-gradient(180deg, #5c2d13 0%, #8c471c 45%, #421e0a 100%)',
-                boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.2)'
-              }} />
-            </div>
 
-            {/* UNROLLING PARCHMENT BODY */}
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={isLogin ? 'login-scroll' : 'signup-scroll'}
-                initial={{ scaleY: 0.15, opacity: 0, transformOrigin: 'top center' }}
-                animate={{ scaleY: 1, opacity: 1 }}
-                exit={{ scaleY: 0.15, opacity: 0 }}
-                transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                className="w-full relative overflow-hidden"
-                style={{
-                  background: 'linear-gradient(180deg, #f5e4cb 0%, #faebd7 15%, #fdf5ea 50%, #faebd7 85%, #edd4b2 100%)',
-                  boxShadow: '0 15px 45px rgba(110, 60, 20, 0.22), 0 2px 8px rgba(0,0,0,0.06)',
-                  borderLeft: '2px solid #deb887',
-                  borderRight: '2px solid #deb887',
-                }}
-              >
-                {/* Aged parchment decorative borders */}
-                <div className="absolute inset-x-2 inset-y-2 border border-[#d2a679]/45 rounded-sm pointer-events-none" />
-                <div className="absolute inset-x-3 inset-y-3 border border-dashed border-[#b8860b]/30 rounded-sm pointer-events-none" />
-
-                {/* Corner ornamental accents */}
-                <div className="absolute top-3 left-3 text-[#b8860b]/50 text-xs pointer-events-none select-none font-serif">❖</div>
-                <div className="absolute top-3 right-3 text-[#b8860b]/50 text-xs pointer-events-none select-none font-serif">❖</div>
-                <div className="absolute bottom-3 left-3 text-[#b8860b]/50 text-xs pointer-events-none select-none font-serif">❖</div>
-                <div className="absolute bottom-3 right-3 text-[#b8860b]/50 text-xs pointer-events-none select-none font-serif">❖</div>
-
-                {/* Top curled paper shading overlay */}
-                <div className="absolute inset-x-0 top-0 h-4 pointer-events-none"
-                  style={{ background: 'linear-gradient(180deg, rgba(74,33,11,0.28) 0%, transparent 100%)' }} />
-
-                {/* Bottom curled paper shading overlay */}
-                <div className="absolute inset-x-0 bottom-0 h-4 pointer-events-none"
-                  style={{ background: 'linear-gradient(0deg, rgba(74,33,11,0.28) 0%, transparent 100%)' }} />
-
-                {/* Form Content inside parchment */}
-                <div className="p-7 sm:p-8 pt-7 pb-8 relative z-10">
-
-                  {/* Heading */}
-                  <div className="mb-5 text-center">
-                    <AnimatePresence mode="wait">
-                      <motion.div
-                        key={isResetPassword ? 'r' : isLogin ? 'l' : 's'}
-                        initial={{ opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -6 }}
-                        transition={{ duration: 0.22 }}
+              {/* Modern Segmented Tab Switcher */}
+              {!isResetPassword && (
+                <div className="flex bg-[#f7f2ed] rounded-2xl p-1 mb-6 border border-[#eeddd0] relative">
+                  {[['Sign In', true], ['Sign Up', false]].map(([label, val]) => {
+                    const active = isLogin === val;
+                    return (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => switchMode(val)}
+                        className={`flex-1 py-2 text-xs font-bold rounded-xl z-10 relative cursor-pointer transition-colors ${
+                          active ? 'text-[#1c130d]' : 'text-[#8c705f] hover:text-[#1c130d]'
+                        }`}
                       >
-                        <h2 className="text-xl sm:text-2xl font-black text-[#2e1708] tracking-tight font-serif">
-                          {isResetPassword ? 'Forgot Password?' : isLogin ? 'Sign In to Connectra' : 'Create an Account'}
-                        </h2>
-                        <p className="text-xs text-[#8a5d3b] mt-1 font-medium">
-                          {isResetPassword
-                            ? "Enter your email address and we'll send a secure reset link"
-                            : isLogin ? 'Good to have you back 👋' : 'Join thousands of developers worldwide'}
-                        </p>
-                      </motion.div>
-                    </AnimatePresence>
+                        {label}
+                      </button>
+                    );
+                  })}
+                  <motion.div
+                    className="absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-xl bg-white border border-[#e8d5c4] shadow-sm"
+                    initial={false}
+                    animate={{ x: isLogin ? '0%' : '100%' }}
+                    transition={{ type: 'spring', stiffness: 500, damping: 38 }}
+                  />
+                </div>
+              )}
+
+              {/* Reset info banner */}
+              <AnimatePresence>
+                {isResetPassword && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="mb-5 flex items-center gap-2.5 px-3.5 py-3 rounded-2xl bg-orange-50 border border-orange-200 text-xs text-[#a33d06] font-medium"
+                  >
+                    <Key size={14} className="shrink-0 text-[#ea580c]" />
+                    <span>Enter your registered email — link expires in 15 minutes.</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Form Fields */}
+              <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
+
+                {/* Username */}
+                <AnimatePresence mode="popLayout">
+                  {!isLogin && !isResetPassword && (
+                    <motion.div
+                      key="u"
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5 ml-1">
+                          <label className="block text-[11px] font-bold text-[#634f43]">Developer Handle</label>
+                          {usernameStatus.checking && (
+                            <span className="text-[10px] text-[#ea580c] font-medium flex items-center gap-1">
+                              <Loader2 size={10} className="animate-spin" /> Checking...
+                            </span>
+                          )}
+                        </div>
+                        <div className="relative group">
+                          <User className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#a88d7d] group-focus-within:text-[#ea580c] transition-colors pointer-events-none" size={16} />
+                          <input
+                            type="text"
+                            required
+                            value={username}
+                            onChange={e => setUsername(e.target.value)}
+                            placeholder="e.g. dev_coder99"
+                            className={`w-full bg-[#faf7f4] border rounded-2xl py-3 pl-10 pr-10 text-sm text-[#1c130d] placeholder-[#b59e90] focus:outline-none focus:bg-white transition-all font-medium ${
+                              usernameStatus.checking
+                                ? 'border-amber-400 focus:border-[#ea580c] focus:ring-4 focus:ring-orange-500/10'
+                                : usernameStatus.available === false
+                                ? 'border-red-500 focus:border-red-600 bg-red-50/40 focus:ring-4 focus:ring-red-500/10'
+                                : usernameStatus.available === true
+                                ? 'border-emerald-600 focus:border-emerald-700 bg-emerald-50/40 focus:ring-4 focus:ring-emerald-500/10'
+                                : 'border-[#e5d4c5] hover:border-[#cfb6a3] focus:border-[#ea580c] focus:ring-4 focus:ring-orange-500/10'
+                            }`}
+                          />
+                          <div className="absolute right-3.5 top-1/2 -translate-y-1/2 flex items-center pointer-events-none">
+                            {usernameStatus.checking ? (
+                              <Loader2 size={15} className="text-[#ea580c] animate-spin" />
+                            ) : usernameStatus.available === false ? (
+                              <XCircle size={15} className="text-red-500" />
+                            ) : usernameStatus.available === true ? (
+                              <CheckCircle2 size={15} className="text-emerald-600" />
+                            ) : null}
+                          </div>
+                        </div>
+                        {usernameStatus.message && (
+                          <p className={`text-[11px] font-semibold mt-1 ml-1 flex items-center gap-1.5 ${
+                            usernameStatus.checking
+                              ? 'text-[#ea580c]'
+                              : usernameStatus.available === false
+                              ? 'text-red-600'
+                              : 'text-emerald-700'
+                          }`}>
+                            {usernameStatus.available === false && <AlertCircle size={11} className="shrink-0" />}
+                            {usernameStatus.available === true && <CheckCircle2 size={11} className="shrink-0" />}
+                            <span>{usernameStatus.message}</span>
+                          </p>
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* Email */}
+                <div>
+                  <label className="block text-[11px] font-bold text-[#634f43] mb-1.5 ml-1">Email Address</label>
+                  <div className="relative group">
+                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#a88d7d] group-focus-within:text-[#ea580c] transition-colors pointer-events-none" size={16} />
+                    <input
+                      type="email"
+                      required
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      placeholder="name@company.com"
+                      className="w-full bg-[#faf7f4] border border-[#e5d4c5] hover:border-[#cfb6a3] focus:border-[#ea580c] focus:bg-white focus:ring-4 focus:ring-orange-500/10 rounded-2xl py-3 pl-10 pr-4 text-sm text-[#1c130d] placeholder-[#b59e90] focus:outline-none transition-all font-medium"
+                    />
+                  </div>
+                </div>
+
+                {/* Password */}
+                <AnimatePresence mode="popLayout">
+                  {!isResetPassword && (
+                    <motion.div
+                      key="p"
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5 ml-1">
+                          <label className="text-[11px] font-bold text-[#634f43]">Password</label>
+                          {isLogin && (
+                            <button
+                              type="button"
+                              onClick={() => { setIsResetPassword(true); setStatus({ type: '', msg: '' }); }}
+                              className="text-[11px] text-[#ea580c] font-bold hover:underline cursor-pointer"
+                            >
+                              Forgot password?
+                            </button>
+                          )}
+                        </div>
+                        <div className="relative group">
+                          <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#a88d7d] group-focus-within:text-[#ea580c] transition-colors pointer-events-none" size={16} />
+                          <input
+                            type={showPassword ? 'text' : 'password'}
+                            required
+                            value={password}
+                            onChange={e => setPassword(e.target.value)}
+                            placeholder="••••••••••"
+                            className="w-full bg-[#faf7f4] border border-[#e5d4c5] hover:border-[#cfb6a3] focus:border-[#ea580c] focus:bg-white focus:ring-4 focus:ring-orange-500/10 rounded-2xl py-3 pl-10 pr-11 text-sm text-[#1c130d] placeholder-[#b59e90] focus:outline-none transition-all font-medium"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(v => !v)}
+                            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#a88d7d] hover:text-[#1c130d] transition-colors cursor-pointer p-1"
+                          >
+                            {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                          </button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* Status Alert */}
+                <AnimatePresence>
+                  {status.msg && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      className={`flex items-start gap-2.5 text-xs p-3.5 rounded-2xl border font-medium ${
+                        status.type === 'error'
+                          ? 'bg-red-50/90 border-red-200 text-red-800'
+                          : 'bg-emerald-50/90 border-emerald-200 text-emerald-900'
+                      }`}
+                    >
+                      {status.type === 'error'
+                        ? <AlertCircle size={14} className="text-red-600 shrink-0 mt-0.5" />
+                        : <CheckCircle2 size={14} className="text-emerald-700 shrink-0 mt-0.5" />}
+                      <p>{status.msg}</p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* Primary Submit Button */}
+                <motion.button
+                  whileHover={{ scale: 1.012 }}
+                  whileTap={{ scale: 0.988 }}
+                  type="submit"
+                  disabled={loading || (!isLogin && !isResetPassword && (usernameStatus.checking || usernameStatus.available === false))}
+                  className="mt-1 w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl font-bold text-sm text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-md"
+                  style={{
+                    background: 'linear-gradient(135deg, #ea580c 0%, #f97316 50%, #fb923c 100%)',
+                    boxShadow: '0 4px 18px rgba(234,88,12,0.32), inset 0 1px 1px rgba(255,255,255,0.25)',
+                  }}
+                >
+                  {loading
+                    ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    : <><span>{isResetPassword ? 'Send Reset Link' : isLogin ? 'Sign In' : 'Create Account'}</span><ArrowRight size={15} /></>
+                  }
+                </motion.button>
+
+                {/* Divider & GitHub OAuth */}
+                <div className="mt-2">
+                  <div className="relative flex items-center justify-center my-3.5">
+                    <div className="border-t border-[#eeddd0] w-full" />
+                    <span className="bg-white px-3 text-[10.5px] font-bold text-[#a88d7d] tracking-wider uppercase">
+                      Or continue with
+                    </span>
+                    <div className="border-t border-[#eeddd0] w-full" />
                   </div>
 
-                  {/* Parchment Tabs */}
-                  {!isResetPassword && (
-                    <div className="flex bg-[#ebd5ba]/70 rounded-2xl p-1 mb-5 border border-[#cda276] relative">
-                      {[['Sign In', true], ['Sign Up', false]].map(([label, val]) => {
-                        const active = isLogin === val;
-                        return (
-                          <button key={label} type="button" onClick={() => switchMode(val)}
-                            className={`flex-1 py-2 text-xs font-bold rounded-xl z-10 relative cursor-pointer transition-colors ${active ? 'text-[#2e1708]' : 'text-[#7d5332] hover:text-[#42220d]'}`}>
-                            {label}
-                          </button>
-                        );
-                      })}
-                      <motion.div
-                        className="absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-xl bg-gradient-to-b from-[#fffbf5] to-[#f9eedc] border border-[#cda276]"
-                        style={{ boxShadow: '0 2px 5px rgba(90,45,15,0.12)' }}
-                        initial={false}
-                        animate={{ x: isLogin ? '0%' : '100%' }}
-                        transition={{ type: 'spring', stiffness: 500, damping: 40 }}
-                      />
-                    </div>
-                  )}
-
-                  {/* Reset info banner */}
-                  <AnimatePresence>
-                    {isResetPassword && (
-                      <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                        className="mb-5 flex items-center gap-2 px-3.5 py-3 rounded-xl bg-[#faebd7] border border-[#d2a679] text-xs text-[#8c471c] font-medium">
-                        <Key size={14} className="shrink-0 text-[#ea580c]" />
-                        <span>Enter your registered email — link expires in 15 minutes.</span>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  {/* Form Fields */}
-                  <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
-
-                    {/* Username */}
-                    <AnimatePresence mode="popLayout">
-                      {!isLogin && !isResetPassword && (
-                        <motion.div key="u" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.22 }}>
-                          <div>
-                            <div className="flex items-center justify-between mb-1.5 ml-1">
-                              <label className="block text-[11px] font-bold text-[#6b4226]">Developer Handle</label>
-                              {usernameStatus.checking && (
-                                <span className="text-[10px] text-[#ea580c] font-medium flex items-center gap-1">
-                                  <Loader2 size={10} className="animate-spin" /> Checking...
-                                </span>
-                              )}
-                            </div>
-                            <div className="relative group">
-                              <User className="absolute left-4 top-1/2 -translate-y-1/2 text-[#b0886a] group-focus-within:text-[#ea580c] transition-colors pointer-events-none" size={15} />
-                              <input
-                                type="text"
-                                required
-                                value={username}
-                                onChange={e => setUsername(e.target.value)}
-                                placeholder="e.g. dev_coder99"
-                                className={`w-full bg-[#fcf5eb] border-2 rounded-2xl py-3 pl-10 pr-10 text-sm text-[#2e1708] placeholder-[#b0886a] focus:outline-none transition-all font-medium shadow-inner ${
-                                  usernameStatus.checking
-                                    ? 'border-amber-400 focus:border-[#ea580c]'
-                                    : usernameStatus.available === false
-                                    ? 'border-red-500 focus:border-red-600 bg-red-50/40'
-                                    : usernameStatus.available === true
-                                    ? 'border-emerald-600 focus:border-emerald-700 bg-emerald-50/40'
-                                    : 'border-[#d9ba9b] hover:border-[#b8860b] focus:border-[#ea580c]'
-                                }`}
-                              />
-                              <div className="absolute right-3.5 top-1/2 -translate-y-1/2 flex items-center pointer-events-none">
-                                {usernameStatus.checking ? (
-                                  <Loader2 size={15} className="text-[#ea580c] animate-spin" />
-                                ) : usernameStatus.available === false ? (
-                                  <XCircle size={15} className="text-red-500" />
-                                ) : usernameStatus.available === true ? (
-                                  <CheckCircle2 size={15} className="text-emerald-600" />
-                                ) : null}
-                              </div>
-                            </div>
-                            {usernameStatus.message && (
-                              <p className={`text-[11px] font-semibold mt-1 ml-1 flex items-center gap-1.5 ${
-                                usernameStatus.checking
-                                  ? 'text-[#ea580c]'
-                                  : usernameStatus.available === false
-                                  ? 'text-red-600'
-                                  : 'text-emerald-700'
-                              }`}>
-                                {usernameStatus.available === false && <AlertCircle size={11} className="shrink-0" />}
-                                {usernameStatus.available === true && <CheckCircle2 size={11} className="shrink-0" />}
-                                <span>{usernameStatus.message}</span>
-                              </p>
-                            )}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-
-                    {/* Email */}
-                    <div>
-                      <label className="block text-[11px] font-bold text-[#6b4226] mb-1.5 ml-1">Email Address</label>
-                      <div className="relative group">
-                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-[#b0886a] group-focus-within:text-[#ea580c] transition-colors pointer-events-none" size={15} />
-                        <input
-                          type="email"
-                          required
-                          value={email}
-                          onChange={e => setEmail(e.target.value)}
-                          placeholder="name@company.com"
-                          className="w-full bg-[#fcf5eb] border-2 border-[#d9ba9b] hover:border-[#b8860b] focus:border-[#ea580c] rounded-2xl py-3 pl-10 pr-4 text-sm text-[#2e1708] placeholder-[#b0886a] focus:outline-none focus:bg-white transition-all font-medium shadow-inner"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Password */}
-                    <AnimatePresence mode="popLayout">
-                      {!isResetPassword && (
-                        <motion.div key="p" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.22 }}>
-                          <div>
-                            <div className="flex items-center justify-between mb-1.5 ml-1">
-                              <label className="text-[11px] font-bold text-[#6b4226]">Password</label>
-                              {isLogin && (
-                                <button type="button" onClick={() => { setIsResetPassword(true); setStatus({ type: '', msg: '' }); }}
-                                  className="text-[11px] text-[#ea580c] font-bold hover:underline cursor-pointer">
-                                  Forgot password?
-                                </button>
-                              )}
-                            </div>
-                            <div className="relative group">
-                              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-[#b0886a] group-focus-within:text-[#ea580c] transition-colors pointer-events-none" size={15} />
-                              <input
-                                type={showPassword ? 'text' : 'password'}
-                                required
-                                value={password}
-                                onChange={e => setPassword(e.target.value)}
-                                placeholder="••••••••••"
-                                className="w-full bg-[#fcf5eb] border-2 border-[#d9ba9b] hover:border-[#b8860b] focus:border-[#ea580c] rounded-2xl py-3 pl-10 pr-11 text-sm text-[#2e1708] placeholder-[#b0886a] focus:outline-none focus:bg-white transition-all font-medium shadow-inner"
-                              />
-                              <button type="button" onClick={() => setShowPassword(v => !v)}
-                                className="absolute right-4 top-1/2 -translate-y-1/2 text-[#b0886a] hover:text-[#42220d] transition-colors cursor-pointer">
-                                {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-                              </button>
-                            </div>
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-
-                    {/* Status Alert */}
-                    <AnimatePresence>
-                      {status.msg && (
-                        <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                          className={`flex items-start gap-2.5 text-xs p-3.5 rounded-2xl border font-medium ${status.type === 'error' ? 'bg-red-50/90 border-red-300 text-red-800' : 'bg-emerald-50/90 border-emerald-300 text-emerald-900'}`}>
-                          {status.type === 'error'
-                            ? <AlertCircle size={14} className="text-red-600 shrink-0 mt-0.5" />
-                            : <CheckCircle2 size={14} className="text-emerald-700 shrink-0 mt-0.5" />}
-                          <p>{status.msg}</p>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-
-                    {/* Submit Button */}
-                    <motion.button
-                      whileHover={{ scale: 1.015 }}
-                      whileTap={{ scale: 0.985 }}
-                      type="submit"
-                      disabled={loading || (!isLogin && !isResetPassword && (usernameStatus.checking || usernameStatus.available === false))}
-                      className="mt-1 w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl font-bold text-sm text-white cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-md"
-                      style={{
-                        background: 'linear-gradient(135deg, #a73205 0%, #ea580c 50%, #f97316 100%)',
-                        boxShadow: '0 4px 18px rgba(167,50,5,0.38), inset 0 1px 1px rgba(255,255,255,0.3)',
-                      }}
-                    >
-                      {loading
-                        ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        : <><span>{isResetPassword ? 'Send Reset Link' : isLogin ? 'Sign In' : 'Create Account'}</span><ArrowRight size={15} /></>
+                  <motion.button
+                    whileHover={{ scale: 1.012, translateY: -1 }}
+                    whileTap={{ scale: 0.988 }}
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const { error } = await supabase.auth.signInWithOAuth({
+                          provider: 'github',
+                          options: {
+                            redirectTo: `${window.location.origin}/`,
+                            queryParams: {
+                              prompt: 'select_account',
+                            },
+                          },
+                        });
+                        if (error) throw error;
+                      } catch (err) {
+                        setStatus({ type: 'error', msg: err.message || 'GitHub OAuth failed' });
                       }
-                    </motion.button>
-
-                    {/* GitHub OAuth Button */}
-                    <div className="mt-4 pt-1">
-                      <div className="relative flex items-center justify-center my-3.5">
-                        <div className="border-t border-[#cda276]/60 w-full" />
-                        <span className="bg-[#fdf5ea] px-3 text-[11px] font-black text-[#5c2d13] tracking-wider uppercase font-sans">
-                          Or Continue With
-                        </span>
-                        <div className="border-t border-[#cda276]/60 w-full" />
-                      </div>
-
-                      <motion.button
-                        whileHover={{ scale: 1.015, translateY: -1 }}
-                        whileTap={{ scale: 0.985 }}
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            const { error } = await supabase.auth.signInWithOAuth({
-                              provider: 'github',
-                              options: {
-                                redirectTo: `${window.location.origin}/`,
-                                queryParams: {
-                                  prompt: 'select_account',
-                                },
-                              },
-                            });
-                            if (error) throw error;
-                          } catch (err) {
-                            setStatus({ type: 'error', msg: err.message || 'GitHub OAuth failed' });
-                          }
-                        }}
-                        className="w-full flex items-center justify-center gap-3 py-3.5 px-4 rounded-2xl font-black text-sm text-white cursor-pointer transition-all shadow-md group border border-[#1f2328]"
-                        style={{
-                          background: 'linear-gradient(135deg, #1f2328 0%, #161b22 50%, #0d1117 100%)',
-                          boxShadow: '0 4px 15px rgba(0,0,0,0.25), inset 0 1px 1px rgba(255,255,255,0.15)',
-                        }}
-                      >
-                        <svg className="w-5 h-5 fill-white transition-transform group-hover:scale-110 shrink-0" viewBox="0 0 24 24">
-                          <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
-                        </svg>
-                        <span className="tracking-wide text-white font-bold drop-shadow-xs">
-                          Continue with GitHub
-                        </span>
-                      </motion.button>
-                    </div>
-
-                    {/* Back link for reset */}
-                    {isResetPassword && (
-                      <button type="button" onClick={() => { setIsResetPassword(false); setStatus({ type: '', msg: '' }); }}
-                        className="text-center text-xs text-[#ea580c] font-bold hover:underline cursor-pointer mt-1">
-                        ← Back to Sign In
-                      </button>
-                    )}
-                  </form>
+                    }}
+                    className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-2xl font-bold text-sm text-[#1f2328] bg-white hover:bg-[#faf7f4] border border-[#d0d7de] hover:border-[#1f2328]/30 transition-all shadow-sm cursor-pointer group"
+                  >
+                    <svg className="w-5 h-5 fill-[#1f2328] transition-transform group-hover:scale-105 shrink-0" viewBox="0 0 24 24">
+                      <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
+                    </svg>
+                    <span>Continue with GitHub</span>
+                  </motion.button>
                 </div>
-              </motion.div>
-            </AnimatePresence>
 
-            {/* BOTTOM WOODEN ROLLER / SPINDLE */}
-            <div className="w-[104%] -mt-2 z-20 relative flex items-center justify-center filter drop-shadow-lg">
-              {/* Left turned knob */}
-              <div className="w-4 h-7 rounded-l-md" style={{
-                background: 'linear-gradient(180deg, #5c2d13 0%, #8c471c 45%, #421e0a 100%)',
-                boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.2)'
-              }} />
-              {/* Left brass collar */}
-              <div className="w-2 h-6" style={{
-                background: 'linear-gradient(180deg, #d4af37 0%, #fff0a0 50%, #8c7322 100%)'
-              }} />
-              {/* Main roller cylindrical body */}
-              <div className="flex-1 h-5 relative rounded-sm overflow-hidden" style={{
-                background: 'linear-gradient(180deg, #341505 0%, #6e3514 25%, #b86b32 50%, #8c471c 70%, #4a210b 100%)',
-                boxShadow: '0 -2px 6px rgba(0,0,0,0.35)'
-              }}>
-                {/* Wood grain shimmer line */}
-                <div className="absolute inset-0 opacity-25" style={{
-                  backgroundImage: 'repeating-linear-gradient(90deg, transparent, transparent 18px, rgba(255,255,255,0.4) 19px, transparent 20px)'
-                }} />
-              </div>
-              {/* Right brass collar */}
-              <div className="w-2 h-6" style={{
-                background: 'linear-gradient(180deg, #d4af37 0%, #fff0a0 50%, #8c7322 100%)'
-              }} />
-              {/* Right turned knob */}
-              <div className="w-4 h-7 rounded-r-md" style={{
-                background: 'linear-gradient(180deg, #5c2d13 0%, #8c471c 45%, #421e0a 100%)',
-                boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.2)'
-              }} />
+                {/* Back link for reset */}
+                {isResetPassword && (
+                  <button
+                    type="button"
+                    onClick={() => { setIsResetPassword(false); setStatus({ type: '', msg: '' }); }}
+                    className="text-center text-xs text-[#ea580c] font-bold hover:underline cursor-pointer mt-1"
+                  >
+                    ← Back to Sign In
+                  </button>
+                )}
+              </form>
             </div>
-
           </div>
 
           {/* Toggle hint below parchment scroll */}

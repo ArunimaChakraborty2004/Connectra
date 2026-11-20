@@ -26,6 +26,7 @@ import AICopilotWidget from './components/ai/AICopilotWidget';
 import MobileBottomNav from './components/MobileBottomNav';
 import Sidebar from './components/Sidebar';
 import OnboardingModal from './components/OnboardingModal';
+import ResetPassword from './components/ResetPassword';
 import { motion, AnimatePresence } from 'framer-motion';
 
 function AppInner({ session }) {
@@ -199,6 +200,15 @@ function AppInner({ session }) {
 function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isRecoveryMode, setIsRecoveryMode] = useState(() => {
+    // Detect recovery from URL hash or query params
+    const hash = window.location.hash || '';
+    const search = window.location.search || '';
+    const pathname = window.location.pathname || '';
+    return hash.includes('type=recovery') ||
+      search.includes('type=recovery') ||
+      pathname.includes('/reset-password');
+  });
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -206,8 +216,11 @@ function App() {
       setLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsRecoveryMode(true);
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -222,7 +235,9 @@ function App() {
       <div className="grain-overlay"></div>
       <div className="ambient-light"></div>
       <ToastContainer />
-      {!session ? (
+      {isRecoveryMode ? (
+        <ResetPassword onComplete={() => setIsRecoveryMode(false)} />
+      ) : !session ? (
         <Auth />
       ) : (
         <AppInner session={session} />
