@@ -1,61 +1,52 @@
 import { useState, useRef, useEffect } from 'react';
-import { Play, RotateCcw, Terminal, X, Loader2, Send, CornerDownLeft } from 'lucide-react';
+import { Play, RotateCcw, Terminal, X, Loader2, Send, CornerDownLeft, Zap } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
-// Wandbox API – Rock-solid stable releases with interactive stdin support
+// High-Speed Godbolt API (AWS high-concurrency clusters, ~1-2s response)
+// ---------------------------------------------------------------------------
+const GODBOLT_MAP = {
+  cpp:    { id: 'g142',      userArgs: '-std=c++20 -O2', label: 'C++' },
+  'c++':  { id: 'g142',      userArgs: '-std=c++20 -O2', label: 'C++' },
+  c:      { id: 'cg142',     userArgs: '-std=c17 -O2',   label: 'C'   },
+  rust:   { id: 'rustc1800', userArgs: '-O',             label: 'Rust'},
+  rs:     { id: 'rustc1800', userArgs: '-O',             label: 'Rust'},
+  go:     { id: 'go1220',    userArgs: '',               label: 'Go'  },
+  golang: { id: 'go1220',    userArgs: '',               label: 'Go'  },
+};
+
+// ---------------------------------------------------------------------------
+// Wandbox API (Fallback and extended languages)
 // ---------------------------------------------------------------------------
 const WANDBOX_API = 'https://wandbox.org/api/compile.json';
 
-const COMPILER_MAP = {
-  // C / C++ (Rock-solid stable releases: gcc-13.2.0 & clang-17.0.1)
-  cpp:        { compiler: 'gcc-13.2.0',      fallback: 'clang-17.0.1',   label: 'C++',  options: '-std=c++20' },
-  'c++':      { compiler: 'gcc-13.2.0',      fallback: 'clang-17.0.1',   label: 'C++',  options: '-std=c++20' },
-  c:          { compiler: 'gcc-13.2.0-c',    fallback: 'clang-17.0.1-c', label: 'C',    options: '-std=c17' },
-  // Python - stable 3.12 release with real stdin input support
+const WANDBOX_MAP = {
   python:     { compiler: 'cpython-3.12.16', fallback: 'cpython-3.11.18', label: 'Python 3' },
   py:         { compiler: 'cpython-3.12.16', fallback: 'cpython-3.11.18', label: 'Python 3' },
-  // Java - automatically normalize 'public class' to 'class' for single-file run
   java:       { compiler: 'openjdk-jdk-22+36', label: 'Java', normalize: (c) => c.replace(/\bpublic\s+class\b/g, 'class') },
-  // Rust
-  rust:       { compiler: 'rust-1.100.0',    label: 'Rust' },
-  rs:         { compiler: 'rust-1.100.0',    label: 'Rust' },
-  // Go
-  go:         { compiler: 'go-1.27.4',       label: 'Go' },
-  golang:     { compiler: 'go-1.27.4',       label: 'Go' },
-  // C#
   cs:         { compiler: 'mono-6.12.0.199', label: 'C#' },
   csharp:     { compiler: 'mono-6.12.0.199', label: 'C#' },
-  // Ruby
   ruby:       { compiler: 'ruby-4.0.2',      label: 'Ruby' },
   rb:         { compiler: 'ruby-4.0.2',      label: 'Ruby' },
-  // PHP
   php:        { compiler: 'php-8.3.12',      label: 'PHP' },
-  // Swift
   swift:      { compiler: 'swift-6.0.1',     label: 'Swift' },
-  // Lua
   lua:        { compiler: 'lua-5.4.7',       label: 'Lua' },
-  // Haskell
-  haskell:    { compiler: 'ghc-9.10.1',      label: 'Haskell' },
-  hs:         { compiler: 'ghc-9.10.1',      label: 'Haskell' },
-  // Shell / Bash
   bash:       { compiler: 'bash',            label: 'Bash' },
   sh:         { compiler: 'bash',            label: 'Bash' },
-  shell:      { compiler: 'bash',            label: 'Bash' },
-  // R
-  r:          { compiler: 'r-4.4.1',         label: 'R' },
-  // Scala
-  scala:      { compiler: 'scala-3.5.1',     label: 'Scala' },
-  // Julia
-  julia:      { compiler: 'julia-1.10.5',    label: 'Julia' },
-  // SQL
   sql:        { compiler: 'sqlite-3.46.1',   label: 'SQLite' },
 };
+
+function stripAnsi(text) {
+  if (!text) return '';
+  return text.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '');
+}
 
 function getLangConfig(lang) {
   const clean = (lang || 'javascript').toLowerCase().trim();
   if (['javascript', 'js'].includes(clean)) return { isJs: true, label: 'JavaScript' };
   if (['typescript', 'ts'].includes(clean)) return { isJs: true, label: 'TypeScript' };
-  return COMPILER_MAP[clean] || null;
+  if (GODBOLT_MAP[clean]) return { isGodbolt: true, ...GODBOLT_MAP[clean] };
+  if (WANDBOX_MAP[clean]) return { isWandbox: true, ...WANDBOX_MAP[clean] };
+  return null;
 }
 
 export default function CodeRunnerConsole({ code, language = 'javascript' }) {
@@ -73,14 +64,12 @@ export default function CodeRunnerConsole({ code, language = 'javascript' }) {
   const langConfig = getLangConfig(language);
   if (!langConfig) return null;
 
-  // Auto-scroll console to bottom when new logs appear
   useEffect(() => {
     if (isOpen && consoleEndRef.current) {
       consoleEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [output, isOpen]);
 
-  // Detect if code likely asks for interactive standard input
   const codeExpectsInput =
     /\b(cin\s*>>|scanf\s*\(|getline\s*\(|input\s*\(|Scanner\b|BufferedReader\b|System\.in\b|gets\s*\()/i.test(code || '');
 
@@ -88,7 +77,7 @@ export default function CodeRunnerConsole({ code, language = 'javascript' }) {
   const waitingForInput = codeExpectsInput || /(:|\?|>)\s*$/.test(lastLine.trim());
 
   // -------------------------------------------------------------------------
-  // Run JavaScript / TypeScript client-side in-browser
+  // 1. Client-Side JavaScript / TypeScript (Instant ~5ms)
   // -------------------------------------------------------------------------
   const runClientJs = async (logs) => {
     let executableJs = code
@@ -109,90 +98,122 @@ export default function CodeRunnerConsole({ code, language = 'javascript' }) {
 
     const runner = new FuncCtor('console', `
       "use strict";
-      try {
-        ${executableJs}
-      } catch(e) {
-        console.error(e.message || String(e));
-      }
+      try { ${executableJs} } catch(e) { console.error(e.message || String(e)); }
     `);
     await runner(customConsole);
 
-    if (logs.length === 0) {
-      logs.push({ type: 'info', text: 'Executed with no console output.' });
+    if (logs.length === 0) logs.push({ type: 'info', text: 'Executed with no console output.' });
+  };
+
+  // -------------------------------------------------------------------------
+  // 2. High-Speed Godbolt Engine (C++, C, Rust, Go — ~1-2s response)
+  // -------------------------------------------------------------------------
+  const runGodbolt = async (logs, currentStdin) => {
+    logs.push({ type: 'info', text: `Fast compiling ${langConfig.label} (Godbolt Cloud)...` });
+    setOutput([...logs]);
+
+    const endpoint = `https://godbolt.org/api/compiler/${langConfig.id}/compile`;
+    const payload = {
+      source: code,
+      options: {
+        userArguments: langConfig.userArgs || '',
+        executeParameters: {
+          args: [],
+          stdin: currentStdin ? (currentStdin.endsWith('\n') ? currentStdin : `${currentStdin}\n`) : '',
+        },
+        filters: { execute: true },
+      },
+    };
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) throw new Error(`Godbolt API returned ${res.status}`);
+    const data = await res.json();
+
+    // Compiler errors
+    if (data.stderr && data.stderr.length > 0) {
+      data.stderr.forEach(item => {
+        const clean = stripAnsi(item.text || item);
+        if (clean.trim()) logs.push({ type: 'error', text: clean });
+      });
+    }
+
+    // Program stdout
+    if (data.execResult?.stdout && data.execResult.stdout.length > 0) {
+      data.execResult.stdout.forEach(item => {
+        const clean = stripAnsi(item.text || item);
+        if (clean !== '') logs.push({ type: 'log', text: clean });
+      });
+    }
+
+    // Program stderr (runtime errors)
+    if (data.execResult?.stderr && data.execResult.stderr.length > 0) {
+      data.execResult.stderr.forEach(item => {
+        const clean = stripAnsi(item.text || item);
+        if (clean.trim()) logs.push({ type: 'error', text: clean });
+      });
+    }
+
+    if (logs.filter(l => l.type !== 'info').length === 0) {
+      logs.push({ type: 'info', text: 'Program completed with no output (Exit: 0).' });
     }
   };
 
   // -------------------------------------------------------------------------
-  // Run multi-language compiler via Wandbox
+  // 3. Wandbox Multi-Language Engine (Python, Java, etc.)
   // -------------------------------------------------------------------------
-  const runWandbox = async (logs, currentStdin = stdin) => {
+  const runWandbox = async (logs, currentStdin) => {
     logs.push({ type: 'info', text: `Compiling & running ${langConfig.label}...` });
     setOutput([...logs]);
 
     let sourceCode = code;
-    if (langConfig.normalize) {
-      sourceCode = langConfig.normalize(sourceCode);
-    }
+    if (langConfig.normalize) sourceCode = langConfig.normalize(sourceCode);
 
     const compileWith = async (compilerName) => {
-      const payload = {
-        compiler: compilerName,
-        code: sourceCode,
-      };
-
-      if (langConfig.options) {
-        payload.compiler_options_raw = langConfig.options;
-      }
-
+      const payload = { compiler: compilerName, code: sourceCode };
       if (currentStdin && currentStdin.trim()) {
         payload.stdin = currentStdin.endsWith('\n') ? currentStdin : `${currentStdin}\n`;
       }
-
       const res = await fetch(WANDBOX_API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-
-      if (!res.ok) {
-        throw new Error(`Compiler service error (${res.status})`);
-      }
-
+      if (!res.ok) throw new Error(`Service status (${res.status})`);
       return res.json();
     };
 
     let data = await compileWith(langConfig.compiler);
-
-    // If an experimental container hit an OCI resource limit on the host, auto-retry with fallback
     const hasOciError = (data.compiler_error || '').includes('OCI runtime error') ||
                         (data.compiler_error || '').includes('Resource temporarily unavailable');
 
     if (hasOciError && langConfig.fallback) {
-      logs.push({ type: 'warn', text: `Primary compiler busy, retrying with ${langConfig.fallback}...` });
+      logs.push({ type: 'warn', text: `Compiler busy, retrying with ${langConfig.fallback}...` });
       setOutput([...logs]);
       data = await compileWith(langConfig.fallback);
     }
 
     if (data.compiler_error) {
-      data.compiler_error.trimEnd().split('\n').forEach(line => logs.push({ type: 'error', text: line }));
-    }
-    if (data.compiler_message && !data.compiler_error) {
-      data.compiler_message.trimEnd().split('\n').forEach(line => logs.push({ type: 'warn', text: line }));
+      data.compiler_error.trimEnd().split('\n').forEach(l => logs.push({ type: 'error', text: l }));
     }
     if (data.program_output) {
-      data.program_output.trimEnd().split('\n').forEach(line => logs.push({ type: 'log', text: line }));
+      data.program_output.trimEnd().split('\n').forEach(l => logs.push({ type: 'log', text: l }));
     }
     if (data.program_error) {
-      data.program_error.trimEnd().split('\n').forEach(line => logs.push({ type: 'error', text: line }));
+      data.program_error.trimEnd().split('\n').forEach(l => logs.push({ type: 'error', text: l }));
     }
 
     if (logs.filter(l => l.type !== 'info').length === 0) {
-      logs.push({ type: 'info', text: 'Program completed with no output (Exit status: 0).' });
+      logs.push({ type: 'info', text: 'Program completed with no output (Exit: 0).' });
     }
   };
 
   // -------------------------------------------------------------------------
-  // Main execution dispatcher
+  // Execution Dispatcher
   // -------------------------------------------------------------------------
   const executeCode = async (stdinToUse = stdin) => {
     setIsRunning(true);
@@ -204,6 +225,8 @@ export default function CodeRunnerConsole({ code, language = 'javascript' }) {
     try {
       if (langConfig.isJs) {
         await runClientJs(logs);
+      } else if (langConfig.isGodbolt) {
+        await runGodbolt(logs, stdinToUse);
       } else {
         await runWandbox(logs, stdinToUse);
       }
@@ -213,7 +236,6 @@ export default function CodeRunnerConsole({ code, language = 'javascript' }) {
       setExTime((performance.now() - start).toFixed(0));
       setOutput([...logs]);
       setIsRunning(false);
-      // Auto-focus input after run if program expects input
       setTimeout(() => {
         if (inputRef.current) inputRef.current.focus();
       }, 100);
@@ -221,19 +243,16 @@ export default function CodeRunnerConsole({ code, language = 'javascript' }) {
   };
 
   // -------------------------------------------------------------------------
-  // Interactive Terminal Input Handler (press Enter in console)
+  // Interactive Terminal Input Handler
   // -------------------------------------------------------------------------
   const handleSendInput = (e) => {
     e.preventDefault();
     if (!interactiveInput.trim()) return;
 
     const value = interactiveInput.trim();
-    // Append to accumulated stdin
     const nextStdin = stdin ? `${stdin}\n${value}` : value;
     setStdin(nextStdin);
     setInteractiveInput('');
-
-    // Re-run the program with the newly accumulated input
     executeCode(nextStdin);
   };
 
@@ -259,6 +278,12 @@ export default function CodeRunnerConsole({ code, language = 'javascript' }) {
               </>
             )}
           </button>
+
+          {langConfig.isGodbolt && (
+            <span className="flex items-center gap-1 text-[10px] text-emerald-400/90 font-mono">
+              <Zap size={10} /> Fast Cloud
+            </span>
+          )}
 
           {!langConfig.isJs && (
             <button
@@ -299,7 +324,7 @@ export default function CodeRunnerConsole({ code, language = 'javascript' }) {
       {showStdinPanel && (
         <div className="mt-2 p-2.5 rounded-xl bg-stone-900/90 border border-stone-800">
           <div className="text-[11px] text-stone-300 font-mono mb-1.5 flex items-center justify-between">
-            <span className="font-semibold text-amber-300">Preset Input (passed to cin, input(), Scanner):</span>
+            <span className="font-semibold text-amber-300">Preset Input (cin, input(), Scanner):</span>
             {stdin && (
               <button
                 type="button"
