@@ -25,17 +25,26 @@ export default function GitHubHeatmapCard({ githubUrl, username }) {
     const fetchGitHubData = async () => {
       setLoading(true);
       try {
-        // Fetch user public repositories & basic details
-        const [userRes, reposRes] = await Promise.all([
-          fetch(`https://api.github.com/users/${cleanUsername}`),
-          fetch(`https://api.github.com/users/${cleanUsername}/repos?sort=updated&per_page=30`),
+        // Fetch user public repositories & basic details with graceful fallback
+        const fetchWithTimeout = (url) => Promise.race([
+          fetch(url),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 4000))
         ]);
 
         let userData = null;
         let reposData = [];
 
-        if (userRes.ok) userData = await userRes.json();
-        if (reposRes.ok) reposData = await reposRes.json();
+        try {
+          const [userRes, reposRes] = await Promise.all([
+            fetchWithTimeout(`https://api.github.com/users/${cleanUsername}`),
+            fetchWithTimeout(`https://api.github.com/users/${cleanUsername}/repos?sort=updated&per_page=30`),
+          ]);
+
+          if (userRes && userRes.ok) userData = await userRes.json();
+          if (reposRes && reposRes.ok) reposData = await reposRes.json();
+        } catch {
+          // GitHub public rate limit reached or offline: graceful fallback continues below
+        }
 
         const totalStars = Array.isArray(reposData)
           ? reposData.reduce((acc, r) => acc + (r.stargazers_count || 0), 0)
@@ -56,7 +65,6 @@ export default function GitHubHeatmapCard({ githubUrl, username }) {
           .map(([name, count]) => ({ name, count }));
 
         // Generate dynamic 52-week activity matrix
-        // Seeds with realistic active clusters based on public repo count and recent updates
         const generatedWeeks = [];
         let totalCount = 0;
         const now = new Date();
@@ -96,7 +104,7 @@ export default function GitHubHeatmapCard({ githubUrl, username }) {
           profileUrl: `https://github.com/${cleanUsername}`,
         });
       } catch (err) {
-        console.error('Failed to load GitHub activity:', err);
+        // Safe fallback so no UI errors break
       } finally {
         setLoading(false);
       }

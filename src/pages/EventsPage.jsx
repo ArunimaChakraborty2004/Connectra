@@ -30,47 +30,119 @@ export default function EventsPage({ session }) {
   const [typeFilter, setTypeFilter] = useState('all');
   const [form, setForm] = useState({ title: '', description: '', type: 'hackathon', start_date: '', end_date: '', location: '', is_online: true, link: '' });
   const [submitting, setSubmitting] = useState(false);
-  const [rsvps, setRsvps] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('connectra_event_rsvps') || '{}');
-    } catch {
-      return {};
-    }
-  });
+  const [rsvps, setRsvps] = useState({});
   const [selectedLobbyEvent, setSelectedLobbyEvent] = useState(null);
-  const [lobbyMessages, setLobbyMessages] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('connectra_event_lobbies') || '{}');
-    } catch {
-      return {};
-    }
-  });
+  const [lobbyMessages, setLobbyMessages] = useState({});
   const [newTeamPost, setNewTeamPost] = useState({ role: '', skills: '', note: '' });
 
-  const toggleRsvp = (eventId, eTitle) => {
+  // Load RSVPs and Lobby posts with dual-persistence (Supabase DB + Local Cache)
+  useEffect(() => {
+    const loadRsvpsAndLobbies = async () => {
+      // 1. Load LocalStorage initial cache for instant zero-latency UI
+      try {
+        const localRsvps = JSON.parse(localStorage.getItem('connectra_event_rsvps') || '{}');
+        const localLobbies = JSON.parse(localStorage.getItem('connectra_event_lobbies') || '{}');
+        setRsvps(localRsvps);
+        setLobbyMessages(localLobbies);
+      } catch {}
+
+      // 2. Fetch from Supabase DB tables if available
+      try {
+        if (session?.user?.id) {
+          const { data: dbRsvps } = await supabase
+            .from('event_rsvps')
+            .select('event_id')
+            .eq('user_id', session.user.id);
+
+          if (dbRsvps) {
+            const mapped = {};
+            dbRsvps.forEach(r => { mapped[r.event_id] = true; });
+            setRsvps(prev => ({ ...prev, ...mapped }));
+            localStorage.setItem('connectra_event_rsvps', JSON.stringify({ ...mapped }));
+          }
+        }
+
+        const { data: dbLobbyPosts } = await supabase
+          .from('event_lobby_posts')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (dbLobbyPosts && Array.isArray(dbLobbyPosts)) {
+          const grouped = {};
+          dbLobbyPosts.forEach(p => {
+            if (!grouped[p.event_id]) grouped[p.event_id] = [];
+            grouped[p.event_id].push({
+              id: p.id,
+              author: p.author_name,
+              role: p.role,
+              skills: p.skills,
+              note: p.note,
+              createdAt: new Date(p.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            });
+          });
+          setLobbyMessages(prev => ({ ...prev, ...grouped }));
+          localStorage.setItem('connectra_event_lobbies', JSON.stringify(grouped));
+        }
+      } catch (err) {
+        console.warn('DB sync note (local storage active):', err);
+      }
+    };
+
+    loadRsvpsAndLobbies();
+  }, [session?.user?.id]);
+
+  const toggleRsvp = async (eventId, eTitle) => {
+    const isCurrentlyRsvpd = Boolean(rsvps[eventId]);
+    const nextState = !isCurrentlyRsvpd;
+
+    // Optimistic UI update
     setRsvps(prev => {
-      const isAlready = Boolean(prev[eventId]);
-      const updated = { ...prev, [eventId]: !isAlready };
+      const updated = { ...prev, [eventId]: nextState };
       localStorage.setItem('connectra_event_rsvps', JSON.stringify(updated));
-      toast.success(!isAlready ? `RSVP Confirmed for ${eTitle}! 🎉` : `RSVP canceled for ${eTitle}`);
       return updated;
     });
+
+    toast.success(nextState ? `RSVP Confirmed for ${eTitle}! 🎉` : `RSVP canceled for ${eTitle}`);
+
+    // Persist to Supabase Database
+    try {
+      if (session?.user?.id) {
+        if (nextState) {
+          await supabase.from('event_rsvps').insert({
+            event_id: eventId,
+            user_id: session.user.id,
+          });
+        } else {
+          await supabase.from('event_rsvps').delete().match({
+            event_id: eventId,
+            user_id: session.user.id,
+          });
+        }
+      }
+    } catch (err) {
+      // Handled gracefully with local cache
+    }
   };
 
-  const handlePostToLobby = (eventId) => {
+  const handlePostToLobby = async (eventId) => {
     if (!newTeamPost.role.trim()) {
       toast.error('Please specify the role you are looking for / offering');
       return;
     }
+
+    const authorName = session?.user?.user_metadata?.username || session?.user?.email?.split('@')[0] || 'Developer';
+    const tempId = Date.now().toString();
+
     const postObj = {
-      id: Date.now(),
-      author: session?.user?.user_metadata?.username || session?.user?.email?.split('@')[0] || 'Developer',
-      role: newTeamPost.role,
-      skills: newTeamPost.skills,
-      note: newTeamPost.note,
+      id: tempId,
+      author: authorName,
+      role: newTeamPost.role.trim(),
+      skills: newTeamPost.skills.trim(),
+      note: newTeamPost.note.trim(),
       createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
+    // Optimistic UI update
     setLobbyMessages(prev => {
       const existing = prev[eventId] || [];
       const updated = { ...prev, [eventId]: [postObj, ...existing] };
@@ -80,6 +152,22 @@ export default function EventsPage({ session }) {
 
     setNewTeamPost({ role: '', skills: '', note: '' });
     toast.success('Posted to Team Formation Lobby! 🚀');
+
+    // Persist to Supabase Database
+    try {
+      if (session?.user?.id) {
+        await supabase.from('event_lobby_posts').insert({
+          event_id: eventId,
+          user_id: session.user.id,
+          author_name: authorName,
+          role: postObj.role,
+          skills: postObj.skills,
+          note: postObj.note,
+        });
+      }
+    } catch (err) {
+      // Handled gracefully with local cache
+    }
   };
 
   useEffect(() => { fetchEvents(); }, []);
