@@ -11,6 +11,7 @@ import EditProfileModal from '../components/profile/EditProfileModal';
 import BadgesPanel from '../components/profile/BadgesPanel';
 import AIReviewPanel from '../components/profile/AIReviewPanel';
 import FollowsModal from '../components/profile/FollowsModal';
+import GitHubHeatmapCard from '../components/profile/GitHubHeatmapCard';
 import { createNotification } from '../lib/notifications';
 
 function ProfileRepos({ userId }) {
@@ -513,6 +514,14 @@ export default function ProfilePage({ session }) {
                       </div>
                     </div>
                   )}
+
+                  {/* GitHub Activity & Contribution Heatmap */}
+                  <div className="mt-6">
+                    <GitHubHeatmapCard
+                      githubUrl={profile.github_url}
+                      username={profile.username}
+                    />
+                  </div>
                 </div>
               </div>
               

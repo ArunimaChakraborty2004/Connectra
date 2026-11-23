@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
-import { Calendar, Plus, ExternalLink, MapPin, Globe, Zap, Users, BookOpen, Coffee, X, Filter } from 'lucide-react';
+import { Calendar, Plus, ExternalLink, MapPin, Globe, Zap, Users, BookOpen, Coffee, X, Filter, UserPlus, CheckCircle, Sparkles, MessageSquare } from 'lucide-react';
 import { CardSkeleton } from '../components/ui/SkeletonLoader';
 
 const TYPE_CONFIG = {
@@ -30,6 +30,57 @@ export default function EventsPage({ session }) {
   const [typeFilter, setTypeFilter] = useState('all');
   const [form, setForm] = useState({ title: '', description: '', type: 'hackathon', start_date: '', end_date: '', location: '', is_online: true, link: '' });
   const [submitting, setSubmitting] = useState(false);
+  const [rsvps, setRsvps] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('connectra_event_rsvps') || '{}');
+    } catch {
+      return {};
+    }
+  });
+  const [selectedLobbyEvent, setSelectedLobbyEvent] = useState(null);
+  const [lobbyMessages, setLobbyMessages] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('connectra_event_lobbies') || '{}');
+    } catch {
+      return {};
+    }
+  });
+  const [newTeamPost, setNewTeamPost] = useState({ role: '', skills: '', note: '' });
+
+  const toggleRsvp = (eventId, eTitle) => {
+    setRsvps(prev => {
+      const isAlready = Boolean(prev[eventId]);
+      const updated = { ...prev, [eventId]: !isAlready };
+      localStorage.setItem('connectra_event_rsvps', JSON.stringify(updated));
+      toast.success(!isAlready ? `RSVP Confirmed for ${eTitle}! 🎉` : `RSVP canceled for ${eTitle}`);
+      return updated;
+    });
+  };
+
+  const handlePostToLobby = (eventId) => {
+    if (!newTeamPost.role.trim()) {
+      toast.error('Please specify the role you are looking for / offering');
+      return;
+    }
+    const postObj = {
+      id: Date.now(),
+      author: session?.user?.user_metadata?.username || session?.user?.email?.split('@')[0] || 'Developer',
+      role: newTeamPost.role,
+      skills: newTeamPost.skills,
+      note: newTeamPost.note,
+      createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+
+    setLobbyMessages(prev => {
+      const existing = prev[eventId] || [];
+      const updated = { ...prev, [eventId]: [postObj, ...existing] };
+      localStorage.setItem('connectra_event_lobbies', JSON.stringify(updated));
+      return updated;
+    });
+
+    setNewTeamPost({ role: '', skills: '', note: '' });
+    toast.success('Posted to Team Formation Lobby! 🚀');
+  };
 
   useEffect(() => { fetchEvents(); }, []);
 
@@ -168,18 +219,169 @@ export default function EventsPage({ session }) {
                       <span>{event.is_online ? 'Online' : (event.location || 'Location TBD')}</span>
                     </div>
                   </div>
-                  {event.link && (
-                    <a href={event.link} target="_blank" rel="noreferrer"
-                      className="mt-4 flex items-center gap-2 text-sm font-medium text-primary hover:text-primary-hover transition-colors">
-                      <ExternalLink size={14} /> Register / Learn More
-                    </a>
-                  )}
+                  <div className="mt-4 pt-3 border-t border-border/60 flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleRsvp(event.id, event.title)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        rsvps[event.id]
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                          : 'bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20'
+                      }`}
+                    >
+                      {rsvps[event.id] ? (
+                        <>
+                          <CheckCircle size={13} className="text-emerald-400" />
+                          <span>RSVP'd</span>
+                        </>
+                      ) : (
+                        <>
+                          <Plus size={13} />
+                          <span>RSVP</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedLobbyEvent(event)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-surface-hover hover:bg-surface text-main border border-border transition-colors cursor-pointer"
+                    >
+                      <Users size={13} className="text-amber-400" />
+                      <span>Find Team ({(lobbyMessages[event.id] || []).length})</span>
+                    </button>
+
+                    {event.link && (
+                      <a
+                        href={event.link}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-1.5 text-muted hover:text-primary transition-colors"
+                        title="External Link"
+                      >
+                        <ExternalLink size={14} />
+                      </a>
+                    )}
+                  </div>
                 </motion.div>
               );
             })}
           </div>
         )}
       </div>
+
+      {/* Team Formation Lobby Modal */}
+      <AnimatePresence>
+        {selectedLobbyEvent && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4 overflow-y-auto py-8"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-[var(--bg-color)] border border-border rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-border pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center">
+                    <Users size={18} />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-base text-main">Team Formation Lobby</h3>
+                    <p className="text-xs text-muted truncate max-w-[280px]">
+                      {selectedLobbyEvent.title}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedLobbyEvent(null)}
+                  className="p-1.5 text-muted hover:text-main rounded-lg transition-colors cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Post Team Wanted / Offering */}
+              <div className="p-3.5 rounded-2xl bg-surface border border-border space-y-2.5">
+                <span className="text-xs font-bold text-main flex items-center gap-1.5">
+                  <UserPlus size={13} className="text-primary" /> Post Your Role / Request
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    value={newTeamPost.role}
+                    onChange={(e) => setNewTeamPost(p => ({ ...p, role: e.target.value }))}
+                    placeholder="e.g. Need Frontend Engineer"
+                    className="w-full bg-background border border-border rounded-xl px-3 py-1.5 text-xs text-main outline-none focus:border-primary"
+                  />
+                  <input
+                    type="text"
+                    value={newTeamPost.skills}
+                    onChange={(e) => setNewTeamPost(p => ({ ...p, skills: e.target.value }))}
+                    placeholder="e.g. React, Tailwind, Supabase"
+                    className="w-full bg-background border border-border rounded-xl px-3 py-1.5 text-xs text-main outline-none focus:border-primary"
+                  />
+                </div>
+                <textarea
+                  value={newTeamPost.note}
+                  onChange={(e) => setNewTeamPost(p => ({ ...p, note: e.target.value }))}
+                  placeholder="Optional brief note on project pitch or timezone..."
+                  rows={2}
+                  className="w-full bg-background border border-border rounded-xl px-3 py-1.5 text-xs text-main outline-none focus:border-primary resize-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => handlePostToLobby(selectedLobbyEvent.id)}
+                  className="w-full py-2 rounded-xl bg-primary text-white font-bold text-xs hover:opacity-90 transition-opacity shadow-xs cursor-pointer"
+                >
+                  Post to Lobby
+                </button>
+              </div>
+
+              {/* Lobby Listings */}
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                <span className="text-xs font-bold text-muted uppercase tracking-wider block">
+                  Developers in Lobby ({(lobbyMessages[selectedLobbyEvent.id] || []).length})
+                </span>
+                {(lobbyMessages[selectedLobbyEvent.id] || []).length === 0 ? (
+                  <div className="text-center py-6 text-xs text-muted">
+                    No team listings yet. Be the first to post your role!
+                  </div>
+                ) : (
+                  (lobbyMessages[selectedLobbyEvent.id] || []).map((msg) => (
+                    <div
+                      key={msg.id}
+                      className="p-3 rounded-xl bg-surface border border-border space-y-1 text-xs"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-main flex items-center gap-1.5">
+                          <span>@{msg.author}</span>
+                          <span className="text-[10px] font-mono px-2 py-0.2 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                            {msg.role}
+                          </span>
+                        </span>
+                        <span className="text-[10px] text-muted">{msg.createdAt}</span>
+                      </div>
+                      {msg.skills && (
+                        <div className="text-[11px] text-primary font-mono">
+                          Tech: {msg.skills}
+                        </div>
+                      )}
+                      {msg.note && (
+                        <p className="text-muted leading-relaxed text-[11px]">{msg.note}</p>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Create Event Modal */}
       <AnimatePresence>

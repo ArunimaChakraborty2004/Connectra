@@ -8,6 +8,7 @@ import { explainCodeSnippet, reviewCodeAndSecurity, generatePeerCodeReviewBotCri
 import AIAnalysisCard from './AIAnalysisCard';
 import AIPeerReviewCommentCard from './AIPeerReviewCommentCard';
 import MermaidDiagramCard from '../ai/MermaidDiagramCard';
+import CodeRunnerConsole from './CodeRunnerConsole';
 import { createNotification } from '../../lib/notifications';
 
 export default function PostCard({ post, session, onUpdate, isHighlighted = false, autoOpenComments = false, isCommunityAdmin = false }) {
@@ -1019,6 +1020,14 @@ export default function PostCard({ post, session, onUpdate, isHighlighted = fals
           <pre className="p-3 text-xs font-mono text-amber-300 overflow-x-auto">
             <code>{post.code_snippet}</code>
           </pre>
+
+          {/* Interactive Code Runner Console */}
+          <div className="px-3 pb-3 pt-0">
+            <CodeRunnerConsole
+              code={post.code_snippet}
+              language={post.code_language || 'javascript'}
+            />
+          </div>
 
           {/* AI Analysis Dropdown Card */}
           <AnimatePresence>
