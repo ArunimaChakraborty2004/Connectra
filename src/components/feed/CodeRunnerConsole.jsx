@@ -76,37 +76,48 @@ export default function CodeRunnerConsole({ code, language = 'javascript' }) {
 
         const pyodide = pyodideRef.current;
 
-        // Use Pyodide's official stream redirect API — no Python class injection needed
-        // This avoids all AST / indentation / string-escaping issues inside runPythonAsync
-        pyodide.setStdout({
-          batched: (text) => {
-            if (text) {
-              text.split('\n').forEach(line => {
-                if (line !== '') logs.push({ type: 'log', text: line });
-              });
-            }
-          },
-        });
-        pyodide.setStderr({
-          batched: (text) => {
-            if (text) {
-              text.split('\n').forEach(line => {
-                if (line !== '') logs.push({ type: 'error', text: line });
-              });
-            }
-          },
-        });
+        // Redirect sys.stdout/stderr to pure-Python io.StringIO buffers BEFORE running code.
+        // This is the ONLY reliable way — setStdout/setStderr still triggers OSError [Errno 29]
+        // because Pyodide's underlying C file descriptor is broken in the browser.
+        // io.StringIO is 100% in-memory Python, no OS file descriptors involved at all.
+        pyodide.runPython(
+`import sys, io
+_cstdout_save = sys.stdout
+_cstderr_save = sys.stderr
+_cstdout = io.StringIO()
+_cstderr = io.StringIO()
+sys.stdout = _cstdout
+sys.stderr = _cstderr`
+        );
 
         try {
           await pyodide.runPythonAsync(code);
+        } catch (pyErr) {
+          // runPythonAsync throws a JS error when Python raises an exception.
+          // Format the error message cleanly (strip "PythonError: " prefix if present).
+          const raw = pyErr.message || String(pyErr);
+          const clean = raw.startsWith('PythonError: ') ? raw.slice(13) : raw;
+          logs.push({ type: 'error', text: clean });
         } finally {
-          // Restore default streams
-          pyodide.setStdout({ batched: () => {} });
-          pyodide.setStderr({ batched: () => {} });
+          // Retrieve captured output then restore original streams
+          const captured    = pyodide.runPython('_cstdout.getvalue()');
+          const capturedErr = pyodide.runPython('_cstderr.getvalue()');
+
+          pyodide.runPython(
+`sys.stdout = _cstdout_save
+sys.stderr = _cstderr_save`
+          );
+
+          if (captured && captured.trim()) {
+            captured.trimEnd().split('\n').forEach(line => logs.push({ type: 'log', text: line }));
+          }
+          if (capturedErr && capturedErr.trim()) {
+            capturedErr.trimEnd().split('\n').forEach(line => logs.push({ type: 'error', text: line }));
+          }
         }
 
         if (logs.filter(l => l.type !== 'info').length === 0) {
-          logs.push({ type: 'info', text: 'Python executed successfully with no output.' });
+          logs.push({ type: 'info', text: 'Python executed with no output.' });
         }
       }
     } catch (err) {
