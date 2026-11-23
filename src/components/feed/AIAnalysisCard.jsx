@@ -147,21 +147,23 @@ export default function AIAnalysisCard({ content, type = 'security', onClose, on
 
   if (!content) return null;
 
-  // Determine if content is structured object (SAST JSON) or string
+  // Safe normalization of content to prevent runtime crashes if empty, string, or malformed
   const isStructured = typeof content === 'object' && content !== null && ('findings' in content || 'isClean' in content);
 
   const isExplainType = type === 'explain';
 
-  const isClean = isStructured
-    ? content.isClean
-    : typeof content === 'string' &&
-      (content.toLowerCase().includes('no critical vulnerabilities') ||
-        content.toLowerCase().includes('no vulnerabilities detected') ||
-        (content.toLowerCase().includes('secure') && !content.toLowerCase().includes('high vulnerability')));
+  const isClean = Boolean(
+    isStructured
+      ? content.isClean
+      : typeof content === 'string' &&
+        (content.toLowerCase().includes('no critical vulnerabilities') ||
+          content.toLowerCase().includes('no vulnerabilities detected') ||
+          (content.toLowerCase().includes('secure') && !content.toLowerCase().includes('high vulnerability')))
+  );
 
-  const findings = isStructured ? content.findings || [] : [];
+  const findings = isStructured && Array.isArray(content.findings) ? content.findings : [];
   const refactoredCode = isStructured ? content.refactoredCode : null;
-  const qualityNotes = isStructured ? content.qualityNotes || [] : [];
+  const qualityNotes = isStructured && Array.isArray(content.qualityNotes) ? content.qualityNotes : [];
   const summary = isStructured ? content.summary : null;
   const criticVerification = isStructured ? content.criticVerification : null;
 
@@ -432,7 +434,7 @@ export default function AIAnalysisCard({ content, type = 'security', onClose, on
         )}
 
         {/* 1-Click Fix & Refactored Code Section */}
-        {refactoredCode && !isClean && (
+        {Boolean(refactoredCode && !isClean) && (
           <div className="p-3.5 rounded-xl bg-orange-950/20 border border-orange-500/30 space-y-2.5">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
