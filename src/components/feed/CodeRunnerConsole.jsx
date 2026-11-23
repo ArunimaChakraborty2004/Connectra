@@ -8,13 +8,13 @@ import { Play, RotateCcw, Terminal, X, Loader2, Globe, CornerDownLeft } from 'lu
 const WANDBOX_API = 'https://wandbox.org/api/compile.json';
 
 const COMPILER_MAP = {
-  // C / C++
-  cpp:        { compiler: 'gcc-head',        label: 'C++' },
-  'c++':      { compiler: 'gcc-head',        label: 'C++' },
-  c:          { compiler: 'gcc-head-c',      label: 'C' },
-  // Python - full standard library with real stdin input support
-  python:     { compiler: 'cpython-3.12.16', label: 'Python 3' },
-  py:         { compiler: 'cpython-3.12.16', label: 'Python 3' },
+  // C / C++ (Use rock-solid stable releases: gcc-13.2.0 & clang-17.0.1)
+  cpp:        { compiler: 'gcc-13.2.0',      fallback: 'clang-17.0.1',   label: 'C++',  options: '-std=c++20' },
+  'c++':      { compiler: 'gcc-13.2.0',      fallback: 'clang-17.0.1',   label: 'C++',  options: '-std=c++20' },
+  c:          { compiler: 'gcc-13.2.0-c',    fallback: 'clang-17.0.1-c', label: 'C',    options: '-std=c17' },
+  // Python - stable 3.12 release with real stdin input support
+  python:     { compiler: 'cpython-3.12.16', fallback: 'cpython-3.11.18', label: 'Python 3' },
+  py:         { compiler: 'cpython-3.12.16', fallback: 'cpython-3.11.18', label: 'Python 3' },
   // Java - automatically normalize 'public class' to 'class' for single-file run
   java:       { compiler: 'openjdk-jdk-22+36', label: 'Java', normalize: (c) => c.replace(/\bpublic\s+class\b/g, 'class') },
   // Rust
@@ -117,26 +117,44 @@ export default function CodeRunnerConsole({ code, language = 'javascript' }) {
       sourceCode = langConfig.normalize(sourceCode);
     }
 
-    const payload = {
-      compiler: langConfig.compiler,
-      code: sourceCode,
+    const compileWith = async (compilerName) => {
+      const payload = {
+        compiler: compilerName,
+        code: sourceCode,
+      };
+
+      if (langConfig.options) {
+        payload.compiler_options_raw = langConfig.options;
+      }
+
+      if (stdin.trim()) {
+        payload.stdin = stdin.endsWith('\n') ? stdin : `${stdin}\n`;
+      }
+
+      const res = await fetch(WANDBOX_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Compiler service error (${res.status})`);
+      }
+
+      return res.json();
     };
 
-    if (stdin.trim()) {
-      payload.stdin = stdin.endsWith('\n') ? stdin : `${stdin}\n`;
+    let data = await compileWith(langConfig.compiler);
+
+    // If an experimental container hit an OCI resource limit on the host, auto-retry with fallback
+    const hasOciError = (data.compiler_error || '').includes('OCI runtime error') || 
+                        (data.compiler_error || '').includes('Resource temporarily unavailable');
+
+    if (hasOciError && langConfig.fallback) {
+      logs.push({ type: 'warn', text: `Primary compiler busy, retrying with ${langConfig.fallback}...` });
+      setOutput([...logs]);
+      data = await compileWith(langConfig.fallback);
     }
-
-    const res = await fetch(WANDBOX_API, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-
-    if (!res.ok) {
-      throw new Error(`Compiler service error (${res.status})`);
-    }
-
-    const data = await res.json();
 
     if (data.compiler_error) {
       data.compiler_error.trimEnd().split('\n').forEach(line => logs.push({ type: 'error', text: line }));
