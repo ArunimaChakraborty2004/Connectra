@@ -1,14 +1,13 @@
-import { useState } from 'react';
-import { Play, RotateCcw, Terminal, X, Loader2, Globe, CornerDownLeft } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Play, RotateCcw, Terminal, X, Loader2, Send, CornerDownLeft } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
-// Wandbox API – Completely free, NO API key, CORS-enabled, official public API
-// Supports C, C++, Java, Python, Rust, Go, C#, PHP, Ruby, Bash, etc.
+// Wandbox API – Rock-solid stable releases with interactive stdin support
 // ---------------------------------------------------------------------------
 const WANDBOX_API = 'https://wandbox.org/api/compile.json';
 
 const COMPILER_MAP = {
-  // C / C++ (Use rock-solid stable releases: gcc-13.2.0 & clang-17.0.1)
+  // C / C++ (Rock-solid stable releases: gcc-13.2.0 & clang-17.0.1)
   cpp:        { compiler: 'gcc-13.2.0',      fallback: 'clang-17.0.1',   label: 'C++',  options: '-std=c++20' },
   'c++':      { compiler: 'gcc-13.2.0',      fallback: 'clang-17.0.1',   label: 'C++',  options: '-std=c++20' },
   c:          { compiler: 'gcc-13.2.0-c',    fallback: 'clang-17.0.1-c', label: 'C',    options: '-std=c17' },
@@ -65,10 +64,28 @@ export default function CodeRunnerConsole({ code, language = 'javascript' }) {
   const [executionTime, setExTime] = useState(null);
   const [isOpen, setIsOpen] = useState(false);
   const [stdin, setStdin] = useState('');
-  const [showStdin, setShowStdin] = useState(false);
+  const [interactiveInput, setInteractiveInput] = useState('');
+  const [showStdinPanel, setShowStdinPanel] = useState(false);
+
+  const consoleEndRef = useRef(null);
+  const inputRef = useRef(null);
 
   const langConfig = getLangConfig(language);
   if (!langConfig) return null;
+
+  // Auto-scroll console to bottom when new logs appear
+  useEffect(() => {
+    if (isOpen && consoleEndRef.current) {
+      consoleEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [output, isOpen]);
+
+  // Detect if code likely asks for interactive standard input
+  const codeExpectsInput =
+    /\b(cin\s*>>|scanf\s*\(|getline\s*\(|input\s*\(|Scanner\b|BufferedReader\b|System\.in\b|gets\s*\()/i.test(code || '');
+
+  const lastLine = output.length > 0 ? output[output.length - 1]?.text || '' : '';
+  const waitingForInput = codeExpectsInput || /(:|\?|>)\s*$/.test(lastLine.trim());
 
   // -------------------------------------------------------------------------
   // Run JavaScript / TypeScript client-side in-browser
@@ -108,7 +125,7 @@ export default function CodeRunnerConsole({ code, language = 'javascript' }) {
   // -------------------------------------------------------------------------
   // Run multi-language compiler via Wandbox
   // -------------------------------------------------------------------------
-  const runWandbox = async (logs) => {
+  const runWandbox = async (logs, currentStdin = stdin) => {
     logs.push({ type: 'info', text: `Compiling & running ${langConfig.label}...` });
     setOutput([...logs]);
 
@@ -127,8 +144,8 @@ export default function CodeRunnerConsole({ code, language = 'javascript' }) {
         payload.compiler_options_raw = langConfig.options;
       }
 
-      if (stdin.trim()) {
-        payload.stdin = stdin.endsWith('\n') ? stdin : `${stdin}\n`;
+      if (currentStdin && currentStdin.trim()) {
+        payload.stdin = currentStdin.endsWith('\n') ? currentStdin : `${currentStdin}\n`;
       }
 
       const res = await fetch(WANDBOX_API, {
@@ -147,7 +164,7 @@ export default function CodeRunnerConsole({ code, language = 'javascript' }) {
     let data = await compileWith(langConfig.compiler);
 
     // If an experimental container hit an OCI resource limit on the host, auto-retry with fallback
-    const hasOciError = (data.compiler_error || '').includes('OCI runtime error') || 
+    const hasOciError = (data.compiler_error || '').includes('OCI runtime error') ||
                         (data.compiler_error || '').includes('Resource temporarily unavailable');
 
     if (hasOciError && langConfig.fallback) {
@@ -177,7 +194,7 @@ export default function CodeRunnerConsole({ code, language = 'javascript' }) {
   // -------------------------------------------------------------------------
   // Main execution dispatcher
   // -------------------------------------------------------------------------
-  const runCode = async () => {
+  const executeCode = async (stdinToUse = stdin) => {
     setIsRunning(true);
     setIsOpen(true);
     setOutput([]);
@@ -188,7 +205,7 @@ export default function CodeRunnerConsole({ code, language = 'javascript' }) {
       if (langConfig.isJs) {
         await runClientJs(logs);
       } else {
-        await runWandbox(logs);
+        await runWandbox(logs, stdinToUse);
       }
     } catch (err) {
       logs.push({ type: 'error', text: `Execution Error: ${err.message || String(err)}` });
@@ -196,7 +213,28 @@ export default function CodeRunnerConsole({ code, language = 'javascript' }) {
       setExTime((performance.now() - start).toFixed(0));
       setOutput([...logs]);
       setIsRunning(false);
+      // Auto-focus input after run if program expects input
+      setTimeout(() => {
+        if (inputRef.current) inputRef.current.focus();
+      }, 100);
     }
+  };
+
+  // -------------------------------------------------------------------------
+  // Interactive Terminal Input Handler (press Enter in console)
+  // -------------------------------------------------------------------------
+  const handleSendInput = (e) => {
+    e.preventDefault();
+    if (!interactiveInput.trim()) return;
+
+    const value = interactiveInput.trim();
+    // Append to accumulated stdin
+    const nextStdin = stdin ? `${stdin}\n${value}` : value;
+    setStdin(nextStdin);
+    setInteractiveInput('');
+
+    // Re-run the program with the newly accumulated input
+    executeCode(nextStdin);
   };
 
   return (
@@ -205,7 +243,7 @@ export default function CodeRunnerConsole({ code, language = 'javascript' }) {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={runCode}
+            onClick={() => executeCode(stdin)}
             disabled={isRunning}
             className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-mono font-bold text-xs shadow-sm transition-all cursor-pointer disabled:opacity-50"
           >
@@ -225,16 +263,16 @@ export default function CodeRunnerConsole({ code, language = 'javascript' }) {
           {!langConfig.isJs && (
             <button
               type="button"
-              onClick={() => setShowStdin(!showStdin)}
+              onClick={() => setShowStdinPanel(!showStdinPanel)}
               className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono cursor-pointer transition-colors ${
-                showStdin || stdin
+                showStdinPanel || stdin
                   ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                   : 'text-stone-400 hover:text-stone-200'
               }`}
-              title="Provide standard input (stdin) for programs that ask for input"
+              title="Configure multi-line standard input"
             >
               <CornerDownLeft size={10} />
-              <span>Input / Stdin{stdin ? ' (set)' : ''}</span>
+              <span>Multi-line Stdin{stdin ? ' (active)' : ''}</span>
             </button>
           )}
         </div>
@@ -258,32 +296,32 @@ export default function CodeRunnerConsole({ code, language = 'javascript' }) {
         )}
       </div>
 
-      {showStdin && (
-        <div className="mt-2 p-2 rounded-lg bg-stone-900 border border-stone-800">
-          <div className="text-[11px] text-stone-400 font-mono mb-1 flex items-center justify-between">
-            <span>Standard Input (stdin for input(), cin &gt;&gt;, Scanner, etc.):</span>
+      {showStdinPanel && (
+        <div className="mt-2 p-2.5 rounded-xl bg-stone-900/90 border border-stone-800">
+          <div className="text-[11px] text-stone-300 font-mono mb-1.5 flex items-center justify-between">
+            <span className="font-semibold text-amber-300">Preset Input (passed to cin, input(), Scanner):</span>
             {stdin && (
               <button
                 type="button"
                 onClick={() => setStdin('')}
-                className="text-stone-500 hover:text-stone-300 text-[10px]"
+                className="text-stone-400 hover:text-rose-400 text-[10px] cursor-pointer"
               >
-                Clear
+                Clear Preset
               </button>
             )}
           </div>
           <textarea
             value={stdin}
             onChange={(e) => setStdin(e.target.value)}
-            placeholder="Type input here (e.g. numbers, words on each line)..."
+            placeholder="Enter all inputs here ahead of time (one value per line)..."
             rows={2}
-            className="w-full bg-black/60 border border-stone-800 rounded p-1.5 font-mono text-xs text-stone-200 placeholder-stone-600 focus:outline-none focus:border-emerald-600/60"
+            className="w-full bg-black/70 border border-stone-800 rounded-lg p-2 font-mono text-xs text-stone-200 placeholder-stone-600 focus:outline-none focus:border-emerald-600/60"
           />
         </div>
       )}
 
       {isOpen && (
-        <div className="mt-2 rounded-xl bg-black/90 border border-stone-800 p-3 font-mono text-xs overflow-hidden shadow-inner">
+        <div className="mt-2 rounded-xl bg-black/95 border border-stone-800 p-3 font-mono text-xs overflow-hidden shadow-2xl">
           <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-stone-800 text-[11px] text-stone-400">
             <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
               <Terminal size={12} />
@@ -291,14 +329,18 @@ export default function CodeRunnerConsole({ code, language = 'javascript' }) {
             </span>
             <button
               type="button"
-              onClick={() => setOutput([])}
+              onClick={() => {
+                setOutput([]);
+                setStdin('');
+              }}
               className="flex items-center gap-1 text-[10px] text-stone-400 hover:text-stone-200 transition-colors cursor-pointer"
             >
-              <RotateCcw size={10} /> Clear
+              <RotateCcw size={10} /> Reset & Clear
             </button>
           </div>
 
-          <div className="max-h-60 overflow-y-auto space-y-1 select-text">
+          {/* Terminal Output Area */}
+          <div className="max-h-60 overflow-y-auto space-y-1 select-text pr-1">
             {output.length === 0 && !isRunning && (
               <span className="text-stone-500 text-[11px] italic">
                 Console ready. Click Run to compile and execute.
@@ -306,7 +348,7 @@ export default function CodeRunnerConsole({ code, language = 'javascript' }) {
             )}
             {isRunning && output.length === 0 && (
               <span className="text-stone-400 text-[11px] italic flex items-center gap-1.5">
-                <Loader2 size={10} className="animate-spin" /> Compiling & executing...
+                <Loader2 size={10} className="animate-spin text-emerald-400" /> Compiling & executing...
               </span>
             )}
             {output.map((line, idx) => (
@@ -314,7 +356,7 @@ export default function CodeRunnerConsole({ code, language = 'javascript' }) {
                 key={idx}
                 className={`whitespace-pre-wrap leading-relaxed ${
                   line.type === 'error'
-                    ? 'text-rose-400 font-semibold bg-rose-950/30 px-1 py-0.5 rounded'
+                    ? 'text-rose-400 font-semibold bg-rose-950/30 px-1.5 py-0.5 rounded'
                     : line.type === 'warn'
                     ? 'text-amber-300'
                     : line.type === 'info'
@@ -325,7 +367,46 @@ export default function CodeRunnerConsole({ code, language = 'javascript' }) {
                 {line.text}
               </div>
             ))}
+            <div ref={consoleEndRef} />
           </div>
+
+          {/* Interactive Input Prompt Bar */}
+          {!langConfig.isJs && (
+            <form
+              onSubmit={handleSendInput}
+              className={`mt-2.5 pt-2 border-t flex items-center gap-2 transition-colors ${
+                waitingForInput
+                  ? 'border-amber-500/50 bg-amber-500/5 -mx-3 -mb-3 p-3 rounded-b-xl'
+                  : 'border-stone-800'
+              }`}
+            >
+              <span className="text-emerald-400 font-bold select-none text-xs flex items-center gap-1">
+                <span>&gt;</span>
+              </span>
+              <input
+                ref={inputRef}
+                type="text"
+                value={interactiveInput}
+                onChange={(e) => setInteractiveInput(e.target.value)}
+                disabled={isRunning}
+                placeholder={
+                  waitingForInput
+                    ? 'Type your input here and press Enter (↵)...'
+                    : 'Type input value and press Enter...'
+                }
+                className="flex-1 bg-black/60 border border-stone-800 focus:border-emerald-500/70 rounded px-2 py-1 text-emerald-300 placeholder-stone-600 font-mono text-xs focus:outline-none transition-all disabled:opacity-50"
+              />
+              <button
+                type="submit"
+                disabled={isRunning || !interactiveInput.trim()}
+                className="flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-mono text-xs font-semibold cursor-pointer transition-all"
+                title="Send input to program"
+              >
+                <span>Enter</span>
+                <Send size={10} />
+              </button>
+            </form>
+          )}
         </div>
       )}
     </div>
