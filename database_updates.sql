@@ -1186,32 +1186,55 @@ END $$;
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS is_private BOOLEAN DEFAULT FALSE;
 
 -- ==============================================================================
--- 11. MESSAGE DELETION RLS POLICIES (DELETE FOR EVERYONE)
+-- 12. EVENT RSVPS & TEAM FORMATION LOBBY (PERSISTENT DATABASE STORAGE)
 -- ==============================================================================
+CREATE TABLE IF NOT EXISTS event_rsvps (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    event_id UUID REFERENCES events(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+    UNIQUE(event_id, user_id)
+);
+
+ALTER TABLE event_rsvps ENABLE ROW LEVEL SECURITY;
+
 DO $$
 BEGIN
-    -- Direct messages deletion policy for senders
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Senders can delete direct messages' AND tablename = 'messages') THEN
-        CREATE POLICY "Senders can delete direct messages" ON public.messages FOR DELETE USING (auth.uid() = sender_id);
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Event RSVPs are viewable by everyone' AND tablename = 'event_rsvps') THEN
+        CREATE POLICY "Event RSVPs are viewable by everyone" ON event_rsvps FOR SELECT USING (true);
     END IF;
-
-    -- Group messages deletion policy for senders or group admins
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Senders or admins can delete group messages' AND tablename = 'chat_group_messages') THEN
-        CREATE POLICY "Senders or admins can delete group messages" ON public.chat_group_messages FOR DELETE 
-        USING (
-            auth.uid() = sender_id 
-            OR EXISTS (
-                SELECT 1 FROM chat_group_members 
-                WHERE group_id = chat_group_messages.group_id 
-                AND user_id = auth.uid() 
-                AND role = 'admin'
-            )
-            OR EXISTS (
-                SELECT 1 FROM chat_groups
-                WHERE id = chat_group_messages.group_id
-                AND creator_id = auth.uid()
-            )
-        );
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can RSVP to events' AND tablename = 'event_rsvps') THEN
+        CREATE POLICY "Users can RSVP to events" ON event_rsvps FOR INSERT WITH CHECK (auth.uid() = user_id);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can cancel their own RSVPs' AND tablename = 'event_rsvps') THEN
+        CREATE POLICY "Users can cancel their own RSVPs" ON event_rsvps FOR DELETE USING (auth.uid() = user_id);
     END IF;
 END $$;
+
+CREATE TABLE IF NOT EXISTS event_lobby_posts (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    event_id UUID REFERENCES events(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    author_name TEXT NOT NULL,
+    role TEXT NOT NULL,
+    skills TEXT,
+    note TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+ALTER TABLE event_lobby_posts ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Lobby posts are viewable by everyone' AND tablename = 'event_lobby_posts') THEN
+        CREATE POLICY "Lobby posts are viewable by everyone" ON event_lobby_posts FOR SELECT USING (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Authenticated users can post to team lobby' AND tablename = 'event_lobby_posts') THEN
+        CREATE POLICY "Authenticated users can post to team lobby" ON event_lobby_posts FOR INSERT WITH CHECK (auth.uid() = user_id);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can delete their own lobby posts' AND tablename = 'event_lobby_posts') THEN
+        CREATE POLICY "Users can delete their own lobby posts" ON event_lobby_posts FOR DELETE USING (auth.uid() = user_id);
+    END IF;
+END $$;
+
 
