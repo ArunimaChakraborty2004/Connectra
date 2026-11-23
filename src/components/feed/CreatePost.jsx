@@ -29,6 +29,7 @@ import { generateSemanticVector384 } from '../../lib/rag';
 import AIAnalysisCard from './AIAnalysisCard';
 import MermaidDiagramCard from '../ai/MermaidDiagramCard';
 import ImportRepoModal from '../projects/ImportRepoModal';
+import CodeRunnerConsole from './CodeRunnerConsole';
 import { createNotification } from '../../lib/notifications';
 
 export default function CreatePost({ session, onPostCreated, placeholder, communityId = null }) {
@@ -807,6 +808,16 @@ export default function CreatePost({ session, onPostCreated, placeholder, commun
                     placeholder={`# Paste your ${getLanguageDisplayName(codeLang)} code snippet here…`}
                     className="w-full bg-[#2b1f17] rounded-lg p-2.5 text-xs font-mono text-amber-300 outline-none resize-y min-h-[75px] leading-relaxed"
                   />
+
+                  {/* Live In-Editor Code Runner */}
+                  {codeSnippet.trim() && (
+                    <div className="bg-[#241a13] p-2.5 rounded-xl border border-[#4a3425]">
+                      <CodeRunnerConsole
+                        code={codeSnippet}
+                        language={codeLang || 'javascript'}
+                      />
+                    </div>
+                  )}
                   {codeSnippet.trim() && (
                     <div className="mt-2 flex items-center justify-between gap-2 p-2 rounded-lg bg-orange-50/70 dark:bg-orange-950/30 border border-orange-200/70 dark:border-orange-900/40">
                       <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-semibold text-[#8d7565] dark:text-stone-300">
