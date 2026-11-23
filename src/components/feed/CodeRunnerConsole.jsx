@@ -49,7 +49,7 @@ export default function CodeRunnerConsole({ code, language = 'javascript' }) {
         }
       } else if (['python', 'py'].includes(cleanLang)) {
         // Dynamic loading of official Pyodide WebAssembly Python runtime
-        logs.push({ type: 'info', text: 'Initializing WebAssembly Python 3.11 runtime (Pyodide)...' });
+        logs.push({ type: 'info', text: 'Initializing WebAssembly Python runtime (Pyodide)...' });
         setOutput([...logs]);
 
         if (!window.loadPyodide) {
@@ -57,20 +57,67 @@ export default function CodeRunnerConsole({ code, language = 'javascript' }) {
             const script = document.createElement('script');
             script.src = 'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js';
             script.onload = resolve;
-            script.onerror = () => reject(new Error('Failed to load Pyodide runtime'));
+            script.onerror = () => reject(new Error('Failed to load Pyodide runtime script'));
             document.head.appendChild(script);
           });
         }
 
         if (!pyodideRef.current) {
           pyodideRef.current = await window.loadPyodide({
-            stdout: (text) => logs.push({ type: 'log', text }),
-            stderr: (text) => logs.push({ type: 'error', text }),
+            indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.25.0/full/',
           });
         }
 
-        // Run python code
-        await pyodideRef.current.runPythonAsync(code);
+        const pyodide = pyodideRef.current;
+
+        // Custom redirect of sys.stdout and sys.stderr to capture print() output safely
+        await pyodide.runPythonAsync(`
+import sys
+import io
+
+class WebCaptureIO(io.StringIO):
+    def __init__(self, callback):
+        super().__init__()
+        self.callback = callback
+    def write(self, s):
+        if s:
+            self.callback(s)
+        return len(s)
+
+_captured_stdout = []
+_captured_stderr = []
+sys.stdout = WebCaptureIO(lambda text: _captured_stdout.append(str(text)))
+sys.stderr = WebCaptureIO(lambda text: _captured_stderr.append(str(text)))
+`);
+
+        // Execute user python code safely
+        try {
+          await pyodide.runPythonAsync(code);
+        } finally {
+          // Retrieve captured stdout/stderr
+          const capturedOut = pyodide.runPython("''._captured_stdout if hasattr('', '_captured_stdout') else _captured_stdout");
+          const capturedErr = pyodide.runPython("''._captured_stderr if hasattr('', '_captured_stderr') else _captured_stderr");
+
+          if (capturedOut && capturedOut.length > 0) {
+            const joined = Array.from(capturedOut).join('').trimEnd();
+            if (joined) {
+              joined.split('\n').forEach(line => logs.push({ type: 'log', text: line }));
+            }
+          }
+
+          if (capturedErr && capturedErr.length > 0) {
+            const joinedErr = Array.from(capturedErr).join('').trimEnd();
+            if (joinedErr) {
+              joinedErr.split('\n').forEach(line => logs.push({ type: 'error', text: line }));
+            }
+          }
+
+          // Reset stdout/stderr back to default
+          await pyodide.runPythonAsync(`
+sys.stdout = sys.__stdout__
+sys.stderr = sys.__stderr__
+`);
+        }
 
         if (logs.filter(l => l.type !== 'info').length === 0) {
           logs.push({ type: 'info', text: 'Python executed successfully with no output.' });
